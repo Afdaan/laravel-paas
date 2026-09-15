@@ -33,6 +33,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Progress, ProgressTrack, ProgressIndicator } from '@/components/ui/progress'
+import { usePaginationScroll } from '@/lib/usePaginationScroll'
 import axios from 'axios'
 
 // Add stats interface
@@ -107,6 +108,7 @@ const AdminProjects = () => {
   const [statusFilter, setStatusFilter] = useState('all')
   const [limit, setLimit] = useState(10)
   const [isLoading, setIsLoading] = useState(true)
+  const { paginationAnchorRef, updatePagination } = usePaginationScroll()
   const isFirstLoad = useRef(true)
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
 
@@ -202,7 +204,7 @@ const AdminProjects = () => {
         </div>
       </div>
 
-      <Card>
+      <Card ref={paginationAnchorRef}>
         <div className="p-6 border-b flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="relative flex-1 w-full max-w-2xl">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -441,8 +443,10 @@ const AdminProjects = () => {
                 <Select
                   value={limit.toString()}
                   onValueChange={(value) => {
-                    setLimit(Number(value))
-                    setPage(1)
+                    updatePagination(() => {
+                      setLimit(Number(value))
+                      setPage(1)
+                    })
                   }}
                 >
                   <SelectTrigger size="sm" className="h-8 w-[82px] justify-between">
@@ -475,7 +479,7 @@ const AdminProjects = () => {
                 <Button
                   variant="outline"
                   className="hidden h-8 w-8 p-0 lg:flex"
-                  onClick={() => setPage(1)}
+                  onClick={() => updatePagination(() => setPage(1))}
                   disabled={page === 1}
                 >
                   <span className="sr-only">Go to first page</span>
@@ -484,7 +488,7 @@ const AdminProjects = () => {
                 <Button
                   variant="outline"
                   className="h-8 w-8 p-0"
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  onClick={() => updatePagination(() => setPage(p => Math.max(1, p - 1)))}
                   disabled={page === 1}
                 >
                   <span className="sr-only">Go to previous page</span>
@@ -493,7 +497,7 @@ const AdminProjects = () => {
                 <Button
                   variant="outline"
                   className="h-8 w-8 p-0"
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  onClick={() => updatePagination(() => setPage(p => Math.min(totalPages, p + 1)))}
                   disabled={page === totalPages || totalPages === 0}
                 >
                   <span className="sr-only">Go to next page</span>
@@ -502,7 +506,7 @@ const AdminProjects = () => {
                 <Button
                   variant="outline"
                   className="hidden h-8 w-8 p-0 lg:flex"
-                  onClick={() => setPage(totalPages)}
+                  onClick={() => updatePagination(() => setPage(totalPages))}
                   disabled={page === totalPages || totalPages === 0}
                 >
                   <span className="sr-only">Go to last page</span>

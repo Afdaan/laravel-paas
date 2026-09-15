@@ -2,12 +2,14 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -151,6 +153,27 @@
 @keyframes spinner-bar {
   0% { opacity: 1; }
   100% { opacity: 0.15; }
+}
+
+/* Terminal-style waiting cue: reveals "..." one character at a time via
+   clip-path, so nothing glows and no layout property animates. The span
+   reserves its full width up front to keep the label from shifting. */
+.waiting-ellipsis {
+  display: inline-block;
+  width: 3ch;
+  clip-path: inset(0 100% 0 0);
+  animation: waiting-ellipsis 1.6s steps(4, jump-none) infinite;
+}
+
+@keyframes waiting-ellipsis {
+  to { clip-path: inset(0 0 0 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .waiting-ellipsis {
+    animation: none;
+    clip-path: none;
+  }
 }
 
 .runara-press {

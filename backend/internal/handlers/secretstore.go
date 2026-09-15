@@ -247,7 +247,9 @@ func (h *SecretStoreHandler) RevealSecret(c *fiber.Ctx) error {
 	if versionStr != "" {
 		details = fmt.Sprintf("Revealed plaintext value of secret key %s version %s", targetItem.Key, versionStr)
 	}
-	h.secretStoreService.LogActivity(userID, &store.ID, &targetItem.ID, nil, "reveal_value", details, c.IP(), c.Get("User-Agent"))
+	if err := h.secretStoreService.LogActivityRequired(userID, &store.ID, &targetItem.ID, nil, "reveal_value", details, c.IP(), c.Get("User-Agent")); err != nil {
+		return apperr.New(500, "SECRET_REVEAL_AUDIT_FAILED", "Unable to record secret access")
+	}
 
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	return c.JSON(fiber.Map{"data": fiber.Map{"value": decryptedVal}})
@@ -340,7 +342,9 @@ func (h *SecretStoreHandler) Export(c *fiber.Ctx) error {
 		secretsMap[item.Key] = normalizeSecretStoreValue(item.Key, decrypted)
 	}
 
-	h.secretStoreService.LogActivity(userID, &store.ID, nil, nil, "export_secrets", "Exported secret store backup data", c.IP(), c.Get("User-Agent"))
+	if err := h.secretStoreService.LogActivityRequired(userID, &store.ID, nil, nil, "export_secrets", "Exported secret store backup data", c.IP(), c.Get("User-Agent")); err != nil {
+		return apperr.New(500, "SECRET_EXPORT_AUDIT_FAILED", "Unable to record secret export")
+	}
 
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSONCharsetUTF8)

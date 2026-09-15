@@ -1,8 +1,8 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type WheelEvent as ReactWheelEvent } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
-import { projectsAPI } from '../services/api'
+import { projectsAPI, billingAPI } from '../services/api'
 import { Project } from '../types'
 import { FrameworkIcon } from './FrameworkIcon'
 import { getDisplayedFramework } from '@/lib/runtimes'
@@ -28,8 +28,13 @@ import {
   Globe,
   PanelLeftClose,
   PanelLeftOpen,
+  Menu,
+  X,
   ChevronDown,
-  FolderLock
+  FolderLock,
+  WalletCards,
+  Coins,
+  AlertTriangle,
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 import { Button } from '@/components/ui/button'
@@ -56,6 +61,7 @@ const Icons = {
   Feedback: MessageSquare,
   Domains: Globe,
   SecretStore: FolderLock,
+  Billing: WalletCards,
 }
 
 interface DashboardLayoutProps {
@@ -100,6 +106,45 @@ const projectStatusTone = (status?: Project['status']) => {
   }
 }
 
+
+/**
+ * Simple focus trap for the mobile drawer.
+ */
+function trapFocus(container: HTMLElement, event: KeyboardEvent) {
+  if (event.key !== 'Tab') return
+  const focusable = container.querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  )
+  if (focusable.length === 0) return
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+/**
+ * Return focus to the opener element when the mobile drawer closes.
+ */
+function useRestoreFocusOnClose(isOpen: boolean) {
+  const previouslyFocused = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (isOpen) {
+      previouslyFocused.current = document.activeElement as HTMLElement | null
+      return
+    }
+    if (previouslyFocused.current && typeof previouslyFocused.current.focus === 'function') {
+      previouslyFocused.current.focus()
+      previouslyFocused.current = null
+    }
+  }, [isOpen])
+}
+
 function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const { t } = useTranslation()
   const { user, logout, adminToken, returnToAdmin } = useAuthStore()
@@ -121,10 +166,59 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   })
   const [isDragging, setIsDragging] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
+  const [isMobileViewport, setIsMobileViewport] = useState(() => window.matchMedia('(max-width: 767px)').matches)
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false)
   const resizeFrameRef = useRef<number | null>(null)
+  const sidebarContainerRef = useRef<HTMLDivElement | null>(null)
   const sidebarNavRef = useRef<HTMLElement | null>(null)
   const mainContentRef = useRef<HTMLElement | null>(null)
-  const isVisualExpanded = !isSidebarCollapsed || isHovered
+  const isVisualExpanded = isMobileViewport || !isSidebarCollapsed || isHovered
+
+  useRestoreFocusOnClose(isMobileDrawerOpen)
+
+  useEffect(() => {
+    const sidebar = sidebarContainerRef.current
+    const main = mainContentRef.current
+    if (!sidebar || !main) return
+    if (isMobileViewport && !isMobileDrawerOpen) sidebar.setAttribute('inert', '')
+    else sidebar.removeAttribute('inert')
+    if (isMobileViewport && isMobileDrawerOpen) main.setAttribute('inert', '')
+    else main.removeAttribute('inert')
+    return () => {
+      sidebar.removeAttribute('inert')
+      main.removeAttribute('inert')
+    }
+  }, [isMobileDrawerOpen, isMobileViewport])
+
+  useEffect(() => {
+    if (!isMobileDrawerOpen) return
+    const aside = sidebarNavRef.current?.closest('aside')
+    if (!aside) return
+    const firstFocusable = aside.querySelector<HTMLElement>(
+      'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    firstFocusable?.focus()
+    const keyHandler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsMobileDrawerOpen(false)
+        return
+      }
+      trapFocus(aside, event)
+    }
+    document.addEventListener('keydown', keyHandler)
+    return () => document.removeEventListener('keydown', keyHandler)
+  }, [isMobileDrawerOpen])
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)')
+    const updateViewport = () => {
+      setIsMobileViewport(media.matches)
+      if (!media.matches) setIsMobileDrawerOpen(false)
+    }
+    updateViewport()
+    media.addEventListener('change', updateViewport)
+    return () => media.removeEventListener('change', updateViewport)
+  }, [])
 
   /**
    * Sidebar wheel handler: prevents sidebar from trapping scroll.
@@ -132,33 +226,41 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
    * - If sidebar nav has overflow but is at a scroll boundary in the wheel direction → forward remaining delta to main content.
    * - Only let sidebar nav consume the event when it can actually scroll in that direction.
    */
-  const handleSidebarWheel = useCallback((e: ReactWheelEvent<HTMLElement>) => {
+  const handleSidebarWheel = useCallback((event: WheelEvent) => {
     const nav = sidebarNavRef.current
     const main = mainContentRef.current
     if (!main) return
 
     // No nav or nav has no scrollable overflow → forward everything
     if (!nav || nav.scrollHeight <= nav.clientHeight) {
-      e.preventDefault()
-      main.scrollTop += e.deltaY
-      if (e.deltaX) main.scrollLeft += e.deltaX
+      if (event.cancelable) event.preventDefault()
+      main.scrollTop += event.deltaY
+      if (event.deltaX) main.scrollLeft += event.deltaX
       return
     }
 
     // Nav has overflow — check if it can scroll in the wheel direction
     const atTop = nav.scrollTop <= 0
     const atBottom = nav.scrollTop + nav.clientHeight >= nav.scrollHeight - 1
-    const scrollingDown = e.deltaY > 0
-    const scrollingUp = e.deltaY < 0
+    const scrollingDown = event.deltaY > 0
+    const scrollingUp = event.deltaY < 0
 
     if ((scrollingDown && atBottom) || (scrollingUp && atTop)) {
       // Nav cannot scroll further in this direction → forward to main
-      e.preventDefault()
-      main.scrollTop += e.deltaY
-      if (e.deltaX) main.scrollLeft += e.deltaX
+      if (event.cancelable) event.preventDefault()
+      main.scrollTop += event.deltaY
+      if (event.deltaX) main.scrollLeft += event.deltaX
     }
     // Otherwise let the nav scroll normally (no preventDefault)
   }, [])
+
+  useEffect(() => {
+    const sidebar = sidebarContainerRef.current?.querySelector('aside')
+    if (!sidebar) return
+
+    sidebar.addEventListener('wheel', handleSidebarWheel, { passive: false })
+    return () => sidebar.removeEventListener('wheel', handleSidebarWheel)
+  }, [handleSidebarWheel])
 
   useEffect(() => {
     if (!isSidebarCollapsed) {
@@ -202,6 +304,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           { to: '/admin/users', icon: Icons.Users, label: t('common.users') },
           { to: '/admin/projects', icon: Icons.Projects, label: t('common.projects') },
           { to: '/admin/databases', icon: Icons.Database, label: t('common.databases') },
+          { to: '/admin/billing', icon: Icons.Billing, label: t('billing.nav') },
           { to: '/admin/domains', icon: Icons.Domains, label: t('common.domains') },
           { to: '/admin/secretstores', icon: Icons.SecretStore, label: t('common.secretStore') },
           { to: '/admin/settings', icon: Icons.Settings, label: t('common.settings') },
@@ -221,6 +324,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         { to: '/dashboard', icon: Icons.Dashboard, label: t('common.dashboard') },
         { to: '/projects', icon: Icons.Projects, label: t('common.projects') },
         { to: '/databases', icon: Icons.Database, label: t('common.databases') },
+        { to: '/billing', icon: Icons.Billing, label: t('billing.nav') },
         { to: '/domains', icon: Icons.Domains, label: t('common.domains') },
         { to: '/secretstores', icon: Icons.SecretStore, label: t('common.secretStore') },
       ]
@@ -371,19 +475,24 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans">
       {/* Sidebar Interface */}
       <div
-        style={{ width: isSidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : sidebarWidth }}
-        className={`relative shrink-0 z-50 ${isDragging ? '' : 'transition-[width] duration-300 ease-in-out'}`}
+        ref={sidebarContainerRef}
+        style={{ width: isMobileViewport ? sidebarWidth : isSidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : sidebarWidth }}
+        className={`fixed inset-y-0 left-0 z-50 shrink-0 transition-transform duration-200 md:relative md:translate-x-0 ${isMobileDrawerOpen ? 'translate-x-0' : '-translate-x-full'} ${isDragging ? '' : 'md:transition-[width] md:duration-300 md:ease-in-out'}`}
+        aria-hidden={isMobileViewport && !isMobileDrawerOpen ? true : undefined}
       >
         <aside
+          id="mobile-navigation"
+          role={isMobileViewport ? 'dialog' : undefined}
+          aria-modal={isMobileViewport ? isMobileDrawerOpen : undefined}
+          aria-label={isMobileViewport ? t('common.navigation') : undefined}
           onMouseEnter={() => {
-            if (isSidebarCollapsed) {
+            if (!isMobileViewport && isSidebarCollapsed) {
               setIsHovered(true)
             }
           }}
           onMouseLeave={() => {
-            setIsHovered(false)
+            if (!isMobileViewport) setIsHovered(false)
           }}
-          onWheel={handleSidebarWheel}
           className={`absolute left-0 top-0 bottom-0 border-r bg-card flex flex-col z-50 select-none shrink-0 ${
             isDragging ? '' : 'transition-[width] duration-300 ease-in-out'
           } ${isHovered ? 'shadow-2xl' : ''}`}
@@ -391,7 +500,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         >
           {/* Resize Handle */}
           <div
-            className={`absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/40 transition-colors z-50 ${
+            className={`absolute right-0 top-0 bottom-0 hidden w-1.5 cursor-col-resize hover:bg-primary/40 transition-colors z-50 md:block ${
               isDragging ? 'bg-primary/60 w-2' : ''
             }`}
             onMouseDown={startResizing}
@@ -434,14 +543,18 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                 variant="ghost"
                 size="icon-sm"
                 onClick={() => {
+                  if (isMobileViewport) {
+                    setIsMobileDrawerOpen(false)
+                    return
+                  }
                   const nextCollapsed = !isSidebarCollapsed;
                   setIsSidebarCollapsed(nextCollapsed);
                   setIsHovered(false);
                 }}
-                title={isSidebarCollapsed ? "Pin sidebar" : "Collapse sidebar"}
+                title={isMobileViewport ? t('common.closeNavigation') : isSidebarCollapsed ? "Pin sidebar" : "Collapse sidebar"}
                 className="text-muted-foreground hover:text-foreground shrink-0"
               >
-                {isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+                {isMobileViewport ? <X className="h-4 w-4" /> : isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
               </Button>
             </div>
           </div>
@@ -449,7 +562,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           {!isAdmin && (
             <div className="px-3 pb-3">
               <Button
-                render={<NavLink to="/projects/new" title={t('common.newProject')} />}
+                render={<NavLink to="/projects/new" title={t('common.newProject')} onClick={() => setIsMobileDrawerOpen(false)} />}
                 className="h-9 w-full transition-all duration-300 justify-start pl-4 pr-2"
                 size="sm"
               >
@@ -481,6 +594,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                   key={item.to}
                   to={item.to}
                   title={item.label}
+                  onClick={() => setIsMobileDrawerOpen(false)}
                   className={({ isActive }) =>
                     `flex h-9 items-center rounded-md text-sm font-medium transition-colors duration-150 justify-start pl-4 pr-2 ${
                       isActive
@@ -518,6 +632,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
                     key={item.to}
                     to={item.to}
                     title={item.label}
+                    onClick={() => setIsMobileDrawerOpen(false)}
                     className={({ isActive }) =>
                       `flex h-9 items-center rounded-md text-sm font-medium transition-colors duration-150 justify-start pl-4 pr-2 ${
                         isActive
@@ -616,6 +731,8 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         </aside>
       </div>
 
+      {isMobileDrawerOpen && <button type="button" aria-label={t('common.closeNavigation')} className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm md:hidden" onClick={() => setIsMobileDrawerOpen(false)} />}
+
       {/* Content Stream Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
         {/* Impersonation Banner */}
@@ -633,8 +750,19 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
         )}
 
         {/* Orbital Header */}
-        <header className="h-16 flex items-center justify-between gap-4 px-8 border-b">
-           <div className="flex min-w-0 items-center">
+        <header className="h-16 flex items-center justify-between gap-4 px-4 sm:px-8 border-b">
+           <div className="flex min-w-0 items-center gap-2">
+             <Button
+               variant="outline"
+               size="icon"
+               className="md:hidden"
+               onClick={() => setIsMobileDrawerOpen(true)}
+               aria-expanded={isMobileDrawerOpen}
+               aria-controls="mobile-navigation"
+               aria-label={t('common.openNavigation')}
+             >
+               <Menu className="size-4" />
+             </Button>
              {showProjectSwitcher && (
                <DropdownMenu>
                  <DropdownMenuTrigger className="group flex h-11 min-w-0 max-w-[380px] items-center gap-3 rounded-lg border border-border bg-card px-3.5 py-2 text-left shadow-sm transition-colors hover:bg-muted/60 focus:outline-none focus:ring-2 focus:ring-primary/20">
@@ -701,27 +829,28 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
              )}
            </div>
 
-           <div className="flex items-center gap-4">
-             <LanguageSwitcher />
+           <div className="flex items-center gap-2.5 sm:gap-4">
+              <HeaderCreditBadge />
+              <LanguageSwitcher />
 
-             <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setTheme(isDark ? 'light' : 'dark')}
-                title={t('common.theme')}
-             >
-                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-             </Button>
+              <Button
+                 variant="outline"
+                 size="icon"
+                 onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                 title={t('common.theme')}
+              >
+                 {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </Button>
 
-             <Button
-                variant={location.pathname.includes('feedback') ? "default" : "outline"}
-                size="icon"
-                render={<NavLink to={isAdmin ? "/admin/feedback" : "/feedback"} title={t('common.feedback')} />}
-                className="relative"
-             >
-                <MessageSquare className="w-4 h-4" />
-             </Button>
-           </div>
+              <Button
+                 variant={location.pathname.includes('feedback') ? "default" : "outline"}
+                 size="icon"
+                 render={<NavLink to={isAdmin ? "/admin/feedback" : "/feedback"} title={t('common.feedback')} />}
+                 className="relative"
+              >
+                 <MessageSquare className="w-4 h-4" />
+              </Button>
+            </div>
         </header>
 
         {/* Global Main Stream */}
@@ -731,6 +860,74 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
           </Suspense>
         </main>
       </div>
+    </div>
+  )
+}
+
+function HeaderCreditBadge() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { t, language } = useTranslation()
+  const [balance, setBalance] = useState<number | null>(null)
+  const [paymentDueCount, setPaymentDueCount] = useState<number | null>(null)
+  const isBillingPage = location.pathname === '/billing'
+
+  const fetchBillingSummary = useCallback(async () => {
+    const [overviewResult, statusResult] = await Promise.allSettled([
+      billingAPI.overview(),
+      billingAPI.status(),
+    ])
+
+    if (overviewResult.status === 'fulfilled' && overviewResult.value.data.wallet) {
+      setBalance(overviewResult.value.data.wallet.balance_credits)
+    }
+    if (statusResult.status === 'fulfilled') {
+      setPaymentDueCount(
+        statusResult.value.data.filter(({ status }) => status === 'payment_due' || status === 'suspended').length,
+      )
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isBillingPage) return
+    void fetchBillingSummary()
+  }, [fetchBillingSummary, isBillingPage])
+
+  usePolling(() => void fetchBillingSummary(), isBillingPage ? null : 30_000)
+
+  const hasPaymentDue = paymentDueCount !== null && paymentDueCount > 0
+  if (balance === null && !hasPaymentDue) return null
+
+  const formatted = balance === null
+    ? null
+    : new Intl.NumberFormat(language === 'id' ? 'id-ID' : 'en-US').format(balance)
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {hasPaymentDue && (
+        <button
+          type="button"
+          onClick={() => navigate('/billing')}
+          title={t('billing.reviewOverdueBilling')}
+          aria-label={t('billing.reviewOverdueBilling')}
+          className="flex h-7 items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2.5 text-[11px] font-medium text-destructive transition-colors hover:border-destructive/50 hover:bg-destructive/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <AlertTriangle className="size-3.5" aria-hidden="true" />
+          <span>{t('billing.paymentDueCount', { count: paymentDueCount })}</span>
+        </button>
+      )}
+      {formatted !== null && (
+        <button
+          type="button"
+          onClick={() => navigate('/billing')}
+          title={t('billing.nav')}
+          className="group flex items-center gap-1.5 rounded-full border border-primary/30 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-3 py-1 text-xs font-bold text-primary shadow-xs transition-all hover:border-primary/60 hover:bg-primary/15 hover:shadow-xs active:scale-95 cursor-pointer"
+        >
+          <Coins className="size-3.5 text-primary transition-transform group-hover:rotate-12 group-hover:scale-110" />
+          <span>{formatted}</span>
+          <span className="hidden sm:inline font-semibold text-muted-foreground text-[10px] uppercase">cr</span>
+        </button>
+      )}
     </div>
   )
 }

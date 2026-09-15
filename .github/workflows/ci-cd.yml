@@ -11,10 +11,10 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux, X64]
     env:
-      PROD_SSH: paas-prod
-      PROD_DIR: /mainData/laravel-paas
+      PROD_SSH: 'paas-prod'
+      PROD_DIR: '/mainData/laravel-paas'
 
     steps:
       - name: Checkout Code
@@ -112,23 +112,7 @@ jobs:
           DEPLOY_SCRIPTS="${{ steps.filter.outputs.deploy_scripts }}"
           CI="${{ steps.filter.outputs.ci }}"
 
-          NEED_BACKEND=false
-          NEED_WORKER=false
-          NEED_FRONTEND=false
-
-          if [ "$BACKEND" = "true" ]; then
-            NEED_BACKEND=true
-          fi
-
-          if [ "$WORKER" = "true" ]; then
-            NEED_WORKER=true
-          fi
-
-          if [ "$FRONTEND" = "true" ]; then
-            NEED_FRONTEND=true
-          fi
-
-          ssh "$PROD_SSH" bash -s -- "$PROD_DIR" "$NEED_BACKEND" "$NEED_WORKER" "$NEED_FRONTEND" "$DEPLOY_SCRIPTS" "$CI" <<'REMOTE'
+          ssh "$PROD_SSH" bash -s -- "$PROD_DIR" "$BACKEND" "$WORKER" "$FRONTEND" "$DEPLOY_SCRIPTS" "$CI" <<'REMOTE'
           set -euo pipefail
 
           PROD_DIR="$1"

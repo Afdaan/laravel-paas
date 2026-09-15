@@ -153,11 +153,17 @@ func (s *StorageService) GetProjectsHostPath(userID uint, subdomain string) stri
 	return filepath.Join(s.cfg.HostProjectsPath, models.GetUserDirName(s.db, userID), subdomain)
 }
 
-// CleanupPersistentData removes project storage folders
-func (s *StorageService) CleanupPersistentData(project *models.Project) {
+// CleanupPersistentData removes project storage folders.
+func (s *StorageService) CleanupPersistentData(project *models.Project) error {
+	if project == nil {
+		return fmt.Errorf("project is required")
+	}
 	path := filepath.Join(s.cfg.DataPath, models.GetUserDirName(s.db, project.UserID), project.Subdomain)
 	slog.Info("Cleaning up persistent data", "path", path)
-	os.RemoveAll(path)
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("remove persistent data %q: %w", path, err)
+	}
+	return nil
 }
 
 // CopyFile helper for general file copying

@@ -99,6 +99,11 @@ func (s *SecretStoreService) DeleteSecretStore(userID uint, storeID uint, ipAddr
 }
 
 func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, value string, ipAddress, userAgent string) (*models.SecretStoreItem, error) {
+	store, err := s.GetSecretStore(userID, storeID)
+	if err != nil {
+		return nil, err
+	}
+
 	if IsSystemManagedEnvKey(key) {
 		normalizedKey := strings.ToUpper(strings.TrimSpace(key))
 		var item models.SecretStoreItem
@@ -108,18 +113,13 @@ func (s *SecretStoreService) SetSecretValue(userID uint, storeID uint, key, valu
 		}
 		return &models.SecretStoreItem{Key: normalizedKey, SecretStoreID: storeID}, nil
 	}
-	if s.IsBaselineMatchForStore(storeID, key, value) {
+	if s.IsBaselineMatchForStore(store.ID, key, value) {
 		var item models.SecretStoreItem
 		if errItem := s.db.Where("secret_store_id = ? AND key = ?", storeID, key).First(&item).Error; errItem == nil {
 			s.db.Delete(&item)
 			s.LogActivity(userID, &storeID, &item.ID, nil, "delete_secret_key", "Removed baseline-matching secret key: "+key, ipAddress, userAgent)
 		}
 		return &models.SecretStoreItem{Key: key, SecretStoreID: storeID}, nil
-	}
-
-	store, err := s.GetSecretStore(userID, storeID)
-	if err != nil {
-		return nil, err
 	}
 
 	stretchedKey := utils.DeriveKey(s.cfg.CredentialEncryptionKey)
@@ -378,7 +378,7 @@ func (s *SecretStoreService) PropagateDatabaseEnv(project *models.Project) error
 		for _, b := range bindings {
 			var proj models.Project
 			if err := s.db.First(&proj, b.ProjectID).Error; err == nil {
-				if _, err := s.redisService.EnqueueDeployment(proj.ID, proj.UserID, "update_env"); err != nil {
+				if _, err := s.redisService.EnqueueDeploymentNonDestructive(proj.ID, proj.UserID, "update_env"); err != nil {
 					slog.Error("Failed to enqueue update_env for bound project", "project_id", proj.ID, "error", err)
 					enqErr = err
 				}
@@ -387,12 +387,21 @@ func (s *SecretStoreService) PropagateDatabaseEnv(project *models.Project) error
 		return enqErr
 	}
 	// No secret store binding — direct env update enqueue
-	_, enqErr := s.redisService.EnqueueDeployment(project.ID, project.UserID, "update_env")
+	_, enqErr := s.redisService.EnqueueDeploymentNonDestructive(project.ID, project.UserID, "update_env")
 	if enqErr != nil {
 		slog.Error("Failed to enqueue update_env after database env propagation", "project_id", project.ID, "error", enqErr)
 		return fmt.Errorf("failed to enqueue environment update: %w", enqErr)
 	}
 	return nil
+}
+
+// EnqueueDatabaseEnvironmentSync queues a specific durable environment generation.
+func (s *SecretStoreService) EnqueueDatabaseEnvironmentSync(project *models.Project, generation uint) error {
+	if s == nil || s.redisService == nil || project == nil || project.ID == 0 {
+		return errors.New("database environment sync is unavailable")
+	}
+	_, err := s.redisService.EnqueueDeploymentEnvSync(project.ID, project.UserID, generation)
+	return err
 }
 
 // PropagateDatabaseEnvFanout triggers async env updates for all projects bound to the
@@ -420,12 +429,7 @@ func (s *SecretStoreService) CompileEnvForProject(projectID uint, environment st
 	envMap["APP_DEBUG"] = "false"
 
 	// Resolve APP_URL dynamically based on custom domains
-	projectDomain := s.cfg.ProjectDomain
-	var settingVal models.Setting
-	if err := s.db.Where("key = ?", models.SettingProjectDomain).First(&settingVal).Error; err == nil && settingVal.Value != "" {
-		projectDomain = settingVal.Value
-	}
-	appURL := fmt.Sprintf("http://%s.%s", project.Subdomain, projectDomain)
+	appURL := fmt.Sprintf("http://%s.%s", project.Subdomain, s.cfg.ProjectDomain)
 	var primaryDomain string
 	var firstActiveDomain string
 	for _, d := range project.CustomDomains {
@@ -703,7 +707,7 @@ func (s *SecretStoreService) PropagateSecretStoreUpdatesExcept(storeID uint, ski
 			}
 			var project models.Project
 			if err := s.db.First(&project, b.ProjectID).Error; err == nil {
-				jobID, errQueue := s.redisService.EnqueueDeployment(project.ID, project.UserID, "update_env")
+				jobID, errQueue := s.redisService.EnqueueDeploymentNonDestructive(project.ID, project.UserID, "update_env")
 				if errQueue == nil {
 					slog.Info("Successfully enqueued update_env job for bound project", "project_id", project.ID, "job_id", jobID)
 				} else {
@@ -715,7 +719,7 @@ func (s *SecretStoreService) PropagateSecretStoreUpdatesExcept(storeID uint, ski
 }
 
 func (s *SecretStoreService) PropagateProjectEnvUpdate(projectID, userID uint) {
-	jobID, errQueue := s.redisService.EnqueueDeployment(projectID, userID, "update_env")
+	jobID, errQueue := s.redisService.EnqueueDeploymentNonDestructive(projectID, userID, "update_env")
 	if errQueue == nil {
 		slog.Info("Successfully enqueued update_env job for project", "project_id", projectID, "job_id", jobID)
 	} else {
@@ -739,6 +743,17 @@ func (s *SecretStoreService) LogActivity(userID uint, storeID, itemID, projectID
 	}
 }
 
+func (s *SecretStoreService) LogActivityRequired(userID uint, storeID, itemID, projectID *uint, action, details string, ipAddress, userAgent string) error {
+	log := models.SecretStoreActivityLog{
+		UserID: userID, SecretStoreID: storeID, SecretStoreItemID: itemID, ProjectID: projectID,
+		Action: action, Details: details, IpAddress: ipAddress, UserAgent: userAgent,
+	}
+	if err := s.db.Create(&log).Error; err != nil {
+		return fmt.Errorf("write secret store activity log: %w", err)
+	}
+	return nil
+}
+
 // IsSystemManagedEnvKey returns true for platform-owned variables that must
 // always come from project/domain state, never from SecretStore overrides.
 func IsSystemManagedEnvKey(key string) bool {
@@ -757,12 +772,7 @@ func (s *SecretStoreService) GetBaselineEnvMap(project *models.Project) map[stri
 	baseline["APP_ENV"] = "production"
 	baseline["APP_DEBUG"] = "false"
 
-	projectDomain := s.cfg.ProjectDomain
-	var settingVal models.Setting
-	if err := s.db.Where("key = ?", models.SettingProjectDomain).First(&settingVal).Error; err == nil && settingVal.Value != "" {
-		projectDomain = settingVal.Value
-	}
-	appURL := fmt.Sprintf("http://%s.%s", project.Subdomain, projectDomain)
+	appURL := fmt.Sprintf("http://%s.%s", project.Subdomain, s.cfg.ProjectDomain)
 	var primaryDomain string
 	var firstActiveDomain string
 	for _, d := range project.CustomDomains {

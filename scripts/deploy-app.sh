@@ -175,8 +175,9 @@ deploy_with_anti_downtime() {
     fi
     echo -e "${GREEN}[SUCCESS] Build complete: $image_name${NC}"
 
-    docker rm -f "$temp_container_name" 2>/dev/null || true
+    docker rm -f "$temp_container_name" "$old_container_name" 2>/dev/null || true
     echo -e "${YELLOW}[RUN] Starting new container $temp_container_name...${NC}"
+
 
     if ! docker run -d --name "$temp_container_name" "$@" "$image_name"; then
         echo -e "${RED}[ERROR] Failed to start new container. Keeping current version.${NC}"
@@ -252,6 +253,7 @@ deploy_backend() {
         -v "$TRAEFIK_DYNAMIC_DIR:/etc/traefik/dynamic:rw" \
         -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
         -e APP_MODE="$APP_MODE" \
+        -e INTERNAL_API_TOKEN="$INTERNAL_API_TOKEN" \
         -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
         -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
         -e HOST_DATA_PATH="$DATA_PATH" \
@@ -262,6 +264,7 @@ deploy_backend() {
         -e PG_PASSWORD="$PG_PASSWORD" \
         -e PG_DATABASE="$PG_DATABASE" \
         -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
+        -e MYSQL_CONTAINER_NAME="$MYSQL_CONTAINER_NAME" \
         -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
         -e MYSQL_USER="$MYSQL_USER" \
         -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
@@ -279,6 +282,7 @@ deploy_backend() {
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
         -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
+        -e POSTGRES_CONTAINER_NAME="$POSTGRES_CONTAINER_NAME" \
         -e DOCKER_NETWORK=paas-network \
         --label "traefik.enable=true" \
         --label "traefik.http.routers.backend.rule=Host(\`$BASE_DOMAIN\`) && PathPrefix(\`/api\`)" \
@@ -314,7 +318,6 @@ deploy_worker() {
         -v "${DATA_PATH}:/app/storage/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
         -v "${PROJECT_ROOT}/railpacks:/app/railpacks:ro" \
-        -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
         -v "$TRAEFIK_DYNAMIC_DIR:/etc/traefik/dynamic:rw" \
         -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
         -e APP_MODE=docker \
@@ -330,10 +333,11 @@ deploy_worker() {
         -e PG_PASSWORD="$PG_PASSWORD" \
         -e PG_DATABASE="$PG_DATABASE" \
         -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
+        -e MYSQL_CONTAINER_NAME="$MYSQL_CONTAINER_NAME" \
+        -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
         -e REDIS_HOST=paas-redis \
         -e REDIS_PORT="${REDIS_PORT:-6379}" \
         -e REDIS_PASSWORD="$REDIS_PASSWORD" \
-        -e JWT_SECRET="$JWT_SECRET" \
         -e UID_SALT="$UID_SALT" \
         -e CREDENTIAL_ENCRYPTION_KEY="$CREDENTIAL_ENCRYPTION_KEY" \
         -e CREDENTIAL_ENCRYPTION_KEY_PREVIOUS="${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}" \
@@ -343,12 +347,21 @@ deploy_worker() {
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
         -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
+        -e POSTGRES_CONTAINER_NAME="$POSTGRES_CONTAINER_NAME" \
+        -e APP_ENV="${APP_ENV:-production}" \
+        -e TRUSTED_PROXY_CIDRS="${TRUSTED_PROXY_CIDRS:-}" \
         -e DOCKER_NETWORK=paas-network \
         -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \
         -e NGINX_WEBHOOK_URL="$NGINX_WEBHOOK_URL" \
         -e NGINX_WEBHOOK_KEY="$NGINX_WEBHOOK_KEY" \
-        -e INTERNAL_IP="${INTERNAL_IP:-127.0.0.1}"
+        -e INTERNAL_IP="${INTERNAL_IP:-127.0.0.1}" \
+        -e GITHUB_APP_ID="${GITHUB_APP_ID:-}" \
+        -e GITHUB_APP_PRIVATE_KEY_PATH="${GITHUB_APP_PRIVATE_KEY_PATH:-}" \
+        -e GITHUB_APP_WEBHOOK_SECRET="${GITHUB_APP_WEBHOOK_SECRET:-}"
+
+    docker tag "paas-worker:$WORKER_TAG" "paas-worker:latest" 2>/dev/null || true
 }
+
 
 if [[ "$TARGET" == "backend" || "$TARGET" == "all" ]]; then
     deploy_backend

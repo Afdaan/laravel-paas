@@ -1,0 +1,318 @@
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { act } from 'react'
+import AdminBilling from './Billing'
+import { billingAPI, usersAPI } from '@/services/api'
+import useAuthStore from '@/stores/authStore'
+
+vi.mock('@/services/api', () => ({
+  billingAPI: {
+    adminCatalog: vi.fn(),
+    adminWallets: vi.fn(),
+    adminInvoices: vi.fn(),
+    adminTopups: vi.fn(),
+    adminSuspensions: vi.fn(),
+    createSpec: vi.fn(),
+    createTopupPackage: vi.fn(),
+    adjustWalletCredits: vi.fn(),
+  },
+  usersAPI: {
+    list: vi.fn().mockResolvedValue({ data: [] }),
+  },
+}))
+
+const t = (key: string, data?: Record<string, unknown>) => {
+  const map: Record<string, string> = {
+    'common.adminPanel': 'Admin',
+    'billing.admin.title': 'Billing Admin',
+    'billing.admin.description': 'Admin billing',
+    'billing.admin.resourceType': 'Resource Type',
+    'billing.admin.project': 'project',
+    'billing.admin.database': 'database',
+    'billing.admin.monthlyCredits': 'Monthly Credits',
+    'billing.admin.name': 'Name',
+    'billing.admin.slug': 'Slug',
+    'billing.admin.cpu': 'CPU',
+    'billing.admin.memory': 'Memory',
+    'billing.admin.storage': 'Storage',
+    'billing.admin.connectionLimit': 'Connection limit',
+    'billing.admin.backupRetentionDays': 'Backup retention days',
+    'billing.admin.reason': 'Reason',
+    'billing.admin.createPlan': 'Create Plan',
+    'billing.admin.create': 'Create',
+    'billing.admin.versionedPricing': 'Versioned',
+    'billing.admin.createSucceeded': 'Created',
+    'billing.admin.createFailed': 'Failed',
+    'billing.resourceTypes.project': 'project',
+    'billing.resourceTypes.database': 'database',
+    'billing.credits': 'credits',
+    'billing.plans': 'Plans',
+    'billing.admin.wallets': 'Wallets',
+    'billing.invoices': 'Invoices',
+    'billing.topups': 'Topups',
+    'billing.admin.suspensions': 'Suspensions',
+    'billing.admin.suspensionsTab': 'Overdue',
+    'billing.admin.suspensionsDescription': 'Suspended resources',
+    'billing.admin.noRecords': 'No records',
+    'billing.admin.total': '{{count}} of {{total}}',
+    'billing.admin.user': 'User',
+    'billing.admin.addCredits': 'Add Credits',
+    'billing.admin.creditsAmount': 'Credits amount',
+    'billing.admin.saveCredits': 'Save Credits',
+    'billing.admin.adjustmentSuccess': 'Credits adjusted successfully',
+    'billing.admin.adjustmentFailed': 'Failed to adjust credits',
+    'billing.retry': 'Retry',
+    'billing.loadError': 'Load error',
+    'billing.refresh': 'Refresh',
+    'common.rowsPerPage': 'Rows per page',
+    'common.first': 'First',
+    'common.previous': 'Previous',
+    'common.next': 'Next',
+    'common.last': 'Last',
+  }
+  const base = map[key] ?? key
+  if (!data) return base
+  return Object.entries(data).reduce((s, [k, v]) => s.replace(`{{${k}}}`, String(v)), base)
+}
+
+vi.mock('@/lib/useTranslation', () => ({
+  default: () => ({ t, language: 'en' }),
+}))
+
+vi.mock('@/stores/authStore', () => ({
+  default: vi.fn(),
+}))
+
+const emptyPage = { page: 1, limit: 10, total: 0, data: [] }
+
+describe('AdminBilling pricing form payload', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(true)
+    ;(billingAPI.adminCatalog as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { specs: [], packages: [] } })
+    ;(billingAPI.adminWallets as ReturnType<typeof vi.fn>).mockResolvedValue({ data: emptyPage })
+    ;(billingAPI.adminInvoices as ReturnType<typeof vi.fn>).mockResolvedValue({ data: emptyPage })
+    ;(billingAPI.adminTopups as ReturnType<typeof vi.fn>).mockResolvedValue({ data: emptyPage })
+    ;(billingAPI.adminSuspensions as ReturnType<typeof vi.fn>).mockResolvedValue({ data: emptyPage })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.clearAllMocks()
+  })
+
+  it('submits project spec without database-only fields', async () => {
+    ;(billingAPI.createSpec as ReturnType<typeof vi.fn>).mockResolvedValue({ data: {} })
+
+    render(<AdminBilling />)
+    await waitFor(() => expect(billingAPI.adminCatalog).toHaveBeenCalledTimes(1))
+
+    fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: 'Starter' } })
+    fireEvent.change(screen.getByLabelText(/Slug/i), { target: { value: 'starter' } })
+    fireEvent.change(screen.getByLabelText(/Monthly Credits/i), { target: { value: '100' } })
+    fireEvent.change(screen.getByLabelText(/CPU/i), { target: { value: '500' } })
+    fireEvent.change(screen.getByLabelText(/Memory/i), { target: { value: '512' } })
+    fireEvent.change(screen.getByLabelText(/Storage/i), { target: { value: '10' } })
+    fireEvent.change(screen.getAllByLabelText(/Reason/i)[0], { target: { value: 'init' } })
+
+    await act(async () => fireEvent.click(screen.getAllByRole('button', { name: /Create/i })[0]))
+
+    await waitFor(() => expect(billingAPI.createSpec).toHaveBeenCalledTimes(1))
+    const payload = (billingAPI.createSpec as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(payload.type).toBe('project')
+    expect(payload).not.toHaveProperty('connection_limit')
+    expect(payload).not.toHaveProperty('backup_retention_days')
+  })
+
+  it('submits database spec with database fields', async () => {
+    ;(billingAPI.createSpec as ReturnType<typeof vi.fn>).mockResolvedValue({ data: {} })
+
+    render(<AdminBilling />)
+    await waitFor(() => expect(billingAPI.adminCatalog).toHaveBeenCalledTimes(1))
+
+    const hiddenInput = document.querySelector('input[name="type"]') as HTMLInputElement
+    await act(async () => fireEvent.change(hiddenInput, { target: { value: 'database' } }))
+
+    fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: 'DB Small' } })
+    fireEvent.change(screen.getByLabelText(/Slug/i), { target: { value: 'db-small' } })
+    fireEvent.change(screen.getByLabelText(/Monthly Credits/i), { target: { value: '200' } })
+    fireEvent.change(screen.getAllByLabelText(/Connection limit/i)[0], { target: { value: '10' } })
+    fireEvent.change(screen.getAllByLabelText(/Backup retention days/i)[0], { target: { value: '7' } })
+    fireEvent.change(screen.getAllByLabelText(/Reason/i)[0], { target: { value: 'init' } })
+
+    await act(async () => fireEvent.click(screen.getAllByRole('button', { name: /Create/i })[0]))
+
+    await waitFor(() => expect(billingAPI.createSpec).toHaveBeenCalledTimes(1))
+    const payload = (billingAPI.createSpec as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(payload.type).toBe('database')
+    expect(payload.connection_limit).toBe(10)
+    expect(payload.backup_retention_days).toBe(7)
+  })
+
+  it('generates and passes unique Idempotency-Key when submitting wallet credit adjustment', async () => {
+    const singleWalletPage = {
+      page: 1,
+      limit: 10,
+      total: 1,
+      data: [
+        {
+          id: 1,
+          user_id: 10,
+          user_name: 'Test User',
+          user_email: 'user10@example.test',
+          balance_credits: 50,
+          created_at: '2026-08-01T00:00:00Z',
+          updated_at: '2026-08-01T00:00:00Z',
+        },
+      ],
+    }
+    ;(billingAPI.adminWallets as ReturnType<typeof vi.fn>).mockResolvedValue({ data: singleWalletPage })
+    ;(billingAPI.adjustWalletCredits as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { success: true } })
+
+    render(<AdminBilling />)
+    await waitFor(() => expect(billingAPI.adminCatalog).toHaveBeenCalledTimes(1))
+
+    // Click "Add Credits" button in wallet list or header
+    const addCreditsButtons = await screen.findAllByRole('button', { name: /Add Credits/i })
+    await act(async () => fireEvent.click(addCreditsButtons[addCreditsButtons.length - 1]))
+
+    const creditsInput = await screen.findByLabelText(/Credits amount/i)
+    const reasonInput = screen.getByPlaceholderText(/Explain why credits are being granted|Audit reason/i)
+    const submitButton = screen.getByRole('button', { name: /Save Credits/i })
+
+    await act(async () => {
+      fireEvent.change(creditsInput, { target: { value: '25' } })
+      fireEvent.change(reasonInput, { target: { value: 'Grant compensation' } })
+    })
+
+    await act(async () => {
+      fireEvent.click(submitButton)
+    })
+
+    await waitFor(() => {
+      expect(billingAPI.adjustWalletCredits).toHaveBeenCalledTimes(1)
+    })
+
+    const passedKey = (billingAPI.adjustWalletCredits as ReturnType<typeof vi.fn>).mock.calls[0][2]
+    expect(passedKey).toMatch(/^adj-/)
+  })
+
+  it('sends wallet search to server after debounce', async () => {
+    render(<AdminBilling />)
+    await waitFor(() => expect(billingAPI.adminWallets).toHaveBeenCalled())
+    ;(billingAPI.adminWallets as ReturnType<typeof vi.fn>).mockClear()
+
+    fireEvent.change(screen.getByPlaceholderText('billing.admin.searchWallets'), { target: { value: 'target user' } })
+    await act(async () => vi.advanceTimersByTime(300))
+
+    await waitFor(() => expect(billingAPI.adminWallets).toHaveBeenLastCalledWith({ page: 1, limit: 10, search: 'target user' }))
+  })
+
+  it('shows row role for regular admin when user is outside the user-list limit', async () => {
+    ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(false)
+    ;(billingAPI.adminWallets as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        page: 1,
+        limit: 10,
+        total: 2,
+        data: [
+          { user_id: 101, user_name: 'User 101', user_email: 'user101@example.test', user_role: 'user', balance_credits: 20, updated_at: '2026-09-15T00:00:00Z' },
+          { user_id: 102, user_name: 'User 102', user_email: 'user102@example.test', balance_credits: 10, updated_at: '2026-09-15T00:00:00Z' },
+        ],
+      },
+    })
+
+    render(<AdminBilling />)
+
+    expect(await screen.findByText('User 101')).toBeInTheDocument()
+    expect(screen.getByText('user')).toBeInTheDocument()
+    expect(within(screen.getByText('User 102').closest('tr') as HTMLElement).getByText('—')).toBeInTheDocument()
+    expect(usersAPI.list).not.toHaveBeenCalled()
+  })
+
+  it('ignores an older billing response that resolves after a newer search', async () => {
+    render(<AdminBilling />)
+    await waitFor(() => expect(billingAPI.adminWallets).toHaveBeenCalled())
+
+    let resolveOld: (value: unknown) => void = () => {}
+    let resolveNew: (value: unknown) => void = () => {}
+    ;(billingAPI.adminWallets as ReturnType<typeof vi.fn>).mockImplementation(({ search }) => new Promise((resolve) => {
+      if (search === 'old') resolveOld = resolve
+      if (search === 'new') resolveNew = resolve
+    }))
+
+    const search = screen.getByPlaceholderText('billing.admin.searchWallets')
+    fireEvent.change(search, { target: { value: 'old' } })
+    await act(async () => vi.advanceTimersByTime(300))
+    await waitFor(() => expect(billingAPI.adminWallets).toHaveBeenLastCalledWith({ page: 1, limit: 10, search: 'old' }))
+
+    fireEvent.change(search, { target: { value: 'new' } })
+    await act(async () => vi.advanceTimersByTime(300))
+    await waitFor(() => expect(billingAPI.adminWallets).toHaveBeenLastCalledWith({ page: 1, limit: 10, search: 'new' }))
+
+    await act(async () => resolveNew({ data: { page: 1, limit: 10, total: 1, data: [{ user_id: 102, user_name: 'Newest User', user_email: 'new@example.test', balance_credits: 20, updated_at: '2026-09-15T00:00:00Z' }] } }))
+    expect(await screen.findByText('Newest User')).toBeInTheDocument()
+
+    await act(async () => resolveOld({ data: { page: 1, limit: 10, total: 1, data: [{ user_id: 101, user_name: 'Stale User', user_email: 'old@example.test', balance_credits: 10, updated_at: '2026-09-14T00:00:00Z' }] } }))
+    expect(screen.getByText('Newest User')).toBeInTheDocument()
+    expect(screen.queryByText('Stale User')).not.toBeInTheDocument()
+  })
+
+  it('paginates suspended resources to keep the table bounded', async () => {
+    const suspensions = Array.from({ length: 12 }, (_, index) => ({
+      user_id: index + 1,
+      resource_id: index + 1,
+      resource_type: 'database',
+      status: 'payment_due',
+      oldest_due_at: '2026-09-07T00:00:00Z',
+      payment_due_days: 6,
+    }))
+    ;(billingAPI.adminSuspensions as ReturnType<typeof vi.fn>).mockImplementation(({ page = 1, limit = 10 }) => Promise.resolve({
+      data: {
+        page,
+        limit,
+        total: suspensions.length,
+        data: suspensions.slice((page - 1) * limit, page * limit),
+      },
+    }))
+
+    render(<AdminBilling />)
+
+    await act(async () => fireEvent.click(await screen.findByRole('tab', { name: /Overdue/ })))
+    expect(await screen.findByText('database #1')).toBeInTheDocument()
+    expect(screen.getByText('database #10')).toBeInTheDocument()
+    expect(screen.queryByText('database #11')).not.toBeInTheDocument()
+    expect(screen.getByText('1–10 / 12')).toBeInTheDocument()
+
+    const pagination = screen.getByText('1–10 / 12').parentElement?.parentElement as HTMLElement
+    const card = pagination.closest('[data-slot="card"]') as HTMLElement
+    const main = document.createElement('main')
+    main.id = 'main-content'
+    main.scrollTop = 300
+    const scrollTo = vi.fn()
+    main.scrollTo = scrollTo as unknown as typeof main.scrollTo
+    document.body.appendChild(main)
+    const rect = (top: number) => ({ top, bottom: top + 40, left: 0, right: 100, width: 100, height: 40, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(rect(100))
+    vi.spyOn(main, 'getBoundingClientRect').mockReturnValue(rect(20))
+    let frame: FrameRequestCallback | undefined
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frame = callback
+      return 1
+    })
+
+    try {
+      await act(async () => fireEvent.click(within(pagination).getByRole('button', { name: 'Next' })))
+      await waitFor(() => expect(billingAPI.adminSuspensions).toHaveBeenLastCalledWith({ page: 2, limit: 10 }))
+      await act(async () => frame?.(0))
+
+      expect(screen.getByText('database #11')).toBeInTheDocument()
+      expect(screen.getByText('database #12')).toBeInTheDocument()
+      expect(screen.queryByText('database #1')).not.toBeInTheDocument()
+      expect(scrollTo).toHaveBeenCalledWith({ top: 356, behavior: 'auto' })
+    } finally {
+      requestFrame.mockRestore()
+      main.remove()
+    }
+  })
+})

@@ -37,6 +37,7 @@ export interface StudioContextType {
   isActionLoading: boolean;
   setIsActionLoading: (val: boolean) => void;
   loadStudioData: (silent?: boolean) => Promise<void>;
+  loadCredentials: () => Promise<string>;
   triggerConfirmation: (options: ConfirmationModalOptions) => void;
   setActiveTab: (tab: 'dashboard' | 'tables' | 'structure' | 'query' | 'backups') => void;
   t: (keyPath: string, data?: Record<string, string | number>) => string;

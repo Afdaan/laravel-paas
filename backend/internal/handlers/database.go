@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,12 +21,14 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/services"
+	"github.com/laravel-paas/backend/internal/services/billing"
 	projectServicePkg "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/utils"
+	"github.com/laravel-paas/shared/services/billinggate"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -114,6 +115,12 @@ func (h *DatabaseHandler) requireProjectWithDatabase(c *fiber.Ctx) (*models.Proj
 
 // recordAuditLog stores visual designer and management transitions in the platform AuditLog
 func (h *DatabaseHandler) recordAuditLog(c *fiber.Ctx, projectID uint, operation, fromState, toState, status string, errMsg string) {
+	if err := h.recordAuditLogRequired(c, projectID, operation, fromState, toState, status, errMsg); err != nil {
+		slog.Warn("Failed to record database audit log", "project_id", projectID, "error", err)
+	}
+}
+
+func (h *DatabaseHandler) recordAuditLogRequired(c *fiber.Ctx, projectID uint, operation, fromState, toState, status string, errMsg string) error {
 	userID := uint(0)
 	if uidVal := c.Locals("user_id"); uidVal != nil {
 		if id, ok := uidVal.(uint); ok {
@@ -132,9 +139,7 @@ func (h *DatabaseHandler) recordAuditLog(c *fiber.Ctx, projectID uint, operation
 		CreatedAt:    time.Now(),
 	}
 
-	if err := h.databaseService.LogAudit(log); err != nil {
-		slog.Warn("Failed to record database audit log", "project_id", projectID, "error", err)
-	}
+	return h.databaseService.LogAudit(log)
 }
 
 // GetCredentials returns database credentials
@@ -145,6 +150,9 @@ func (h *DatabaseHandler) GetCredentials(c *fiber.Ctx) error {
 	}
 
 	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(project.ID)
+	if err := h.recordAuditLogRequired(c, project.ID, "db_reveal_credentials", "active", "active", "completed", ""); err != nil {
+		return apperr.New(500, "DATABASE_CREDENTIAL_AUDIT_FAILED", "Unable to record credential access")
+	}
 	if err != nil {
 		// Fallback to legacy MySQL details if DatabaseInstance not initialized yet
 		c.Set(fiber.HeaderCacheControl, "no-store")
@@ -181,86 +189,20 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned for this project"})
 	}
 
-	newPassword := utils.GeneratePassword(16)
-
-	var lockedProject models.Project
 	var jobID string
-	var isRunning bool
-
-	// Guard against concurrent operations using a pessimistic transaction lock
-	errTx := h.db.Transaction(func(tx *gorm.DB) error {
-		// Acquire pessimistic row-level lock on the project to prevent race-triggered corruption
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedProject, project.ID).Error; err != nil {
-			return err
-		}
-
-		isQueued, errCheck := h.redisService.IsProjectQueued(lockedProject.ID)
-		if errCheck == nil && isQueued {
-			return fiber.ErrConflict
-		}
-
-		if lockedProject.DeploymentStatus != models.DepStatusCompleted &&
-			lockedProject.DeploymentStatus != models.DepStatusFailed &&
-			lockedProject.DeploymentStatus != models.DepStatusCancelled {
-			return fiber.ErrConflict
-		}
-
-		// 1. Update password inside container engine
-		if instance.Engine == "postgresql" {
-			pgService := infrastructure.NewPostgreSQLService()
-			if err := pgService.UpdatePassword(instance.Username, newPassword); err != nil {
-				return err
-			}
-		} else {
-			mysqlService := infrastructure.NewMySQLService()
-			if err := mysqlService.UpdatePassword(instance.Username, newPassword); err != nil {
-				return err
-			}
-		}
-
-		// 2. Persist in database records within the atomic transaction
-		instance.Password = newPassword
-		if err := tx.Save(instance).Error; err != nil {
-			return err
-		}
-
-		lockedProject.DatabasePassword = newPassword
-
-		if err := tx.Save(&lockedProject).Error; err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if errTx != nil {
-		h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "failed", errTx.Error())
-		if errors.Is(errTx, fiber.ErrConflict) {
-			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Project has an active deployment or operation in progress. Please wait."})
-		}
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Credentials rotation failed: " + errTx.Error()})
+	lockedProject, rotatedInstance, envSyncGeneration, err := services.NewDatabaseCredentialRotationService(h.db).StartOrResume(context.Background(), project.ID, instance.ID)
+	if err != nil {
+		h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "failed", err.Error())
+		return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"success": false, "message": "Credential rotation will retry automatically"})
 	}
-
-	isRunning = lockedProject.ContainerID != nil && *lockedProject.ContainerID != ""
+	instance = &rotatedInstance
 
 	// 3. Trigger fan-out env propagation to OTHER projects bound to the same secret store
 	h.secretStoreService.PropagateDatabaseEnvFanout(&lockedProject)
 
-	if isRunning {
-		var errQueue error
-		jobID, errQueue = h.redisService.EnqueueDeployment(lockedProject.ID, lockedProject.UserID, "update_env")
-		if errQueue != nil {
-			// Compensate by saving failed deployment state and returning an error
-			msg := fmt.Sprintf("Failed to queue environment update after rotating credentials: %v", errQueue)
-			h.db.Model(&models.Project{}).Where("id = ?", lockedProject.ID).Updates(map[string]interface{}{
-				"deployment_status":  models.DepStatusFailed,
-				"deployment_message": msg,
-			})
-			h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "failed", errQueue.Error())
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to queue environment update: " + errQueue.Error()})
-		}
-
-		// Persist the job id and status atomically after successful enqueue
+	if jobID, err = h.redisService.EnqueueDeploymentEnvSync(lockedProject.ID, lockedProject.UserID, envSyncGeneration); err != nil {
+		slog.Error("Queue durable database environment sync failed", "project_id", lockedProject.ID, "generation", envSyncGeneration, "error", err)
+	} else {
 		now := time.Now()
 		msg := "Credentials rotation env update"
 		errUpdate := h.db.Model(&models.Project{}).Where("id = ?", lockedProject.ID).Updates(map[string]interface{}{
@@ -279,17 +221,11 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 	h.databaseService.InvalidateProjectDB(instance.Name)
 	h.recordAuditLog(c, project.ID, "db_credential_rotate", "active", "active", "completed", "")
 
-	if isRunning {
-		return c.JSON(fiber.Map{
-			"success": true,
-			"message": "Database credentials rotated successfully. Environment update queued.",
-			"job_id":  jobID,
-		})
-	}
-
 	return c.JSON(fiber.Map{
-		"success": true,
-		"message": "Database credentials rotated successfully. Environment updated.",
+		"success":             true,
+		"message":             "Database credentials rotated successfully. Environment synchronization scheduled.",
+		"job_id":              jobID,
+		"env_sync_generation": envSyncGeneration,
 	})
 }
 
@@ -312,42 +248,25 @@ func (h *DatabaseHandler) UpdateStatus(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request payload"})
 	}
 
+	desiredStatus := models.DBStatusActive
 	if req.Suspend {
-		if instance.Engine == "postgresql" {
-			pgService := infrastructure.NewPostgreSQLService()
-			if err := pgService.UpdateStatus(instance.Name, instance.Username, true); err != nil {
-				slog.Warn("Failed to suspend PostgreSQL database", "project_id", project.ID, "error", err.Error())
-				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to suspend PostgreSQL database"})
-			}
-		} else {
-			mysqlService := infrastructure.NewMySQLService()
-			if err := mysqlService.UpdateStatus(instance.Name, instance.Username, true); err != nil {
-				slog.Warn("Failed to suspend MySQL database", "project_id", project.ID, "error", err.Error())
-				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to suspend MySQL database"})
-			}
-		}
-		instance.Status = models.DBStatusSuspended
-	} else {
-		if instance.Engine == "postgresql" {
-			pgService := infrastructure.NewPostgreSQLService()
-			if err := pgService.UpdateStatus(instance.Name, instance.Username, false); err != nil {
-				slog.Warn("Failed to resume PostgreSQL database", "project_id", project.ID, "error", err.Error())
-				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resume PostgreSQL database"})
-			}
-		} else {
-			mysqlService := infrastructure.NewMySQLService()
-			if err := mysqlService.UpdateStatus(instance.Name, instance.Username, false); err != nil {
-				slog.Warn("Failed to resume MySQL database", "project_id", project.ID, "error", err.Error())
-				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resume MySQL database"})
-			}
-		}
-		instance.Status = models.DBStatusActive
+		desiredStatus = models.DBStatusSuspended
 	}
-
-	if err := h.db.Save(instance).Error; err != nil {
-		slog.Warn("Failed to persist database status update", "project_id", project.ID, "error", err.Error())
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to persist database status update"})
+	if desiredStatus == models.DBStatusActive {
+		if err := h.requireActiveDatabaseBillingResource(c.UserContext(), instance.ID); err != nil {
+			return err
+		}
 	}
+	updatedInstance, err := services.NewDatabaseStatusOperationService(h.db).Request(context.Background(), instance.ID, desiredStatus)
+	if err != nil {
+		slog.Warn("Database status operation pending retry", "project_id", project.ID, "error", err.Error())
+		var appErr *apperr.AppError
+		if errors.As(err, &appErr) {
+			return appErr
+		}
+		return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"success": false, "message": "Database status change will retry automatically"})
+	}
+	instance = &updatedInstance
 
 	h.recordAuditLog(c, project.ID, "db_status_change", string(instance.Status), string(instance.Status), "completed", "")
 
@@ -356,6 +275,29 @@ func (h *DatabaseHandler) UpdateStatus(c *fiber.Ctx) error {
 		"status":  instance.Status,
 		"message": fmt.Sprintf("Database instance status updated to %s.", instance.Status),
 	})
+}
+
+func (h *DatabaseHandler) requireActiveDatabaseBillingResource(ctx context.Context, databaseID uint) error {
+	if h == nil || h.cfg == nil || !h.cfg.BillingEnabled {
+		return nil
+	}
+	if h.db == nil {
+		return apperr.New(503, "BILLING_GATE_UNAVAILABLE", "Billing status is temporarily unavailable")
+	}
+	var resource models.BillableResource
+	err := h.db.WithContext(ctx).
+		Where("type = ? AND resource_id = ?", models.BillableTypeDatabase, databaseID).
+		First(&resource).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return apperr.New(402, "BILLING_PAYMENT_DUE", "Database resume requires an active billing resource")
+	}
+	if err != nil {
+		return apperr.New(503, "BILLING_GATE_UNAVAILABLE", "Billing status is temporarily unavailable")
+	}
+	if resource.BillingStatus != models.BillableResourceStatusActive {
+		return apperr.New(402, "BILLING_PAYMENT_DUE", "Database resume requires an active billing resource")
+	}
+	return nil
 }
 
 // GetOverview returns metadata summary stats for database dashboard
@@ -398,7 +340,6 @@ func (h *DatabaseHandler) GetOverview(c *fiber.Ctx) error {
 		"table_count":  len(tables),
 		"row_count":    totalRows,
 		"size":         sizeStr,
-		"allocated":    instance.StorageAllocation,
 		"created_at":   instance.CreatedAt,
 		"database":     instance.Name,
 		"username":     instance.Username,
@@ -723,7 +664,6 @@ func (h *DatabaseHandler) GetMetrics(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"active_connections": activeConnections,
 		"size_kb":            totalSizeKB,
-		"storage_limit":      instance.StorageAllocation,
 	})
 }
 
@@ -765,39 +705,75 @@ func (h *DatabaseHandler) TransferDatabase(c *fiber.Ctx) error {
 	if role != models.RoleAdmin && role != models.RoleSuperAdmin && targetProject.UserID != userID {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "You do not have permission to access the target project"})
 	}
+	if targetProject.UserID != sourceProject.UserID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Database transfer is limited to projects owned by the same user"})
+	}
 
 	// 5. Fetch source database instance
 	instance, err := h.databaseService.GetDatabaseInstanceByProjectID(sourceProject.ID)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database instance not provisioned for source project"})
 	}
-
-	// 6. Check if target project already has an active database instance (Option 1: Prevent)
-	targetInstance, err := h.databaseService.GetDatabaseInstanceByProjectID(targetProject.ID)
-	if err == nil && targetInstance != nil {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Target project already has an active database instance"})
-	}
-
-	// 7. Update database record associations
 	oldProjectID := instance.ProjectID
-	targetProjID := targetProject.ID
-	instance.ProjectID = &targetProjID
-	if err := h.db.Save(instance).Error; err != nil {
-		slog.Warn("Failed to update database instance ownership", "project_id", sourceProject.ID, "target_project_id", targetProject.ID, "error", err.Error())
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update database instance ownership"})
-	}
 
-	// Also update Project database name & password fields to match!
-	targetProject.DatabaseName = sourceProject.DatabaseName
-	targetProject.DatabasePassword = sourceProject.DatabasePassword
-	if err := h.db.Save(targetProject).Error; err != nil {
-		slog.Warn("Failed to update target project database credentials", "error", err)
-	}
-
-	sourceProject.DatabaseName = nil
-	sourceProject.DatabasePassword = ""
-	if err := h.db.Save(sourceProject).Error; err != nil {
-		slog.Warn("Failed to update source project database credentials", "error", err)
+	var sourceEnvGeneration, targetEnvGeneration uint
+	err = services.WithDatabaseCleanupIdentityLock(context.Background(), h.db, instance.Engine, instance.Name, instance.Username, func(lockDB *gorm.DB) error {
+		return lockDB.Transaction(func(tx *gorm.DB) error {
+			lockedProjects := []models.Project{}
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", []uint{sourceProject.ID, targetProject.ID}).Order("id ASC").Find(&lockedProjects).Error; err != nil {
+				return err
+			}
+			if len(lockedProjects) != 2 {
+				return gorm.ErrRecordNotFound
+			}
+			var lockedSource, lockedTarget *models.Project
+			for index := range lockedProjects {
+				if lockedProjects[index].ID == sourceProject.ID {
+					lockedSource = &lockedProjects[index]
+				} else {
+					lockedTarget = &lockedProjects[index]
+				}
+			}
+			if lockedSource == nil || lockedTarget == nil || lockedSource.UserID != lockedTarget.UserID {
+				return fiber.ErrForbidden
+			}
+			var lockedInstance models.DatabaseInstance
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND project_id = ?", instance.ID, lockedSource.ID).First(&lockedInstance).Error; err != nil {
+				return err
+			}
+			var targetCount int64
+			if err := tx.Model(&models.DatabaseInstance{}).Where("project_id = ? AND id <> ? AND status <> ?", lockedTarget.ID, lockedInstance.ID, models.DBStatusDeleted).Count(&targetCount).Error; err != nil {
+				return err
+			}
+			if targetCount > 0 {
+				return fiber.ErrConflict
+			}
+			if err := tx.Model(&lockedInstance).Update("project_id", lockedTarget.ID).Error; err != nil {
+				return fmt.Errorf("transfer database instance: %w", err)
+			}
+			if err := tx.Model(lockedSource).Updates(map[string]any{"database_name": nil, "database_password": "", "database_option": "none"}).Error; err != nil {
+				return fmt.Errorf("clear source database credentials: %w", err)
+			}
+			if err := tx.Model(lockedTarget).Updates(map[string]any{"database_name": lockedInstance.Name, "database_password": lockedInstance.Password, "database_option": "existing"}).Error; err != nil {
+				return fmt.Errorf("set target database credentials: %w", err)
+			}
+			var err error
+			sourceEnvGeneration, err = services.RequestProjectEnvSyncTx(tx, lockedSource.ID)
+			if err != nil {
+				return err
+			}
+			targetEnvGeneration, err = services.RequestProjectEnvSyncTx(tx, lockedTarget.ID)
+			return err
+		})
+	})
+	if err != nil {
+		if errors.Is(err, fiber.ErrConflict) {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Target project already has an active database instance"})
+		}
+		if errors.Is(err, fiber.ErrForbidden) {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Database transfer is limited to projects owned by the same user"})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to transfer database ownership"})
 	}
 
 	// 8. Record audit log
@@ -807,13 +783,13 @@ func (h *DatabaseHandler) TransferDatabase(c *fiber.Ctx) error {
 	}
 	h.recordAuditLog(c, sourceProject.ID, "db_transfer", oldProjIDStr, strconv.Itoa(int(targetProject.ID)), "completed", "")
 
-	// 9. Hot-swap environment binding: trigger env update redeployment for both source and target projects
-	sourceJobID, err := h.redisService.EnqueueDeployment(sourceProject.ID, sourceProject.UserID, "update_env")
+	// 9. Durable environment synchronization for both projects.
+	sourceJobID, err := h.redisService.EnqueueDeploymentEnvSync(sourceProject.ID, sourceProject.UserID, sourceEnvGeneration)
 	if err != nil {
 		slog.Warn("Failed to enqueue source project update_env deployment", "project_id", sourceProject.ID, "error", err)
 	}
 
-	targetJobID, err := h.redisService.EnqueueDeployment(targetProject.ID, targetProject.UserID, "update_env")
+	targetJobID, err := h.redisService.EnqueueDeploymentEnvSync(targetProject.ID, targetProject.UserID, targetEnvGeneration)
 	if err != nil {
 		slog.Warn("Failed to enqueue target project update_env deployment", "project_id", targetProject.ID, "error", err)
 	}
@@ -1215,6 +1191,7 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this project"})
 	}
 
+	var envSyncGeneration uint
 	// Locked transaction: re-fetch and recheck to prevent concurrent attach race
 	errTx := h.db.Transaction(func(tx *gorm.DB) error {
 		// Lock database row and recheck availability
@@ -1250,6 +1227,11 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 		if err := tx.Save(project).Error; err != nil {
 			return err
 		}
+		generation, err := services.RequestProjectEnvSyncTx(tx, project.ID)
+		if err != nil {
+			return err
+		}
+		envSyncGeneration = generation
 
 		return nil
 	})
@@ -1265,6 +1247,9 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to attach database: " + errMsg})
 	}
 
+	if _, err := h.redisService.EnqueueDeploymentEnvSync(project.ID, project.UserID, envSyncGeneration); err != nil {
+		slog.Warn("Queue durable database attach environment sync failed", "project_id", project.ID, "generation", envSyncGeneration, "error", err)
+	}
 	// Propagate env updates (after commit). Report enqueue failure in audit.
 	if err := h.secretStoreService.PropagateDatabaseEnv(project); err != nil {
 		h.recordAuditLog(c, project.ID, "db_attach", "active", "active", "env_sync_pending", "env propagation enqueue failed: "+err.Error())
@@ -1317,33 +1302,41 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 	}
 
 	// Locked transaction: re-fetch and recheck to prevent concurrent detach race
-	errTx := h.db.Transaction(func(tx *gorm.DB) error {
-		// Lock database row and recheck it's still attached
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dbInst, dbInst.ID).Error; err != nil {
-			return fmt.Errorf("database not found")
-		}
-		if dbInst.ProjectID == nil {
-			return fmt.Errorf("database is not attached to any project")
-		}
+	var envSyncGeneration uint
+	errTx := services.WithDatabaseCleanupIdentityLock(context.Background(), h.db, dbInst.Engine, dbInst.Name, dbInst.Username, func(lockDB *gorm.DB) error {
+		return lockDB.Transaction(func(tx *gorm.DB) error {
+			// Lock database row and recheck it's still attached
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&dbInst, dbInst.ID).Error; err != nil {
+				return fmt.Errorf("database not found")
+			}
+			if dbInst.ProjectID == nil {
+				return fmt.Errorf("database is not attached to any project")
+			}
 
-		// Lock project row
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, project.ID).Error; err != nil {
-			return fmt.Errorf("project not found")
-		}
+			// Lock project row
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, project.ID).Error; err != nil {
+				return fmt.Errorf("project not found")
+			}
 
-		dbInst.ProjectID = nil
-		if err := tx.Save(&dbInst).Error; err != nil {
-			return err
-		}
+			dbInst.ProjectID = nil
+			if err := tx.Save(&dbInst).Error; err != nil {
+				return err
+			}
 
-		project.DatabaseName = nil
-		project.DatabasePassword = ""
-		project.DatabaseOption = "none"
-		if err := tx.Save(&project).Error; err != nil {
-			return err
-		}
+			project.DatabaseName = nil
+			project.DatabasePassword = ""
+			project.DatabaseOption = "none"
+			if err := tx.Save(&project).Error; err != nil {
+				return err
+			}
+			generation, err := services.RequestProjectEnvSyncTx(tx, project.ID)
+			if err != nil {
+				return err
+			}
+			envSyncGeneration = generation
 
-		return nil
+			return nil
+		})
 	})
 
 	if errTx != nil {
@@ -1355,6 +1348,9 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to detach database: " + errMsg})
 	}
 
+	if _, err := h.redisService.EnqueueDeploymentEnvSync(project.ID, project.UserID, envSyncGeneration); err != nil {
+		slog.Warn("Queue durable database detach environment sync failed", "project_id", project.ID, "generation", envSyncGeneration, "error", err)
+	}
 	// Propagate env updates (removes DB_* vars since association is now nil, after commit)
 	if err := h.secretStoreService.PropagateDatabaseEnv(&project); err != nil {
 		h.recordAuditLog(c, projectID, "db_detach", "active", "active", "env_sync_pending", "env propagation enqueue failed: "+err.Error())
@@ -1391,6 +1387,9 @@ func (h *DatabaseHandler) ResetDatabaseInstance(c *fiber.Ctx) error {
 	}
 	if dbInst.Status != models.DBStatusActive {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Database is not active"})
+	}
+	if err := h.requireDatabaseRuntimeAction(c, &dbInst); err != nil {
+		return err
 	}
 
 	// Connect and reset
@@ -1449,97 +1448,75 @@ func (h *DatabaseHandler) ReinstallDatabaseInstance(c *fiber.Ctx) error {
 	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
 	}
-
-	// Fetch DatabaseInstance and validate ownership
-	var dbInst models.DatabaseInstance
-	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
+	var instance models.DatabaseInstance
+	if err := h.db.Where("uid = ?", dbUID).First(&instance).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to load database"})
 	}
-	if dbInst.UserID != userID {
+	if instance.UserID != userID {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
 	}
-	if dbInst.Status != models.DBStatusActive {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Database is not active"})
+	if err := h.requireDatabaseRuntimeAction(c, &instance); err != nil {
+		return err
 	}
 
-	newPassword := utils.GeneratePassword(16)
+	project, instance, err := services.NewDatabaseReinstallRecoveryService(h.db, h.secretStoreService).
+		StartOrResumeDatabaseReinstall(context.Background(), dbUID, userID)
 
-	// 1. Drop and recreate schema
-	if dbInst.Engine == "postgresql" {
-		pgService := infrastructure.NewPostgreSQLService()
-		if err := pgService.DropDatabase(dbInst.Name); err != nil {
-			slog.Error("Failed to drop postgresql database during reinstall", "db", dbInst.Name, "error", err.Error())
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to drop database: " + err.Error()})
+	if err != nil {
+		nextStatus := "active"
+		var task models.DatabaseReinstallRecoveryTask
+		if h.db.Where("database_instance_uid = ?", dbUID).First(&task).Error == nil {
+			nextStatus = "suspended"
 		}
-		if err := pgService.CreateDatabase(dbInst.Name, newPassword); err != nil {
-			slog.Error("Failed to recreate postgresql database during reinstall", "db", dbInst.Name, "error", err.Error())
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to recreate database: " + err.Error()})
+		h.recordAuditLog(c, 0, "db_reinstall", "active", nextStatus, "failed", err.Error())
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 		}
-	} else {
-		mysqlService := infrastructure.NewMySQLService()
-		if err := mysqlService.DropDatabase(dbInst.Name); err != nil {
-			slog.Error("Failed to drop mysql database during reinstall", "db", dbInst.Name, "error", err.Error())
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to drop database: " + err.Error()})
+		var appErr *apperr.AppError
+		if errors.As(err, &appErr) {
+			return appErr
 		}
-		if err := mysqlService.CreateDatabase(dbInst.Name, newPassword); err != nil {
-			slog.Error("Failed to recreate mysql database during reinstall", "db", dbInst.Name, "error", err.Error())
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to recreate database: " + err.Error()})
-		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reinstall database"})
 	}
 
-	redeployRequired := false
-	var project models.Project
-
-	// 2. Persist in database records
-	errTx := h.db.Transaction(func(tx *gorm.DB) error {
-		dbInst.Password = newPassword
-		if err := tx.Save(&dbInst).Error; err != nil {
-			return err
-		}
-
-		if dbInst.ProjectID != nil {
-			redeployRequired = true
-			if err := tx.First(&project, *dbInst.ProjectID).Error; err != nil {
-				return err
-			}
-			project.DatabasePassword = newPassword
-			if err := tx.Save(&project).Error; err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-
-	if errTx != nil {
-		h.recordAuditLog(c, 0, "db_reinstall", "active", "active", "failed", errTx.Error())
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to reinstall database: " + errTx.Error()})
-	}
-
-	if redeployRequired {
-		// Update credentials in secret store (after commit)
-		_ = h.secretStoreService.PropagateDatabaseEnv(&project)
-	}
-
-	h.databaseService.InvalidateProjectDB(dbInst.Name)
+	h.databaseService.InvalidateProjectDB(instance.Name)
 	h.recordAuditLog(c, 0, "db_reinstall", "active", "active", "completed", "")
 	return c.JSON(fiber.Map{
 		"success":          true,
 		"message":          "Database reinstalled and password rotated successfully",
-		"redeployRequired": redeployRequired,
+		"redeployRequired": project.ID != 0,
 	})
+}
+
+func (h *DatabaseHandler) requireDatabaseRuntimeAction(c *fiber.Ctx, instance *models.DatabaseInstance) error {
+	if h == nil || h.cfg == nil || !h.cfg.BillingEnabled || instance == nil {
+		return nil
+	}
+	err := billinggate.NewProjectRuntimeGate(h.db, true, h.cfg.BillingDeployBlockDays).CheckResource(c.UserContext(), models.BillableTypeDatabase, instance.ID, time.Now().UTC())
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, billinggate.ErrProjectActionBlocked), errors.Is(err, billinggate.ErrPaymentDueEvidenceUnavailable):
+		return apperr.New(402, "BILLING_PAYMENT_DUE", "Database actions are blocked until the overdue invoice is paid")
+	default:
+		return apperr.New(503, "BILLING_GATE_UNAVAILABLE", "Billing status is temporarily unavailable")
+	}
 }
 
 // CreateDatabase request body definition
 type CreateDatabaseRequest struct {
-	Engine   string `json:"engine"`
-	Name     string `json:"name"`
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Engine         string `json:"engine"`
+	Name           string `json:"name"`
+	Username       string `json:"username"`
+	Password       string `json:"password"`
+	BillableSpecID uint   `json:"billable_spec_id"`
 }
 
 // CreateDatabase handles creation of a standalone database instance
-func (h *DatabaseHandler) CreateDatabase(c *fiber.Ctx) error {
+func (h *DatabaseHandler) CreateDatabase(c *fiber.Ctx) (handlerErr error) {
 	var req CreateDatabaseRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
@@ -1552,6 +1529,9 @@ func (h *DatabaseHandler) CreateDatabase(c *fiber.Ctx) error {
 	userID, ok := uidVal.(uint)
 	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	if h.cfg.BillingEnabled && req.BillableSpecID == 0 {
+		return apperr.NewBadRequest("A database billing specification is required")
 	}
 
 	// Validate engine
@@ -1604,45 +1584,58 @@ func (h *DatabaseHandler) CreateDatabase(c *fiber.Ctx) error {
 		port = infrastructure.MySQLPort()
 	}
 
-	// Provision database in engine container
-	if req.Engine == "postgresql" {
-		pgService := infrastructure.NewPostgreSQLService()
-		if err := pgService.CreateDatabaseCustom(req.Name, req.Username, req.Password); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to provision PostgreSQL database: " + err.Error()})
-		}
-	} else {
-		mysqlService := infrastructure.NewMySQLService()
-		if err := mysqlService.CreateDatabaseCustom(req.Name, req.Username, req.Password); err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to provision MySQL database: " + err.Error()})
-		}
-	}
-
-	// Create DatabaseInstance record
 	dbInst := &models.DatabaseInstance{
-		UserID:            userID,
-		Engine:            req.Engine,
-		Name:              req.Name,
-		Username:          req.Username, // Use actual requested username instead of hardcoded req.Name
-		Password:          req.Password,
-		Host:              host,
-		Port:              port,
-		Status:            models.DBStatusActive,
-		StorageAllocation: 1073741824, // 1GB -> TODO to make configurable by plan or user input in future
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
+		UserID:    userID,
+		Engine:    req.Engine,
+		Name:      req.Name,
+		Username:  req.Username, // Use actual requested username instead of hardcoded req.Name
+		Password:  req.Password,
+		Host:      host,
+		Port:      port,
+		Status:    models.DBStatusActive,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
-
-	if err := h.db.Create(dbInst).Error; err != nil {
-		// Compensating cleanup on DB insert failure to prevent orphan physical DBs
-		slog.Error("Failed to save database instance record. Initiating compensating cleanup.", "error", err.Error())
-		if req.Engine == "postgresql" {
-			pgService := infrastructure.NewPostgreSQLService()
-			_ = pgService.DropDatabaseCustom(req.Name, req.Username)
-		} else {
-			mysqlService := infrastructure.NewMySQLService()
-			_ = mysqlService.DropDatabaseCustom(req.Name, req.Username)
+	var outcome standaloneDatabaseProvisionOutcome
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if outcome.SafeToCompensate && !outcome.DatabaseInstancePersisted && outcome.Ownership.HasResources() {
+				compensateStandaloneDatabase(h.db, req.Engine, req.Name, req.Username, outcome.Ownership)
+			}
+			slog.Error("Database provisioning panicked", "engine", req.Engine, "database_name", req.Name, "error", recovered)
+			handlerErr = apperr.New(500, "DATABASE_PROVISIONING_FAILED", "Failed to provision managed database")
 		}
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save database record: " + err.Error()})
+	}()
+	provisionErr := services.WithDatabaseCleanupIdentityLock(context.Background(), h.db, req.Engine, req.Name, req.Username, func(controlDB *gorm.DB) error {
+		if err := ensureNoDatabaseCleanupTask(controlDB, req.Engine, req.Name, req.Username); err != nil {
+			return err
+		}
+		if err := createStandaloneProvisioningIntent(controlDB, req.Engine, req.Name, req.Username); err != nil {
+			return err
+		}
+		var err error
+		outcome, err = h.persistAndProvisionStandaloneDatabase(controlDB, h.db, dbInst, req, userID)
+		if err != nil {
+			return releaseStandaloneProvisioningIntent(controlDB, req.Engine, req.Name, req.Username, err)
+		}
+		if err := completeStandaloneProvisioningIntent(controlDB, req.Engine, req.Name, req.Username); err != nil {
+			slog.Error("Database provisioning intent cleanup deferred after committed provisioning", "engine", req.Engine, "database_name", req.Name, "error", err)
+		}
+		return nil
+	})
+	if provisionErr != nil {
+		if outcome.SafeToCompensate && !outcome.DatabaseInstancePersisted && outcome.Ownership.HasResources() {
+			compensateStandaloneDatabase(h.db, req.Engine, req.Name, req.Username, outcome.Ownership)
+		}
+		switch {
+		case errors.Is(provisionErr, billing.ErrInsufficientCredits), errors.Is(provisionErr, billing.ErrInvalidInvoiceInput), errors.Is(provisionErr, billing.ErrResourceAlreadyBilled):
+			return mapDatabaseBillingError(provisionErr)
+		}
+		var appErr *apperr.AppError
+		if errors.As(provisionErr, &appErr) {
+			return appErr
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to provision managed database"})
 	}
 
 	h.recordAuditLog(c, 0, "db_create", "", "active", "completed", "")
@@ -1651,6 +1644,243 @@ func (h *DatabaseHandler) CreateDatabase(c *fiber.Ctx) error {
 		"success":  true,
 		"database": dbInst,
 	})
+}
+
+type standaloneDatabaseProvisionOutcome struct {
+	Ownership                 infrastructure.ProvisioningOwnership
+	DatabaseInstancePersisted bool
+	SafeToCompensate          bool
+}
+
+func (h *DatabaseHandler) persistAndProvisionStandaloneDatabase(db, recoveryDB *gorm.DB, dbInst *models.DatabaseInstance, req CreateDatabaseRequest, userID uint) (standaloneDatabaseProvisionOutcome, error) {
+	var outcome standaloneDatabaseProvisionOutcome
+	if h.cfg.BillingEnabled {
+		tx := db.Begin()
+		if tx.Error != nil {
+			return outcome, apperr.New(500, "BILLING_TRANSACTION_FAILED", "Failed to prepare database billing")
+		}
+		quota, err := billing.LoadActiveDatabaseQuotaTx(tx, req.BillableSpecID)
+		if err != nil {
+			tx.Rollback()
+			return outcome, err
+		}
+		dbInst.ConnectionLimit = quota.ConnectionLimit
+		if err := tx.Create(dbInst).Error; err != nil {
+			tx.Rollback()
+			return outcome, fmt.Errorf("save database record: %w", err)
+		}
+		invoiceService := billing.NewInvoiceService(db, billing.NewWalletService(db))
+		if err := invoiceService.ChargeInitialResourceTx(tx, userID, models.BillableTypeDatabase, dbInst.ID, req.BillableSpecID, time.Now().UTC()); err != nil {
+			tx.Rollback()
+			return outcome, err
+		}
+		// ponytail: Phase 5 keeps this transaction open to avoid a charged orphan; use a durable provisioning saga when engine creation becomes asynchronous.
+		outcome.Ownership, err = provisionStandaloneDatabaseWithCheckpoint(req.Engine, req.Name, req.Username, req.Password, dbInst.ConnectionLimit, func(ownership infrastructure.ProvisioningOwnership) error {
+			return checkpointStandaloneProvisioningOwnership(recoveryDB, req.Engine, req.Name, req.Username, ownership)
+		})
+		if err != nil {
+			tx.Rollback()
+			outcome.SafeToCompensate = true
+			return outcome, err
+		}
+		if err := tx.Commit().Error; err != nil {
+			persisted, recoveryErr := databaseInstancePersisted(recoveryDB, dbInst)
+			if recoveryErr != nil {
+				return outcome, fmt.Errorf("verify ambiguous database provisioning commit: %w", recoveryErr)
+			}
+			if persisted {
+				outcome.DatabaseInstancePersisted = true
+				return outcome, nil
+			}
+			outcome.SafeToCompensate = true
+			return outcome, fmt.Errorf("finalize database provisioning: %w", err)
+		}
+		outcome.DatabaseInstancePersisted = true
+		return outcome, nil
+	}
+
+	var err error
+	outcome.Ownership, err = provisionStandaloneDatabaseWithCheckpoint(req.Engine, req.Name, req.Username, req.Password, dbInst.ConnectionLimit, func(ownership infrastructure.ProvisioningOwnership) error {
+		return checkpointStandaloneProvisioningOwnership(recoveryDB, req.Engine, req.Name, req.Username, ownership)
+	})
+	if err != nil {
+		outcome.SafeToCompensate = true
+		return outcome, err
+	}
+	if err := db.Create(dbInst).Error; err != nil {
+		persisted, recoveryErr := databaseInstancePersisted(recoveryDB, dbInst)
+		if recoveryErr != nil {
+			return outcome, fmt.Errorf("verify ambiguous database record insert: %w", recoveryErr)
+		}
+		if persisted {
+			outcome.DatabaseInstancePersisted = true
+			return outcome, nil
+		}
+		outcome.SafeToCompensate = true
+		return outcome, fmt.Errorf("save database record: %w", err)
+	}
+	outcome.DatabaseInstancePersisted = true
+	return outcome, nil
+}
+
+func databaseInstancePersisted(db *gorm.DB, dbInst *models.DatabaseInstance) (bool, error) {
+	if db == nil || dbInst == nil || dbInst.ID == 0 || dbInst.UID == "" {
+		return false, errors.New("database instance recovery identity is invalid")
+	}
+	var count int64
+	err := db.Connection(func(connection *gorm.DB) error {
+		return connection.Model(&models.DatabaseInstance{}).Where("id = ? AND uid = ?", dbInst.ID, dbInst.UID).Count(&count).Error
+	})
+	if err != nil {
+		return false, err
+	}
+	return count == 1, nil
+}
+
+func ensureNoDatabaseCleanupTask(db *gorm.DB, engine, name, username string) error {
+	var count int64
+	if err := db.Model(&models.DatabaseCleanupTask{}).Where("engine = ? AND name = ? AND username = ?", engine, name, username).Count(&count).Error; err != nil {
+		return fmt.Errorf("check pending database cleanup: %w", err)
+	}
+	if count > 0 {
+		return apperr.New(409, "DATABASE_CLEANUP_PENDING", "Database provisioning is temporarily unavailable while prior cleanup completes")
+	}
+	return nil
+}
+
+func compensateStandaloneDatabase(db *gorm.DB, engine, name, username string, ownership infrastructure.ProvisioningOwnership) {
+	compensateStandaloneDatabaseWithCleanup(db, engine, name, username, ownership, services.DeprovisionStandaloneDatabase)
+}
+
+func compensateStandaloneDatabaseWithCleanup(db *gorm.DB, engine, name, username string, ownership infrastructure.ProvisioningOwnership, cleanup func(string, string, string, infrastructure.ProvisioningOwnership) (infrastructure.ProvisioningOwnership, error)) {
+	if !ownership.HasResources() {
+		return
+	}
+	cleanupErr := services.WithDatabaseCleanupIdentityLock(context.Background(), db, engine, name, username, func(lockDB *gorm.DB) error {
+		remaining, err := cleanup(engine, name, username, ownership)
+		if err != nil {
+			if recordErr := recordDatabaseCleanupTask(lockDB, engine, name, username, remaining, err); recordErr != nil {
+				return errors.Join(err, fmt.Errorf("record database cleanup task: %w", recordErr))
+			}
+			slog.Error("Managed database cleanup queued", "engine", engine, "database_name", name, "cleanup_error", err)
+		}
+		return nil
+	})
+	if cleanupErr != nil {
+		slog.Error("Failed to compensate managed database provisioning", "engine", engine, "database_name", name, "error", cleanupErr)
+	}
+}
+
+func recordDatabaseCleanupTask(db *gorm.DB, engine, name, username string, ownership infrastructure.ProvisioningOwnership, cleanupErr error) error {
+	task := models.DatabaseCleanupTask{Engine: engine, Name: name, Username: username, Reason: models.DatabaseCleanupReasonProvisioning, DatabaseOwned: ownership.DatabaseCreated, UserOwned: ownership.UserCreated}
+	return recordDatabaseCleanupTaskWithContext(db, task, cleanupErr)
+}
+
+func recordDatabaseDeletionCleanupTask(db *gorm.DB, dbInst models.DatabaseInstance, ownership infrastructure.ProvisioningOwnership, cleanupErr error) error {
+	databaseInstanceID := dbInst.ID
+	task := models.DatabaseCleanupTask{Engine: dbInst.Engine, Name: dbInst.Name, Username: dbInst.Username, Reason: models.DatabaseCleanupReasonRequestedDeletion, DatabaseInstanceID: &databaseInstanceID, DatabaseInstanceUID: dbInst.UID, DatabaseOwned: ownership.DatabaseCreated, UserOwned: ownership.UserCreated}
+	return recordDatabaseCleanupTaskWithContext(db, task, cleanupErr)
+}
+
+func recordDatabaseCleanupTaskWithContext(db *gorm.DB, task models.DatabaseCleanupTask, cleanupErr error) error {
+	if db == nil || cleanupErr == nil || (task.Reason != models.DatabaseCleanupReasonRequestedDeletion && !task.DatabaseOwned && !task.UserOwned) {
+		return errors.New("database cleanup task is invalid")
+	}
+	task.LastError = cleanupErr.Error()
+	task.RetryCount = 1
+	return db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "engine"}, {Name: "name"}, {Name: "username"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"reason":                task.Reason,
+			"database_instance_id":  task.DatabaseInstanceID,
+			"database_instance_uid": task.DatabaseInstanceUID,
+			"database_owned":        gorm.Expr("database_owned OR ?", task.DatabaseOwned),
+			"user_owned":            gorm.Expr("user_owned OR ?", task.UserOwned),
+			"last_error":            cleanupErr.Error(),
+			"retry_count":           gorm.Expr("retry_count + ?", 1),
+		}),
+	}).Create(&task).Error
+}
+
+func createStandaloneProvisioningIntent(db *gorm.DB, engine, name, username string) error {
+	leaseExpiresAt := time.Now().UTC().Add(10 * time.Minute)
+	task := models.DatabaseCleanupTask{
+		Engine:         engine,
+		Name:           name,
+		Username:       username,
+		Reason:         models.DatabaseCleanupReasonProvisioning,
+		DatabaseOwned:  false,
+		UserOwned:      false,
+		LeaseToken:     "provisioning-intent",
+		LeaseExpiresAt: &leaseExpiresAt,
+		LastError:      "durable provisioning intent",
+	}
+	if err := db.Create(&task).Error; err != nil {
+		return fmt.Errorf("persist database provisioning intent: %w", err)
+	}
+	return nil
+}
+
+func releaseStandaloneProvisioningIntent(db *gorm.DB, engine, name, username string, provisionErr error) error {
+	if provisionErr == nil {
+		return errors.New("database provisioning error is required")
+	}
+	if err := db.Model(&models.DatabaseCleanupTask{}).
+		Where("engine = ? AND name = ? AND username = ? AND reason = ?", engine, name, username, models.DatabaseCleanupReasonProvisioning).
+		Updates(map[string]any{"lease_token": "", "last_error": provisionErr.Error(), "retry_count": gorm.Expr("retry_count + 1")}).Error; err != nil {
+		return errors.Join(provisionErr, fmt.Errorf("release database provisioning intent: %w", err))
+	}
+	return provisionErr
+}
+
+func completeStandaloneProvisioningIntent(db *gorm.DB, engine, name, username string) error {
+	if err := db.Where("engine = ? AND name = ? AND username = ? AND reason = ?", engine, name, username, models.DatabaseCleanupReasonProvisioning).
+		Delete(&models.DatabaseCleanupTask{}).Error; err != nil {
+		return fmt.Errorf("complete database provisioning intent: %w", err)
+	}
+	return nil
+}
+
+func checkpointStandaloneProvisioningOwnership(db *gorm.DB, engine, name, username string, ownership infrastructure.ProvisioningOwnership) error {
+	if !ownership.HasResources() {
+		return nil
+	}
+	if db == nil {
+		return errors.New("database provisioning ownership checkpoint is unavailable")
+	}
+	if err := db.Model(&models.DatabaseCleanupTask{}).
+		Where("engine = ? AND name = ? AND username = ? AND reason = ?", engine, name, username, models.DatabaseCleanupReasonProvisioning).
+		Updates(map[string]any{
+			"database_owned": gorm.Expr("database_owned OR ?", ownership.DatabaseCreated),
+			"user_owned":     gorm.Expr("user_owned OR ?", ownership.UserCreated),
+			"last_error":     "provisioning ownership checkpointed",
+		}).Error; err != nil {
+		return fmt.Errorf("checkpoint database provisioning ownership: %w", err)
+	}
+	return nil
+}
+
+func provisionStandaloneDatabaseWithCheckpoint(engine, name, username, password string, connectionLimit int, checkpoint func(infrastructure.ProvisioningOwnership) error) (infrastructure.ProvisioningOwnership, error) {
+	if connectionLimit <= 0 {
+		connectionLimit = infrastructure.DefaultManagedDatabaseConnectionLimit
+	}
+	if engine == "postgresql" {
+		return infrastructure.NewPostgreSQLService().ProvisionDatabaseCustomWithConnectionLimitCheckpoint(name, username, password, connectionLimit, checkpoint)
+	}
+	return infrastructure.NewMySQLService().ProvisionDatabaseCustomWithConnectionLimitCheckpoint(name, username, password, connectionLimit, checkpoint)
+}
+
+func mapDatabaseBillingError(err error) error {
+	switch {
+	case errors.Is(err, billing.ErrInsufficientCredits):
+		return apperr.New(402, "INSUFFICIENT_CREDITS", "Insufficient Runa's Tokens to provision this resource")
+	case errors.Is(err, billing.ErrInvalidInvoiceInput):
+		return apperr.NewBadRequest("Invalid billing specification")
+	case errors.Is(err, billing.ErrResourceAlreadyBilled):
+		return apperr.New(409, "BILLABLE_RESOURCE_CONFLICT", "Resource billing is already initialized")
+	default:
+		return err
+	}
 }
 
 // DeleteDatabase handles deletion of a database instance (only if unattached)
@@ -1669,82 +1899,49 @@ func (h *DatabaseHandler) DeleteDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
 	}
 
-	// Fetch DatabaseInstance and validate ownership
-	var dbInst models.DatabaseInstance
-	if err := h.db.Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
-	}
-	if dbInst.UserID != userID {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden: You do not own this database"})
-	}
-	if dbInst.Status == models.DBStatusDeleted {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
-	}
-
-	// Verify database is not attached (ProjectID must be nil)
-	if dbInst.ProjectID != nil {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Database is currently attached to a project. Detach it first."})
-	}
-
-	// Drop schema & user in engine container
-	if dbInst.Engine == "postgresql" {
-		pgService := infrastructure.NewPostgreSQLService()
-		if err := pgService.DropDatabaseCustom(dbInst.Name, dbInst.Username); err != nil {
-			slog.Error("Failed to drop PostgreSQL database", "db", dbInst.Name, "error", err.Error())
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to drop physical PostgreSQL database: " + err.Error()})
+	dbInst, err := h.suspendStandaloneDatabaseForDeletion(dbUID, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Database not found"})
 		}
-	} else {
-		mysqlService := infrastructure.NewMySQLService()
-		if err := mysqlService.DropDatabaseCustom(dbInst.Name, dbInst.Username); err != nil {
-			slog.Error("Failed to drop MySQL database", "db", dbInst.Name, "error", err.Error())
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to drop physical MySQL database: " + err.Error()})
+		var appErr *apperr.AppError
+		if errors.As(err, &appErr) {
+			return appErr
 		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to prepare database deletion"})
 	}
 
-	// Delete related backups (file + record)
-	var backups []models.DatabaseBackup
-	if err := h.db.Where("database_instance_id = ?", dbInst.ID).Find(&backups).Error; err == nil {
-		for _, backup := range backups {
-			// Delete backup files safely using validated paths and existing storage conventions
-			if backup.Path != "" {
-				// Prevent path traversal
-				cleanedPath := filepath.Clean(backup.Path)
-				// Resolve absolute path to check containment
-				absPath, err := filepath.Abs(cleanedPath)
-				if err != nil {
-					slog.Error("Failed to resolve absolute path of backup file", "path", backup.Path, "error", err.Error())
-					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve backup file path: " + err.Error()})
-				}
-
-				absDataPath, err := filepath.Abs(h.cfg.DataPath)
-				if err != nil {
-					slog.Error("Failed to resolve absolute data path", "error", err.Error())
-					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve storage data path: " + err.Error()})
-				}
-
-				// The backup file must reside inside h.cfg.DataPath to prevent arbitrary file deletion (such as /etc or root dirs)
-				rel, err := filepath.Rel(absDataPath, absPath)
-				if err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
-					if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
-						slog.Error("Failed to delete physical database backup file", "path", absPath, "error", err.Error())
-						return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete backup file: " + err.Error()})
-					}
-				} else {
-					slog.Error("Backup file path is outside the allowed storage directory", "path", absPath, "allowed", absDataPath)
-					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Security violation: Backup path is outside the allowed storage directory"})
-				}
-			}
-			if err := h.db.Delete(&backup).Error; err != nil {
-				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete backup record: " + err.Error()})
-			}
+	deprovisionErr := services.WithDatabaseCleanupIdentityLock(context.Background(), h.db, dbInst.Engine, dbInst.Name, dbInst.Username, func(lockDB *gorm.DB) error {
+		remaining, err := services.DeprovisionStandaloneDatabase(dbInst.Engine, dbInst.Name, dbInst.Username, infrastructure.ProvisioningOwnership{DatabaseCreated: true, UserCreated: true})
+		if err == nil {
+			return nil
 		}
+		if recordErr := recordDatabaseDeletionCleanupTask(lockDB, dbInst, remaining, err); recordErr != nil {
+			return errors.Join(err, fmt.Errorf("record database deletion cleanup: %w", recordErr))
+		}
+		return err
+	})
+	if deprovisionErr != nil {
+		slog.Error("Physical database deletion queued for retry", "database_id", dbInst.ID, "error", deprovisionErr)
+		h.recordAuditLog(c, 0, "db_delete", "active", "suspended", "pending_cleanup", deprovisionErr.Error())
+		return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"success": false, "message": "Database billing has been suspended; physical deletion will retry automatically"})
 	}
 
-	// Soft delete the DatabaseInstance record: Set status = "deleted"
-	dbInst.Status = models.DBStatusDeleted
-	dbInst.ProjectID = nil // explicitly clear just in case
-	if err := h.db.Save(&dbInst).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update database status: " + err.Error()})
+	if err := services.FinalizeDatabaseDeletion(context.Background(), h.db, dbInst.ID, dbInst.UID, h.cfg.ProjectsPath); err != nil {
+		recordErr := services.WithDatabaseCleanupIdentityLock(context.Background(), h.db, dbInst.Engine, dbInst.Name, dbInst.Username, func(lockDB *gorm.DB) error {
+			return recordDatabaseDeletionCleanupTask(lockDB, dbInst, infrastructure.ProvisioningOwnership{}, err)
+		})
+		if recordErr != nil {
+			slog.Error("Failed to queue database deletion finalization", "database_id", dbInst.ID, "finalize_error", err, "record_error", recordErr)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Physical database deletion completed, but finalization could not be queued"})
+		}
+		slog.Error("Database deletion finalization queued for retry", "database_id", dbInst.ID, "error", err)
+		h.recordAuditLog(c, 0, "db_delete", "suspended", "suspended", "pending_finalization", err.Error())
+		return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"success": false, "message": "Physical deletion completed; logical cleanup will retry automatically"})
+	}
+	if err := h.db.Where("engine = ? AND name = ? AND username = ? AND reason = ?", dbInst.Engine, dbInst.Name, dbInst.Username, models.DatabaseCleanupReasonRequestedDeletion).Delete(&models.DatabaseCleanupTask{}).Error; err != nil {
+		slog.Error("Database deletion finalized but retry task remains", "database_id", dbInst.ID, "error", err)
+		return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"success": false, "message": "Database deletion completed; retry finalization will confirm completion automatically"})
 	}
 
 	h.recordAuditLog(c, 0, "db_delete", "active", "deleted", "completed", "")
@@ -1753,4 +1950,46 @@ func (h *DatabaseHandler) DeleteDatabase(c *fiber.Ctx) error {
 		"success": true,
 		"message": "Database deleted successfully",
 	})
+}
+
+func (h *DatabaseHandler) suspendStandaloneDatabaseForDeletion(dbUID string, userID uint) (models.DatabaseInstance, error) {
+	var dbInst models.DatabaseInstance
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("uid = ?", dbUID).First(&dbInst).Error; err != nil {
+			return err
+		}
+		if dbInst.UserID != userID {
+			return apperr.New(403, "DATABASE_FORBIDDEN", "Forbidden: You do not own this database")
+		}
+		if dbInst.Status == models.DBStatusDeleted {
+			return gorm.ErrRecordNotFound
+		}
+		if dbInst.ProjectID != nil {
+			return apperr.New(409, "DATABASE_ATTACHED", "Database is currently attached to a project. Detach it first.")
+		}
+
+		var resource models.BillableResource
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("type = ? AND resource_id = ?", models.BillableTypeDatabase, dbInst.ID).First(&resource).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("lock database billable resource: %w", err)
+		}
+		if err == nil && resource.BillingStatus != models.BillableResourceStatusDeleted {
+			if err := tx.Model(&resource).Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+				return fmt.Errorf("terminate database billing: %w", err)
+			}
+		}
+		if dbInst.Status != models.DBStatusSuspended {
+			if err := tx.Model(&dbInst).Update("status", models.DBStatusSuspended).Error; err != nil {
+				return fmt.Errorf("suspend database instance: %w", err)
+			}
+			dbInst.Status = models.DBStatusSuspended
+		}
+		databaseInstanceID := dbInst.ID
+		task := models.DatabaseCleanupTask{Engine: dbInst.Engine, Name: dbInst.Name, Username: dbInst.Username, Reason: models.DatabaseCleanupReasonRequestedDeletion, DatabaseInstanceID: &databaseInstanceID, DatabaseInstanceUID: dbInst.UID, DatabaseOwned: true, UserOwned: true, LastError: "requested deletion pending"}
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "engine"}, {Name: "name"}, {Name: "username"}}, DoUpdates: clause.Assignments(map[string]any{"reason": models.DatabaseCleanupReasonRequestedDeletion, "database_instance_id": databaseInstanceID, "database_instance_uid": dbInst.UID, "database_owned": true, "user_owned": true, "lease_token": "", "lease_expires_at": nil, "last_error": "requested deletion pending"})}).Create(&task).Error; err != nil {
+			return fmt.Errorf("upsert requested database deletion task: %w", err)
+		}
+		return nil
+	})
+	return dbInst, err
 }
