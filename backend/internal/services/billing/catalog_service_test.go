@@ -26,7 +26,7 @@ func TestCatalogServiceListsBoundedAdminBillingCollections(t *testing.T) {
 	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.Invoice{}, &models.Topup{}, &models.BillableSpec{}, &models.BillableResource{}, &models.InvoiceItem{}); err != nil {
 		t.Fatal(err)
 	}
-	user := models.User{Email: t.Name() + "@example.test", Password: "test", Name: "Billing user"}
+	user := models.User{Email: t.Name() + "@example.test", Password: "test", Name: "Billing user", Role: models.RoleUser}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -44,15 +44,15 @@ func TestCatalogServiceListsBoundedAdminBillingCollections(t *testing.T) {
 
 	service := NewCatalogService(db)
 	wallets, err := service.ListAdminWallets(context.Background(), 1, 25)
-	if err != nil || wallets.Total != 1 || len(wallets.Data) != 1 || wallets.Data[0].UserID != user.ID || wallets.Data[0].BalanceCredits != 250 {
+	if err != nil || wallets.Total != 1 || len(wallets.Data) != 1 || wallets.Data[0].UserID != user.ID || wallets.Data[0].UserRole != models.RoleUser || wallets.Data[0].BalanceCredits != 250 {
 		t.Fatalf("wallet collection = %#v, err=%v", wallets, err)
 	}
 	invoices, err := service.ListAdminInvoices(context.Background(), 1, 25)
-	if err != nil || invoices.Total != 1 || len(invoices.Data) != 1 || invoices.Data[0].UserID != user.ID || invoices.Data[0].TotalCredits != 75 {
+	if err != nil || invoices.Total != 1 || len(invoices.Data) != 1 || invoices.Data[0].UserID != user.ID || invoices.Data[0].UserRole != models.RoleUser || invoices.Data[0].TotalCredits != 75 {
 		t.Fatalf("invoice collection = %#v, err=%v", invoices, err)
 	}
 	topups, err := service.ListAdminTopups(context.Background(), 1, 25)
-	if err != nil || topups.Total != 1 || len(topups.Data) != 1 || topups.Data[0].UserID != user.ID || topups.Data[0].Credits != 500 {
+	if err != nil || topups.Total != 1 || len(topups.Data) != 1 || topups.Data[0].UserID != user.ID || topups.Data[0].UserRole != models.RoleUser || topups.Data[0].Credits != 500 {
 		t.Fatalf("topup collection = %#v, err=%v", topups, err)
 	}
 	if _, err := service.ListAdminWallets(context.Background(), 0, 25); err != ErrInvalidCatalogInput {
@@ -60,6 +60,62 @@ func TestCatalogServiceListsBoundedAdminBillingCollections(t *testing.T) {
 	}
 	if _, err := service.ListAdminTopups(context.Background(), 1, 101); err != ErrInvalidCatalogInput {
 		t.Fatalf("invalid limit error = %v", err)
+	}
+}
+
+func TestCatalogServiceFiltersAdminBillingCollections(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.Invoice{}, &models.Topup{}); err != nil {
+		t.Fatal(err)
+	}
+	users := []models.User{
+		{Email: "alpha@example.test", Password: "test", Name: "Alpha User"},
+		{Email: "target@example.test", Password: "test", Name: "Target User"},
+	}
+	if err := db.Create(&users).Error; err != nil {
+		t.Fatal(err)
+	}
+	wallets := []models.Wallet{{UserID: users[0].ID, BalanceCredits: 10}, {UserID: users[1].ID, BalanceCredits: 20}}
+	if err := db.Create(&wallets).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	invoices := []models.Invoice{
+		{UserID: users[0].ID, WalletID: wallets[0].ID, InvoiceNumber: "INV-ALPHA", PeriodStart: now.AddDate(0, -1, 0), PeriodEnd: now, Status: models.InvoiceStatusPaid, IdempotencyKey: "invoice-alpha"},
+		{UserID: users[1].ID, WalletID: wallets[1].ID, InvoiceNumber: "INV-TARGET", PeriodStart: now.AddDate(0, -1, 0), PeriodEnd: now, Status: models.InvoiceStatusVoid, IdempotencyKey: "invoice-target"},
+	}
+	if err := db.Create(&invoices).Error; err != nil {
+		t.Fatal(err)
+	}
+	topups := []models.Topup{
+		{WalletID: wallets[0].ID, ClientIdempotencyKey: "topup-alpha", Provider: models.BillingProviderMidtrans, ProviderOrderID: "ORDER-ALPHA", Currency: models.BillingCurrencyIDR, Status: models.TopupStatusPaid},
+		{WalletID: wallets[1].ID, ClientIdempotencyKey: "topup-target", Provider: models.BillingProviderMidtrans, ProviderOrderID: "ORDER-TARGET", Currency: models.BillingCurrencyIDR, Status: models.TopupStatusPending},
+	}
+	if err := db.Create(&topups).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewCatalogService(db)
+	walletPage, err := service.ListAdminWallets(context.Background(), 1, 10, ListAdminWalletsFilter{Search: "target"})
+	if err != nil || walletPage.Total != 1 || len(walletPage.Data) != 1 || walletPage.Data[0].UserID != users[1].ID || walletPage.Data[0].UserName != users[1].Name || walletPage.Data[0].UserEmail != users[1].Email {
+		t.Fatalf("filtered wallets=%#v err=%v", walletPage, err)
+	}
+	invoicePage, err := service.ListAdminInvoices(context.Background(), 1, 10, ListAdminInvoicesFilter{Search: "target@example.test", Status: string(models.InvoiceStatusVoid)})
+	if err != nil || invoicePage.Total != 1 || len(invoicePage.Data) != 1 || invoicePage.Data[0].ID != invoices[1].ID || invoicePage.Data[0].UserName != users[1].Name || invoicePage.Data[0].UserEmail != users[1].Email {
+		t.Fatalf("filtered invoices=%#v err=%v", invoicePage, err)
+	}
+	topupPage, err := service.ListAdminTopups(context.Background(), 1, 10, ListAdminTopupsFilter{Search: "ORDER-TARGET", Status: string(models.TopupStatusPending)})
+	if err != nil || topupPage.Total != 1 || len(topupPage.Data) != 1 || topupPage.Data[0].ID != topups[1].ID || topupPage.Data[0].UserName != users[1].Name || topupPage.Data[0].UserEmail != users[1].Email {
+		t.Fatalf("filtered topups=%#v err=%v", topupPage, err)
+	}
+	if _, err := service.ListAdminInvoices(context.Background(), 1, 10, ListAdminInvoicesFilter{Status: "unknown"}); err != ErrInvalidCatalogInput {
+		t.Fatalf("invalid invoice status error=%v", err)
+	}
+	if _, err := service.ListAdminTopups(context.Background(), 1, 10, ListAdminTopupsFilter{Search: strings.Repeat("x", 101)}); err != ErrInvalidCatalogInput {
+		t.Fatalf("oversized topup search error=%v", err)
 	}
 }
 
@@ -766,6 +822,9 @@ func TestCatalogServiceReportsPaymentDueInvoicePeriod(t *testing.T) {
 	}
 	if overview.Resources[0].PaymentDueCredits == nil || *overview.Resources[0].PaymentDueCredits != 0 {
 		t.Fatalf("oldest payment-due resource credits=%#v", overview.Resources[0].PaymentDueCredits)
+	}
+	if overview.Resources[0].PaymentDueInvoiceID == nil || *overview.Resources[0].PaymentDueInvoiceID != invoice.ID || overview.Resources[0].PaymentDueItemID == nil || *overview.Resources[0].PaymentDueItemID == 0 {
+		t.Fatalf("oldest payment-due resource identity=%#v", overview.Resources[0])
 	}
 }
 

@@ -82,6 +82,7 @@ vi.mock('@/lib/useTranslation', () => ({
         'billing.cancel': 'Cancel',
         'billing.overduePaymentSuccess': 'Payment complete',
         'billing.overdueInsufficientCredits': 'Insufficient credits',
+        'billing.overduePaymentStale': 'Payment details changed',
         'billing.overduePaymentFailed': 'Payment failed',
         'billing.autoRenew': 'Auto-renew',
         'billing.autoRenewEnabled': 'Auto-renew enabled',
@@ -741,6 +742,8 @@ describe('Billing page', () => {
             payment_due_period_start: '2026-08-19T00:00:00Z',
             payment_due_period_end: '2026-09-19T00:00:00Z',
             payment_due_credits: 75,
+            payment_due_invoice_id: 41,
+            payment_due_item_id: 42,
             auto_renew: true,
           },
         ],
@@ -785,7 +788,13 @@ describe('Billing page', () => {
 
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pay now' })))
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pay bill' })))
-    await waitFor(() => expect(billingAPI.payDueResource).toHaveBeenCalledWith(5, 'project'))
+    await waitFor(() => expect(billingAPI.payDueResource).toHaveBeenCalledWith(5, 'project', {
+      invoice_id: 41,
+      invoice_item_id: 42,
+      period_start: '2026-08-19T00:00:00Z',
+      period_end: '2026-09-19T00:00:00Z',
+      credits: 75,
+    }))
   })
 
   it('shows a zero-credit reversal amount without disabling confirmation', async () => {
@@ -804,6 +813,8 @@ describe('Billing page', () => {
           payment_due_period_start: '2026-08-01T00:00:00Z',
           payment_due_period_end: '2026-09-01T00:00:00Z',
           payment_due_credits: 0,
+          payment_due_invoice_id: 51,
+          payment_due_item_id: 52,
           auto_renew: true,
         }],
       },

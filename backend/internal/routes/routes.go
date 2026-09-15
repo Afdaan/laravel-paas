@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -91,7 +89,6 @@ func Setup(
 		return false
 	}
 
-
 	// ===========================================
 	// Global Middlewares
 	// ===========================================
@@ -163,7 +160,6 @@ func Setup(
 		return c.Next()
 	})
 
-
 	// ===========================================
 	// Subdomain Proxy for User Projects (protected + rate limited)
 	// ===========================================
@@ -172,7 +168,6 @@ func Setup(
 	proxyGroup.Use(middleware.ValidateProxyTarget())
 	proxyGroup.All("/*", projectHandler.ProxyToProject)
 	proxyGroup.All("", projectHandler.ProxyToProject)
-
 
 	// -----------------------------
 	// Auth Routes (public, rate limited)
@@ -235,7 +230,7 @@ func Setup(
 	billingMutations.Post("/topups/:topupID/reconcile", middleware.MaxBody(8*1024), middleware.RateLimitTopupReconcile(redisService), billingHandler.ReconcileTopup)
 	billingMutations.Put("/profile", middleware.MaxBody(16*1024), billingHandler.UpdateBillingProfile)
 	billingMutations.Put("/resources/auto-renew", middleware.MaxBody(4*1024), middleware.RateLimitAutoRenew(redisService), billingHandler.UpdateAutoRenew)
-	billingMutations.Post("/resources/:resourceType/:resourceID/pay", middleware.MaxBody(1024), billingHandler.PayDueResource)
+	billingMutations.Post("/resources/:resourceType/:resourceID/pay", middleware.MaxBody(1024), middleware.RateLimitOverduePayment(redisService), billingHandler.PayDueResource)
 
 	// GitHub Integration
 	protected.Get("/github/installations", githubAppHandler.ListInstallations)
@@ -416,8 +411,6 @@ func Setup(
 		// User project subdomains or custom domains proxy ALL requests (including /api/*) to project containers
 		return projectHandler.ProxyToProject(c)
 	})
-
-
 
 	return app
 }

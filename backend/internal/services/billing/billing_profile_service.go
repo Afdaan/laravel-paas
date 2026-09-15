@@ -5,13 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/laravel-paas/shared/models"
 	"gorm.io/gorm"
 )
 
 var (
-	ErrInvalidBillingEmail = errors.New("invalid billing email format")
+	ErrInvalidBillingEmail    = errors.New("invalid billing email format")
+	ErrInvalidBillingProfile  = errors.New("invalid billing profile")
+	ErrBillingProfileRequired = errors.New("complete billing profile required")
 )
 
 type BillingProfileService struct {
@@ -57,15 +61,57 @@ type UpdateBillingProfileInput struct {
 }
 
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+var billingProfileDigits = regexp.MustCompile(`\D`)
+var billingPostalCodeRegex = regexp.MustCompile(`^[0-9]{5}$`)
+
+func normalizeBillingProfileInput(input UpdateBillingProfileInput) UpdateBillingProfileInput {
+	input.CompanyName = strings.TrimSpace(input.CompanyName)
+	input.TaxID = strings.TrimSpace(input.TaxID)
+	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
+	input.Phone = strings.TrimSpace(input.Phone)
+	input.AddressLine1 = strings.TrimSpace(input.AddressLine1)
+	input.AddressLine2 = strings.TrimSpace(input.AddressLine2)
+	input.City = strings.TrimSpace(input.City)
+	input.StateProvince = strings.TrimSpace(input.StateProvince)
+	input.PostalCode = strings.TrimSpace(input.PostalCode)
+	input.Country = strings.ToUpper(strings.TrimSpace(input.Country))
+	if input.Country == "IDN" {
+		input.Country = "ID"
+	}
+	return input
+}
+
+func validBillingProfileInput(input UpdateBillingProfileInput) bool {
+	if input.Country != "ID" || utf8.RuneCountInString(input.CompanyName) < 2 || utf8.RuneCountInString(input.CompanyName) > 255 ||
+		input.Email == "" || utf8.RuneCountInString(input.Email) > 255 || !emailRegex.MatchString(input.Email) ||
+		utf8.RuneCountInString(input.Phone) > 50 || utf8.RuneCountInString(input.AddressLine1) < 5 || utf8.RuneCountInString(input.AddressLine1) > 255 ||
+		utf8.RuneCountInString(input.AddressLine2) > 255 || utf8.RuneCountInString(input.City) < 2 || utf8.RuneCountInString(input.City) > 100 ||
+		utf8.RuneCountInString(input.StateProvince) > 100 || utf8.RuneCountInString(input.PostalCode) > 20 || utf8.RuneCountInString(input.TaxID) > 100 {
+		return false
+	}
+	phoneDigits := billingProfileDigits.ReplaceAllString(input.Phone, "")
+	validPhone := (strings.HasPrefix(phoneDigits, "08") && len(phoneDigits) >= 10 && len(phoneDigits) <= 13) ||
+		(strings.HasPrefix(phoneDigits, "628") && len(phoneDigits) >= 11 && len(phoneDigits) <= 14) ||
+		(strings.HasPrefix(phoneDigits, "8") && len(phoneDigits) >= 9 && len(phoneDigits) <= 12)
+	if !validPhone || !billingPostalCodeRegex.MatchString(input.PostalCode) {
+		return false
+	}
+	if input.TaxID != "" && len(billingProfileDigits.ReplaceAllString(input.TaxID, "")) < 15 {
+		return false
+	}
+	return true
+}
 
 func (s *BillingProfileService) UpsertProfile(ctx context.Context, userID uint, input UpdateBillingProfileInput) (models.BillingProfile, error) {
-	if input.Email != "" && !emailRegex.MatchString(input.Email) {
-		return models.BillingProfile{}, ErrInvalidBillingEmail
+	if s == nil || s.db == nil || ctx == nil || userID == 0 {
+		return models.BillingProfile{}, ErrInvalidBillingProfile
 	}
-
-	country := input.Country
-	if country == "" {
-		country = "ID"
+	input = normalizeBillingProfileInput(input)
+	if !validBillingProfileInput(input) {
+		if input.Email != "" && !emailRegex.MatchString(input.Email) {
+			return models.BillingProfile{}, ErrInvalidBillingEmail
+		}
+		return models.BillingProfile{}, ErrInvalidBillingProfile
 	}
 
 	var profile models.BillingProfile
@@ -85,7 +131,7 @@ func (s *BillingProfileService) UpsertProfile(ctx context.Context, userID uint, 
 		profile.City = input.City
 		profile.StateProvince = input.StateProvince
 		profile.PostalCode = input.PostalCode
-		profile.Country = country
+		profile.Country = input.Country
 
 		if errFetch == nil {
 			return tx.Save(&profile).Error
@@ -98,6 +144,28 @@ func (s *BillingProfileService) UpsertProfile(ctx context.Context, userID uint, 
 	}
 
 	return profile, nil
+}
+
+func (s *BillingProfileService) RequireComplete(ctx context.Context, userID uint) error {
+	if s == nil || s.db == nil || ctx == nil || userID == 0 {
+		return ErrBillingProfileRequired
+	}
+	var profile models.BillingProfile
+	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).First(&profile).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrBillingProfileRequired
+		}
+		return fmt.Errorf("load billing profile readiness: %w", err)
+	}
+	input := normalizeBillingProfileInput(UpdateBillingProfileInput{
+		CompanyName: profile.CompanyName, TaxID: profile.TaxID, Email: profile.Email, Phone: profile.Phone,
+		AddressLine1: profile.AddressLine1, AddressLine2: profile.AddressLine2, City: profile.City,
+		StateProvince: profile.StateProvince, PostalCode: profile.PostalCode, Country: profile.Country,
+	})
+	if !validBillingProfileInput(input) {
+		return ErrBillingProfileRequired
+	}
+	return nil
 }
 
 func CountryCodeToISO3(country2 string) string {

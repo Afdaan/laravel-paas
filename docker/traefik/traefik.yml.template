@@ -36,4 +36,3 @@ providers:
 
 log:
   level: DEBUG
-

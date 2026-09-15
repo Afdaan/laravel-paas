@@ -22,7 +22,16 @@ var (
 	ErrInsufficientCredits       = errors.New("insufficient wallet credits")
 	ErrBillableResourceNotFound  = errors.New("billable resource not found")
 	ErrResourcePaymentNotDue     = errors.New("resource payment is not due")
+	ErrStaleDuePayment           = errors.New("overdue payment confirmation is stale")
 )
+
+type DuePaymentExpectation struct {
+	InvoiceID     uint
+	InvoiceItemID uint
+	PeriodStart   time.Time
+	PeriodEnd     time.Time
+	Credits       int64
+}
 
 // InvoiceService owns billable-resource periods, invoice rows, and their wallet debits.
 type InvoiceService struct {
@@ -179,6 +188,17 @@ func (s *InvoiceService) RetryDueForUser(ctx context.Context, userID uint, now t
 
 // PayDueResource settles one overdue resource without changing its auto-renew preference.
 func (s *InvoiceService) PayDueResource(ctx context.Context, userID uint, resourceType models.BillableType, resourceID uint, now time.Time) error {
+	return s.payDueResource(ctx, userID, resourceType, resourceID, now, nil)
+}
+
+func (s *InvoiceService) PayDueResourceExpected(ctx context.Context, userID uint, resourceType models.BillableType, resourceID uint, now time.Time, expected DuePaymentExpectation) error {
+	if expected.InvoiceID == 0 || expected.InvoiceItemID == 0 || expected.PeriodStart.IsZero() || expected.PeriodEnd.IsZero() {
+		return ErrInvalidInvoiceInput
+	}
+	return s.payDueResource(ctx, userID, resourceType, resourceID, now, &expected)
+}
+
+func (s *InvoiceService) payDueResource(ctx context.Context, userID uint, resourceType models.BillableType, resourceID uint, now time.Time, expected *DuePaymentExpectation) error {
 	if s == nil || s.db == nil || s.wallets == nil || ctx == nil {
 		return ErrInvoiceServiceUnavailable
 	}
@@ -245,6 +265,13 @@ func (s *InvoiceService) PayDueResource(ctx context.Context, userID uint, resour
 				return ErrResourcePaymentNotDue
 			}
 			return fmt.Errorf("lock overdue invoice: %w", err)
+		}
+		if expected != nil && (expected.InvoiceID != invoice.ID ||
+			expected.InvoiceItemID != item.ID ||
+			expected.Credits != item.Credits ||
+			!expected.PeriodStart.Equal(invoice.PeriodStart) ||
+			!expected.PeriodEnd.Equal(invoice.PeriodEnd)) {
+			return ErrStaleDuePayment
 		}
 
 		if item.Credits == 0 {

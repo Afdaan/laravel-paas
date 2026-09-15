@@ -471,7 +471,7 @@ func invoiceServiceFixture(t *testing.T) (*gorm.DB, models.User, *InvoiceService
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Project{}, &models.DatabaseInstance{}, &models.DatabaseStatusOperationTask{}, &models.ProjectSuspensionTask{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.InvoiceItem{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Project{}, &models.DatabaseInstance{}, &models.DatabaseStatusOperationTask{}, &models.ProjectSuspensionTask{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.InvoiceItem{}, &models.BillingProfile{}); err != nil {
 		t.Fatal(err)
 	}
 	user := models.User{Email: t.Name() + "@example.test", Password: "test", Name: "Invoice"}
@@ -641,6 +641,35 @@ func TestInvoiceServiceAutoRenewFalseDoesNotDebitAndMarksPaymentDue(t *testing.T
 	if dueInvoice.Status != models.InvoiceStatusPaymentDue {
 		t.Fatalf("expected invoice status payment_due, got %s", dueInvoice.Status)
 	}
+	var dueItem models.InvoiceItem
+	if err := db.Where("invoice_id = ? AND billable_resource_id = ?", dueInvoice.ID, resource.ID).First(&dueItem).Error; err != nil {
+		t.Fatal(err)
+	}
+	expected := DuePaymentExpectation{
+		InvoiceID:     dueInvoice.ID,
+		InvoiceItemID: dueItem.ID,
+		PeriodStart:   dueInvoice.PeriodStart,
+		PeriodEnd:     dueInvoice.PeriodEnd,
+		Credits:       dueItem.Credits,
+	}
+	if err := db.Model(&dueItem).Update("credits", dueItem.Credits+1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PayDueResourceExpected(context.Background(), user.ID, models.BillableTypeProject, project.ID, dueAt, expected); !errors.Is(err, ErrStaleDuePayment) {
+		t.Fatalf("expected stale confirmation rejection, got %v", err)
+	}
+	assertInvoiceWallet(t, db, user.ID, 4900, 2)
+
+	if err := db.Model(&dueItem).Update("credits", expected.Credits).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.PayDueResourceExpected(context.Background(), user.ID, models.BillableTypeProject, project.ID, dueAt, expected); err != nil {
+		t.Fatalf("pay expected due resource: %v", err)
+	}
+	if err := service.PayDueResourceExpected(context.Background(), user.ID, models.BillableTypeProject, project.ID, dueAt, expected); err != nil {
+		t.Fatalf("repeat expected due resource payment: %v", err)
+	}
+	assertInvoiceWallet(t, db, user.ID, 4800, 3)
 }
 
 func TestFindOrCreateInvoiceItemPropagatesDBError(t *testing.T) {

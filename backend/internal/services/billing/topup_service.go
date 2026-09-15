@@ -403,6 +403,15 @@ func (s *TopupService) validateCreate(ctx context.Context, userID uint, clientKe
 			return ErrInvalidTopupInput
 		}
 	}
+	if s.billingProfile == nil {
+		return ErrBillingProfileRequired
+	}
+	if err := s.billingProfile.RequireComplete(ctx, userID); err != nil {
+		if errors.Is(err, ErrBillingProfileRequired) {
+			return ErrBillingProfileRequired
+		}
+		return fmt.Errorf("validate billing profile: %w", err)
+	}
 	return nil
 }
 

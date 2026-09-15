@@ -70,7 +70,7 @@ export const BillingCreditCatalog = memo(function BillingCreditCatalog({
                       </div>
                     </div>
                     <div className="mt-3 flex items-baseline gap-2">
-                      <p 
+                      <p
                         className="text-3xl font-bold tracking-tight text-foreground tabular-nums"
                         title={`${formatNumber(overview.data.wallet.balance_credits)} Credits`}
                       >
@@ -91,7 +91,7 @@ export const BillingCreditCatalog = memo(function BillingCreditCatalog({
                       </div>
                     </div>
                     <div className="mt-3 flex items-baseline gap-2">
-                      <p 
+                      <p
                         className="text-3xl font-bold tracking-tight text-foreground tabular-nums"
                         title={`${formatNumber(overview.data.upcoming_required_credits)} Credits`}
                       >

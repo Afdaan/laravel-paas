@@ -17,9 +17,11 @@ export type PendingDuePayment = {
   resource_id: number
   resource_type: 'project' | 'database'
   resource_name: string
-  period_start?: string
-  period_end?: string
-  credits?: number
+  invoice_id: number
+  invoice_item_id: number
+  period_start: string
+  period_end: string
+  credits: number
 }
 
 export type PendingTopup = {

@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertTriangle,
   Boxes,
-  Calendar,
   ChevronRight,
   Coins,
   CreditCard,
@@ -64,12 +62,13 @@ type Catalog = {
     is_active: boolean
   }>
 }
-type Suspension = { user_id: number; resource_id: number; resource_type: string; status: string; oldest_due_at?: string; payment_due_days: number }
+type BillingUserIdentity = { user_id: number; user_name?: string; user_email?: string; user_role?: User['role'] }
+type Suspension = BillingUserIdentity & { resource_id: number; resource_type: string; status: string; oldest_due_at?: string; payment_due_days: number }
 type Page<T> = { data: T[]; page: number; limit: number; total: number }
-type Wallet = { user_id: number; balance_credits: number; updated_at: string }
+type Wallet = BillingUserIdentity & { balance_credits: number; updated_at: string }
 type InvoiceItem = { id: number; resource_type: string; resource_name: string; spec_name: string; description: string; credits: number }
-type Invoice = { id: number; user_id: number; total_credits: number; status: string; period_start: string; period_end: string; due_at?: string; paid_at?: string; created_at?: string; items?: InvoiceItem[] }
-type Topup = { id: number; user_id: number; credits: number; amount_minor: number; currency: string; status: string; created_at: string; paid_at?: string }
+type Invoice = BillingUserIdentity & { id: number; total_credits: number; status: string; period_start: string; period_end: string; due_at?: string; paid_at?: string; created_at?: string; items?: InvoiceItem[] }
+type Topup = BillingUserIdentity & { id: number; credits: number; amount_minor: number; currency: string; status: string; created_at: string; paid_at?: string }
 type TopupPackage = { id: number; credits: number; amount_minor: number; currency: string; sort_order: number }
 type SpecForm = {
   type: 'project' | 'database'
@@ -133,6 +132,15 @@ const emptyPackageEdit: PackageEditFormState = { credits: '', amount_minor: '', 
 const emptyCreditAdjustment: CreditAdjustmentFormState = { credits: '', reason: '' }
 const emptyDirectCreditAdjustment: DirectCreditAdjustmentFormState = { user_id: '', credits: '', reason: '' }
 
+function useDebouncedValue(value: string, delay = 300) {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebounced(value), delay)
+    return () => window.clearTimeout(timeout)
+  }, [delay, value])
+  return debounced
+}
+
 export default function AdminBilling() {
   const { t, language } = useTranslation()
   const isSuperAdmin = useAuthStore((state) => state.user?.role === 'superadmin')
@@ -140,29 +148,32 @@ export default function AdminBilling() {
   const [wallets, setWallets] = useState<Page<Wallet> | null>(null)
   const [invoices, setInvoices] = useState<Page<Invoice> | null>(null)
   const [topups, setTopups] = useState<Page<Topup> | null>(null)
-  const [suspensions, setSuspensions] = useState<Suspension[] | null>(null)
+  const [suspensions, setSuspensions] = useState<Page<Suspension> | null>(null)
   const [usersList, setUsersList] = useState<User[]>([])
-  
+
   const [walletPage, setWalletPage] = useState(1)
   const [invoicePage, setInvoicePage] = useState(1)
   const [topupPage, setTopupPage] = useState(1)
+  const [suspensionPage, setSuspensionPage] = useState(1)
   const [walletLimit, setWalletLimit] = useState(PAGE_LIMIT)
   const [invoiceLimit, setInvoiceLimit] = useState(PAGE_LIMIT)
   const [topupLimit, setTopupLimit] = useState(PAGE_LIMIT)
-  
-  // Period filter state
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('this_month')
-  
+  const [suspensionLimit, setSuspensionLimit] = useState(PAGE_LIMIT)
+
   // Search & Filter state
   const [walletSearch, setWalletSearch] = useState('')
   const [invoiceSearch, setInvoiceSearch] = useState('')
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string>('all')
   const [topupSearch, setTopupSearch] = useState('')
   const [topupStatusFilter, setTopupStatusFilter] = useState<string>('all')
-  
+  const debouncedWalletSearch = useDebouncedValue(walletSearch.trim())
+  const debouncedInvoiceSearch = useDebouncedValue(invoiceSearch.trim())
+  const debouncedTopupSearch = useDebouncedValue(topupSearch.trim())
+
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
-  
+  const loadRequestRef = useRef(0)
+
   const [specForm, setSpecForm] = useState(emptySpec)
   const [editingSpec, setEditingSpec] = useState<Catalog['specs'][number] | null>(null)
   const [packageForm, setPackageForm] = useState(emptyPackage)
@@ -224,16 +235,16 @@ export default function AdminBilling() {
     return map
   }, [usersList])
 
-  const getUserDetails = useCallback((userId: number) => {
+  const getUserDetails = useCallback((userId: number, userName?: string, userEmail?: string, userRole?: User['role']) => {
     const user = usersMap.get(userId)
-    if (user) {
-      const initials = (user.name || user.email || 'U').split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
-      return { name: user.name, email: user.email, role: user.role, initials, found: true }
-    }
-    return { name: `User #${userId}`, email: '', role: '', initials: `U${userId}`, found: false }
+    const name = userName || user?.name || `User #${userId}`
+    const email = userEmail || user?.email || ''
+    const initials = (name || email || `U${userId}`).split(' ').map((part) => part[0]).join('').substring(0, 2).toUpperCase()
+    return { name, email, role: userRole || user?.role || '', initials }
   }, [usersMap])
 
   const load = useCallback(async () => {
+    const requestID = ++loadRequestRef.current
     setLoading(true)
     try {
       if (isSuperAdmin) {
@@ -244,11 +255,12 @@ export default function AdminBilling() {
       }
       const results = await Promise.allSettled([
         billingAPI.adminCatalog(),
-        billingAPI.adminWallets({ page: walletPage, limit: walletLimit }),
-        billingAPI.adminInvoices({ page: invoicePage, limit: invoiceLimit }),
-        billingAPI.adminTopups({ page: topupPage, limit: topupLimit }),
-        billingAPI.adminSuspensions(),
+        billingAPI.adminWallets({ page: walletPage, limit: walletLimit, search: debouncedWalletSearch || undefined }),
+        billingAPI.adminInvoices({ page: invoicePage, limit: invoiceLimit, search: debouncedInvoiceSearch || undefined, status: invoiceStatusFilter === 'all' ? undefined : invoiceStatusFilter }),
+        billingAPI.adminTopups({ page: topupPage, limit: topupLimit, search: debouncedTopupSearch || undefined, status: topupStatusFilter === 'all' ? undefined : topupStatusFilter }),
+        billingAPI.adminSuspensions({ page: suspensionPage, limit: suspensionLimit }),
       ])
+      if (requestID !== loadRequestRef.current) return
       const nextErrors: Record<string, string> = {}
       if (results[0].status === 'fulfilled') setCatalog(results[0].value.data); else nextErrors.plans = t('billing.plans')
       if (results[1].status === 'fulfilled') setWallets(results[1].value.data); else nextErrors.wallets = t('billing.admin.wallets')
@@ -257,9 +269,9 @@ export default function AdminBilling() {
       if (results[4].status === 'fulfilled') setSuspensions(results[4].value.data); else nextErrors.suspensions = t('billing.admin.suspensions')
       setErrors(nextErrors)
     } finally {
-      setLoading(false)
+      if (requestID === loadRequestRef.current) setLoading(false)
     }
-  }, [invoicePage, t, topupPage, walletPage, walletLimit, invoiceLimit, topupLimit, isSuperAdmin])
+  }, [debouncedInvoiceSearch, debouncedTopupSearch, debouncedWalletSearch, invoicePage, invoiceStatusFilter, t, topupPage, topupStatusFilter, walletPage, walletLimit, invoiceLimit, topupLimit, suspensionPage, suspensionLimit, isSuperAdmin])
 
   // .sort() mutates in place — sorting catalog.specs directly in JSX reordered
   // the state array on every render. Copy first.
@@ -289,8 +301,7 @@ export default function AdminBilling() {
   }, [catalog, packageSearch, packageActiveFilter])
   const specPaging = usePagination(sortedSpecs.length)
   const packagePaging = usePagination(sortedPackages.length)
-  const suspensionPaging = usePagination(suspensions?.length ?? 0)
-  const displayedSuspensions = suspensions?.slice(suspensionPaging.start, suspensionPaging.end) ?? []
+  const displayedSuspensions = suspensions?.data ?? []
 
   useEffect(() => {
     void load()
@@ -462,96 +473,37 @@ export default function AdminBilling() {
     }
   }
 
-  // Statistics calculation
-  const totalCirculatingCredits = useMemo(() => {
-    return wallets?.data.reduce((acc, curr) => acc + (curr.balance_credits || 0), 0) ?? 0
-  }, [wallets])
-
-  const totalTopupsRevenue = useMemo(() => {
-    return topups?.data.filter((t) => t.status === 'paid').reduce((acc, curr) => acc + (curr.amount_minor || 0), 0) ?? 0
-  }, [topups])
-
-  // Filtered Wallets
-  const filteredWallets = useMemo(() => {
-    if (!wallets?.data) return []
-    if (!walletSearch.trim()) return wallets.data
-    const query = walletSearch.toLowerCase().trim()
-    return wallets.data.filter((w) => {
-      const details = getUserDetails(w.user_id)
-      return (
-        String(w.user_id).includes(query) ||
-        details.name.toLowerCase().includes(query) ||
-        details.email.toLowerCase().includes(query)
-      )
-    })
-  }, [wallets, walletSearch, getUserDetails])
-
-  // Filtered Invoices
-  const filteredInvoices = useMemo(() => {
-    if (!invoices?.data) return []
-    return invoices.data.filter((inv) => {
-      const matchesStatus = invoiceStatusFilter === 'all' || inv.status === invoiceStatusFilter
-      if (!matchesStatus) return false
-      if (!invoiceSearch.trim()) return true
-      const query = invoiceSearch.toLowerCase().trim()
-      const details = getUserDetails(inv.user_id)
-      return (
-        String(inv.id).includes(query) ||
-        String(inv.user_id).includes(query) ||
-        details.name.toLowerCase().includes(query) ||
-        details.email.toLowerCase().includes(query)
-      )
-    })
-  }, [invoices, invoiceStatusFilter, invoiceSearch, getUserDetails])
-
-  // Filtered Topups
-  const filteredTopups = useMemo(() => {
-    if (!topups?.data) return []
-    return topups.data.filter((topup) => {
-      const matchesStatus = topupStatusFilter === 'all' || topup.status === topupStatusFilter
-      if (!matchesStatus) return false
-      if (!topupSearch.trim()) return true
-      const query = topupSearch.toLowerCase().trim()
-      const details = getUserDetails(topup.user_id)
-      return (
-        String(topup.id).includes(query) ||
-        String(topup.user_id).includes(query) ||
-        details.name.toLowerCase().includes(query) ||
-        details.email.toLowerCase().includes(query)
-      )
-    })
-  }, [topups, topupStatusFilter, topupSearch, getUserDetails])
-
-  // Search/status filters run client-side over the page the server returned, so
-  // while one is active the server total would describe rows the table isn't
-  // showing. Report the filtered count instead — the footer never contradicts
-  // the body.
-  // ponytail: real fix is a server-side `search` param; add when a page-local
-  // filter stops being enough.
-  const walletFiltered = walletSearch.trim() !== ''
-  const invoiceFiltered = invoiceSearch.trim() !== '' || invoiceStatusFilter !== 'all'
-  const topupFiltered = topupSearch.trim() !== '' || topupStatusFilter !== 'all'
+  const displayedWallets = wallets?.data ?? []
+  const displayedInvoices = invoices?.data ?? []
+  const displayedTopups = topups?.data ?? []
 
   const walletPaging = serverPagination(
-    walletFiltered ? 1 : walletPage,
+    walletPage,
     walletLimit,
-    walletFiltered ? filteredWallets.length : (wallets?.total ?? 0),
+    wallets?.total ?? 0,
     setWalletPage,
     setWalletLimit,
   )
   const invoicePaging = serverPagination(
-    invoiceFiltered ? 1 : invoicePage,
+    invoicePage,
     invoiceLimit,
-    invoiceFiltered ? filteredInvoices.length : (invoices?.total ?? 0),
+    invoices?.total ?? 0,
     setInvoicePage,
     setInvoiceLimit,
   )
   const topupPaging = serverPagination(
-    topupFiltered ? 1 : topupPage,
+    topupPage,
     topupLimit,
-    topupFiltered ? filteredTopups.length : (topups?.total ?? 0),
+    topups?.total ?? 0,
     setTopupPage,
     setTopupLimit,
+  )
+  const suspensionPaging = serverPagination(
+    suspensionPage,
+    suspensionLimit,
+    suspensions?.total ?? 0,
+    setSuspensionPage,
+    setSuspensionLimit,
   )
 
   return (
@@ -592,202 +544,6 @@ export default function AdminBilling() {
         </Card>
       )}
 
-      {/* KPI Overview Bar Header & Period Selector */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-base font-semibold tracking-tight text-foreground">Financial & Resource Performance</h2>
-          <p className="text-xs text-muted-foreground">Real-time metrics and period aggregation trends</p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Select value={selectedPeriod} onValueChange={(val) => val && setSelectedPeriod(val)}>
-            <SelectTrigger className="h-8 text-xs w-52">
-              <Calendar className="size-3.5 mr-1.5 text-muted-foreground" />
-              <span>
-                {selectedPeriod === 'today' && 'Today (24h)'}
-                {selectedPeriod === 'last_7_days' && 'Last 7 Days'}
-                {selectedPeriod === 'last_30_days' && 'Last 30 Days'}
-                {selectedPeriod === 'this_month' && 'This Month (Aug 2026)'}
-                {selectedPeriod === 'last_month' && 'Last Month (Jul 2026)'}
-                {selectedPeriod === 'last_3_months' && 'Last 3 Months'}
-                {selectedPeriod === 'year_to_date' && 'Year to Date (2026)'}
-                {selectedPeriod === 'custom' && 'Custom Date Range...'}
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">Today (24h)</SelectItem>
-              <SelectItem value="last_7_days">Last 7 Days</SelectItem>
-              <SelectItem value="last_30_days">Last 30 Days</SelectItem>
-              <SelectItem value="this_month">This Month (Aug 2026)</SelectItem>
-              <SelectItem value="last_month">Last Month (Jul 2026)</SelectItem>
-              <SelectItem value="last_3_months">Last 3 Months</SelectItem>
-              <SelectItem value="year_to_date">Year to Date (2026)</SelectItem>
-              <SelectItem value="custom">Custom Date Range...</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* KPI Overview Grid with Sparklines & Dynamic Status */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Stat Card 1: Wallets */}
-        <Card className="relative overflow-hidden transition-colors hover:border-border/80">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {t('billing.admin.wallets')}
-            </CardTitle>
-            <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <WalletCards className="size-4" />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            <div className="flex items-baseline justify-between">
-              <div className="text-2xl font-bold tracking-tight">
-                {loading ? <Skeleton className="h-8 w-24" /> : formatCredits(totalCirculatingCredits)}
-              </div>
-              <span className="inline-flex items-center text-[10px] font-medium text-muted-foreground bg-muted border border-border/60 px-1.5 py-0.5 rounded-md">
-                {wallets ? `${wallets.total} Active` : '—'}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {wallets ? `${wallets.total} user wallets tracked` : 'Loading wallets…'}
-            </p>
-            {/* Sparkline Visualizer */}
-            <div className="pt-2">
-              <svg className="w-full h-7 overflow-visible" viewBox="0 0 100 25">
-                <defs>
-                  <linearGradient id="grad-wallets" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="currentColor" stopOpacity="0.3" className="text-primary" />
-                    <stop offset="100%" stopColor="currentColor" stopOpacity="0" className="text-primary" />
-                  </linearGradient>
-                </defs>
-                <path d="M0,20 Q15,18 30,12 T60,15 T80,5 T100,8 L100,25 L0,25 Z" fill="url(#grad-wallets)" />
-                <path d="M0,20 Q15,18 30,12 T60,15 T80,5 T100,8" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary" />
-              </svg>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Stat Card 2: Invoices */}
-        <Card className="relative overflow-hidden transition-colors hover:border-border/80">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {t('billing.invoices')}
-            </CardTitle>
-            <div className="flex size-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
-              <ReceiptText className="size-4" />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            <div className="flex items-baseline justify-between">
-              <div className="text-2xl font-bold tracking-tight">
-                {loading ? <Skeleton className="h-8 w-16" /> : invoices?.total ?? 0}
-              </div>
-              <span className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
-                invoices && invoices.total > 0
-                  ? 'text-blue-500 bg-blue-500/10 border border-blue-500/20'
-                  : 'text-muted-foreground bg-muted border border-border/60'
-              }`}>
-                {invoices ? `${invoices.data.filter((i) => i.status === 'paid').length} Paid` : '0 Paid'}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {invoices ? `${invoices.data.filter((i) => i.status === 'paid').length} paid invoices` : 'Loading invoices…'}
-            </p>
-            {/* Sparkline Visualizer */}
-            <div className="pt-2">
-              <svg className="w-full h-7 overflow-visible" viewBox="0 0 100 25">
-                <defs>
-                  <linearGradient id="grad-invoices" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <path d="M0,22 Q20,19 40,14 T70,9 T100,4 L100,25 L0,25 Z" fill="url(#grad-invoices)" />
-                <path d="M0,22 Q20,19 40,14 T70,9 T100,4" fill="none" stroke="#3b82f6" strokeWidth="1.5" />
-              </svg>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Stat Card 3: Top-ups & Revenue */}
-        <Card className="relative overflow-hidden transition-colors hover:border-border/80">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {t('billing.topups')}
-            </CardTitle>
-            <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500">
-              <CreditCard className="size-4" />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            <div className="flex items-baseline justify-between">
-              <div className="text-2xl font-bold tracking-tight">
-                {loading ? <Skeleton className="h-8 w-28" /> : formatMoney(totalTopupsRevenue, 'IDR')}
-              </div>
-              <span className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
-                topups && totalTopupsRevenue > 0
-                  ? 'text-emerald-500 bg-emerald-500/10 border border-emerald-500/20'
-                  : 'text-muted-foreground bg-muted border border-border/60'
-              }`}>
-                {topups ? `${topups.total} Orders` : '0 Orders'}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {topups ? `${topups.total} top-ups processed` : 'Loading top-ups…'}
-            </p>
-            {/* Sparkline Visualizer */}
-            <div className="pt-2">
-              <svg className="w-full h-7 overflow-visible" viewBox="0 0 100 25">
-                <defs>
-                  <linearGradient id="grad-topups" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <path d="M0,25 Q25,20 50,10 T80,6 T100,2 L100,25 L0,25 Z" fill="url(#grad-topups)" />
-                <path d="M0,25 Q25,20 50,10 T80,6 T100,2" fill="none" stroke="#10b981" strokeWidth="1.5" />
-              </svg>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Stat Card 4: Suspensions */}
-        <Card className={`relative overflow-hidden transition-colors hover:border-border/80 ${suspensions && suspensions.length > 0 ? 'border-amber-500/40 bg-amber-500/5' : ''}`}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {t('billing.admin.suspensions')}
-            </CardTitle>
-            <div className={`flex size-8 items-center justify-center rounded-lg ${suspensions && suspensions.length > 0 ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400' : 'bg-muted text-muted-foreground'}`}>
-              <AlertTriangle className="size-4" />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            <div className="flex items-baseline justify-between">
-              <div className="text-2xl font-bold tracking-tight">
-                {loading ? <Skeleton className="h-8 w-12" /> : suspensions?.length ?? 0}
-              </div>
-              <span className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
-                suspensions && suspensions.length > 0
-                  ? 'text-amber-500 bg-amber-500/10 border border-amber-500/20'
-                  : 'text-emerald-500 bg-emerald-500/10 border border-emerald-500/20'
-              }`}>
-                {suspensions && suspensions.length > 0 ? 'Action Required' : 'Healthy'}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {suspensions && suspensions.length > 0 ? 'Resources requiring payment' : 'No suspended resources'}
-            </p>
-            {/* Sparkline Visualizer (Flat Line for Healthy) */}
-            <div className="pt-2">
-              <svg className="w-full h-7 overflow-visible" viewBox="0 0 100 25">
-                <path d="M0,20 L100,20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 3" className="text-muted-foreground/40" />
-              </svg>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Main Tabbed Data Center */}
       <Tabs defaultValue="wallets" className="w-full space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b pb-2">
@@ -802,7 +558,7 @@ export default function AdminBilling() {
               {t('billing.admin.suspensionsTab')}
               {suspensions && (
                 <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
-                  {suspensions.length}
+                  {suspensions.total}
                 </Badge>
               )}
             </TabsTrigger>
@@ -839,7 +595,10 @@ export default function AdminBilling() {
                   <Input
                     placeholder={t('billing.admin.searchWallets')}
                     value={walletSearch}
-                    onChange={(e) => setWalletSearch(e.target.value)}
+                    onChange={(e) => {
+                      setWalletSearch(e.target.value)
+                      setWalletPage(1)
+                    }}
                     className="pl-8 h-9 text-xs"
                   />
                 </div>
@@ -878,8 +637,8 @@ export default function AdminBilling() {
                     </TableRow>
                   )}
 
-                  {!loading && filteredWallets.map((wallet) => {
-                    const userDetails = getUserDetails(wallet.user_id)
+                  {!loading && displayedWallets.map((wallet) => {
+                    const userDetails = getUserDetails(wallet.user_id, wallet.user_name, wallet.user_email, wallet.user_role)
                     return (
                       <TableRow key={wallet.user_id} className="transition-colors hover:bg-muted/40">
                         <TableCell className="py-2 pl-4">
@@ -898,7 +657,7 @@ export default function AdminBilling() {
                         </TableCell>
 
                         <TableCell className="py-2">
-                          {userDetails.found ? (
+                          {userDetails.role ? (
                             <Badge variant="secondary" className="text-[10px] font-medium capitalize">
                               {userDetails.role}
                             </Badge>
@@ -935,7 +694,7 @@ export default function AdminBilling() {
                     )
                   })}
 
-                  {!loading && filteredWallets.length === 0 && (
+                  {!loading && displayedWallets.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
                         {t('billing.admin.noRecords')}
@@ -953,7 +712,7 @@ export default function AdminBilling() {
 
         {/* ================= SUSPENSIONS TAB ================= */}
         <TabsContent value="suspensions" className="space-y-4">
-          <Card className={suspensions && suspensions.length > 0 ? 'border-amber-500/40' : ''}>
+          <Card className={suspensions && suspensions.total > 0 ? 'border-amber-500/40' : ''}>
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="size-5 text-amber-600 dark:text-amber-400" />
@@ -985,7 +744,7 @@ export default function AdminBilling() {
                   )}
 
                   {!loading && !errors.suspensions && displayedSuspensions.map((item) => {
-                    const userDetails = getUserDetails(item.user_id)
+                    const userDetails = getUserDetails(item.user_id, item.user_name, item.user_email, item.user_role)
                     return (
                       <TableRow key={`${item.user_id}-${item.resource_type}-${item.resource_id}`} className="transition-colors hover:bg-muted/40">
                         <TableCell className="py-2 pl-4 font-medium">
@@ -1045,12 +804,19 @@ export default function AdminBilling() {
                   <Input
                     placeholder={t('billing.admin.searchInvoices')}
                     value={invoiceSearch}
-                    onChange={(e) => setInvoiceSearch(e.target.value)}
+                    onChange={(e) => {
+                      setInvoiceSearch(e.target.value)
+                      setInvoicePage(1)
+                    }}
                     className="pl-8 h-9 text-xs"
                   />
                 </div>
 
-                <Select value={invoiceStatusFilter} onValueChange={(val) => val && setInvoiceStatusFilter(val)}>
+                <Select value={invoiceStatusFilter} onValueChange={(val) => {
+                  if (!val) return
+                  setInvoiceStatusFilter(val)
+                  setInvoicePage(1)
+                }}>
                   <SelectTrigger className="h-9 w-36 shrink-0 text-xs">
                     <Filter className="size-3.5 mr-1 text-muted-foreground" />
                     <span className="capitalize">{invoiceStatusFilter === 'all' ? t('billing.allStatuses') : formatStatus(invoiceStatusFilter)}</span>
@@ -1102,8 +868,8 @@ export default function AdminBilling() {
                     </TableRow>
                   )}
 
-                  {!loading && filteredInvoices.map((invoice) => {
-                    const userDetails = getUserDetails(invoice.user_id)
+                  {!loading && displayedInvoices.map((invoice) => {
+                    const userDetails = getUserDetails(invoice.user_id, invoice.user_name, invoice.user_email, invoice.user_role)
                     return (
                       <TableRow key={invoice.id} className="transition-colors hover:bg-muted/40">
                         <TableCell className="py-2 pl-4 font-mono text-[11px] font-semibold tabular-nums text-foreground">
@@ -1154,7 +920,7 @@ export default function AdminBilling() {
                     )
                   })}
 
-                  {!loading && filteredInvoices.length === 0 && (
+                  {!loading && displayedInvoices.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
                         {t('billing.admin.noRecords')}
@@ -1184,12 +950,19 @@ export default function AdminBilling() {
                   <Input
                     placeholder={t('billing.admin.searchTopups')}
                     value={topupSearch}
-                    onChange={(e) => setTopupSearch(e.target.value)}
+                    onChange={(e) => {
+                      setTopupSearch(e.target.value)
+                      setTopupPage(1)
+                    }}
                     className="pl-8 h-9 text-xs"
                   />
                 </div>
 
-                <Select value={topupStatusFilter} onValueChange={(val) => val && setTopupStatusFilter(val)}>
+                <Select value={topupStatusFilter} onValueChange={(val) => {
+                  if (!val) return
+                  setTopupStatusFilter(val)
+                  setTopupPage(1)
+                }}>
                   <SelectTrigger className="h-9 w-36 shrink-0 text-xs">
                     <Filter className="size-3.5 mr-1 text-muted-foreground" />
                     <span className="capitalize">{topupStatusFilter === 'all' ? t('billing.allStatuses') : formatStatus(topupStatusFilter)}</span>
@@ -1239,8 +1012,8 @@ export default function AdminBilling() {
                     </TableRow>
                   )}
 
-                  {!loading && filteredTopups.map((topup) => {
-                    const userDetails = getUserDetails(topup.user_id)
+                  {!loading && displayedTopups.map((topup) => {
+                    const userDetails = getUserDetails(topup.user_id, topup.user_name, topup.user_email, topup.user_role)
                     return (
                       <TableRow key={topup.id} className="transition-colors hover:bg-muted/40">
                         <TableCell className="py-2 pl-4 font-mono text-[11px] font-semibold tabular-nums text-foreground">
@@ -1279,7 +1052,7 @@ export default function AdminBilling() {
                     )
                   })}
 
-                  {!loading && filteredTopups.length === 0 && (
+                  {!loading && displayedTopups.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                         {t('billing.admin.noRecords')}
@@ -1578,7 +1351,7 @@ export default function AdminBilling() {
             <PricingForm title={t('billing.admin.createPackage')} description={t('billing.admin.versionedPricing')} onSubmit={createPackage} submitting={creatingPackage} submitLabel={t('billing.admin.create')}>
               <div className="grid gap-3 sm:grid-cols-2">
                 <NumberField id="package-credits" label={t('billing.admin.credits')} value={packageForm.credits} onChange={(credits) => setPackageForm((current) => ({ ...current, credits }))} min={1} placeholder="100" />
-                
+
                 <Field label={t('billing.admin.currency')} htmlFor="package-currency">
                   <Select name="currency" value={packageForm.currency} onValueChange={(currency) => setPackageForm((current) => ({ ...current, currency: currency || 'IDR' }))}>
                     <SelectTrigger id="package-currency" className="w-full h-9 text-xs">{packageForm.currency}</SelectTrigger>
@@ -1642,7 +1415,7 @@ export default function AdminBilling() {
               {adjustingWallet && (
                 <span>
                   Grant credit adjustment to{' '}
-                  <strong className="text-foreground">{getUserDetails(adjustingWallet.user_id).name}</strong> (#{adjustingWallet.user_id})
+                  <strong className="text-foreground">{getUserDetails(adjustingWallet.user_id, adjustingWallet.user_name, adjustingWallet.user_email, adjustingWallet.user_role).name}</strong> (#{adjustingWallet.user_id})
                 </span>
               )}
             </DialogDescription>
@@ -1667,7 +1440,7 @@ export default function AdminBilling() {
       <Dialog open={viewingInvoice !== null} onOpenChange={(open) => !open && setViewingInvoice(null)}>
         <DialogContent className="max-w-lg overflow-hidden p-0">
           {viewingInvoice && (() => {
-            const userDetails = getUserDetails(viewingInvoice.user_id)
+            const userDetails = getUserDetails(viewingInvoice.user_id, viewingInvoice.user_name, viewingInvoice.user_email, viewingInvoice.user_role)
             return (
               <div>
                 {/* pr-14 keeps the status badge clear of the dialog's absolute close button. */}

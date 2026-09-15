@@ -158,7 +158,7 @@ func TestReconcileTopupByRefEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}, &models.BillingProfile{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -168,6 +168,10 @@ func TestReconcileTopupByRefEndpoint(t *testing.T) {
 	}
 	other := models.User{Email: "other-ref-endpoint@example.test", Password: "test", Name: "Other"}
 	if err := db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	profile := models.BillingProfile{UserID: user.ID, CompanyName: "Owner", Email: user.Email, Phone: "081234567890", AddressLine1: "Jalan Pengujian 123", City: "Jakarta", PostalCode: "12345", Country: "ID"}
+	if err := db.Create(&profile).Error; err != nil {
 		t.Fatal(err)
 	}
 

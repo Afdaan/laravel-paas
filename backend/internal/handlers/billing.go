@@ -73,7 +73,7 @@ func (h *BillingHandler) ListWallets(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	view, err := h.catalog.ListAdminWallets(c.UserContext(), page, limit)
+	view, err := h.catalog.ListAdminWallets(c.UserContext(), page, limit, billing.ListAdminWalletsFilter{Search: c.Query("search")})
 	if err != nil {
 		return mapCatalogError(err)
 	}
@@ -85,7 +85,7 @@ func (h *BillingHandler) ListInvoices(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	view, err := h.catalog.ListAdminInvoices(c.UserContext(), page, limit)
+	view, err := h.catalog.ListAdminInvoices(c.UserContext(), page, limit, billing.ListAdminInvoicesFilter{Search: c.Query("search"), Status: c.Query("status")})
 	if err != nil {
 		return mapCatalogError(err)
 	}
@@ -97,7 +97,7 @@ func (h *BillingHandler) ListTopups(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	view, err := h.catalog.ListAdminTopups(c.UserContext(), page, limit)
+	view, err := h.catalog.ListAdminTopups(c.UserContext(), page, limit, billing.ListAdminTopupsFilter{Search: c.Query("search"), Status: c.Query("status")})
 	if err != nil {
 		return mapCatalogError(err)
 	}
@@ -150,9 +150,13 @@ func (h *BillingHandler) ListSuspensions(c *fiber.Ctx) error {
 	if h.suspensions == nil {
 		return apperr.New(503, "BILLING_UNAVAILABLE", "Billing service is unavailable")
 	}
-	views, err := h.suspensions.SuspensionViews(c.UserContext(), time.Now().UTC())
+	page, limit, err := billingCollectionPagination(c)
 	if err != nil {
 		return err
+	}
+	views, err := h.suspensions.ListSuspensionViews(c.UserContext(), page, limit, time.Now().UTC())
+	if err != nil {
+		return mapCatalogError(err)
 	}
 	return c.JSON(views)
 }
@@ -262,8 +266,25 @@ func (h *BillingHandler) PayDueResource(c *fiber.Ctx) error {
 	if err != nil {
 		return apperr.NewBadRequest("Invalid resource type")
 	}
+	var input struct {
+		InvoiceID     uint      `json:"invoice_id"`
+		InvoiceItemID uint      `json:"invoice_item_id"`
+		PeriodStart   time.Time `json:"period_start"`
+		PeriodEnd     time.Time `json:"period_end"`
+		Credits       int64     `json:"credits"`
+	}
+	if err := decodeBillingJSON(c, &input); err != nil {
+		return apperr.NewBadRequest("Invalid overdue resource payment")
+	}
 	userID, _ := c.Locals("user_id").(uint)
-	if err := h.catalog.PayDueResource(c.UserContext(), userID, resourceType, uint(resourceID), time.Now().UTC()); err != nil {
+	expected := billing.DuePaymentExpectation{
+		InvoiceID:     input.InvoiceID,
+		InvoiceItemID: input.InvoiceItemID,
+		PeriodStart:   input.PeriodStart,
+		PeriodEnd:     input.PeriodEnd,
+		Credits:       input.Credits,
+	}
+	if err := h.catalog.PayDueResourceExpected(c.UserContext(), userID, resourceType, uint(resourceID), time.Now().UTC(), expected); err != nil {
 		switch {
 		case errors.Is(err, billing.ErrInvalidInvoiceInput):
 			return apperr.NewBadRequest("Invalid overdue resource payment")
@@ -271,6 +292,8 @@ func (h *BillingHandler) PayDueResource(c *fiber.Ctx) error {
 			return apperr.ErrNotFound
 		case errors.Is(err, billing.ErrResourcePaymentNotDue):
 			return apperr.New(409, "RESOURCE_PAYMENT_NOT_DUE", "This resource has no outstanding payment")
+		case errors.Is(err, billing.ErrStaleDuePayment):
+			return apperr.New(409, "DUE_PAYMENT_STALE", "Payment details changed. Refresh and confirm the current invoice.")
 		case errors.Is(err, billing.ErrInsufficientCredits):
 			return apperr.New(402, "INSUFFICIENT_CREDITS", "Insufficient credits. Add credits and try again.")
 		default:
@@ -451,6 +474,8 @@ func mapTopupError(err error) error {
 		return apperr.New(400, "BILLING_TOPUP_DISABLED", "Top-up payment processing is currently disabled in system configuration")
 	case errors.Is(err, billing.ErrInvalidTopupInput):
 		return apperr.NewBadRequest("Invalid top-up request")
+	case errors.Is(err, billing.ErrBillingProfileRequired):
+		return apperr.New(400, "BILLING_PROFILE_REQUIRED", "Complete your billing profile before creating a top-up")
 	case errors.Is(err, billing.ErrTopupIdempotencyConflict):
 		return apperr.New(409, "TOPUP_IDEMPOTENCY_CONFLICT", "The idempotency key belongs to a different top-up request")
 	case errors.Is(err, billing.ErrTopupNotFound):
@@ -549,7 +574,6 @@ func billingAuditContext(c *fiber.Ctx, actorUserID uint, reason string) billing.
 	}
 }
 
-
 func (h *BillingHandler) SetBillingProfileService(service *billing.BillingProfileService) {
 	h.billingProfile = service
 }
@@ -576,8 +600,8 @@ func (h *BillingHandler) UpdateBillingProfile(c *fiber.Ctx) error {
 		return apperr.New(503, "BILLING_UNAVAILABLE", "Billing profile service unavailable")
 	}
 	profile, err := h.billingProfile.UpsertProfile(c.UserContext(), userID, input)
-	if errors.Is(err, billing.ErrInvalidBillingEmail) {
-		return apperr.NewBadRequest("Invalid email format")
+	if errors.Is(err, billing.ErrInvalidBillingEmail) || errors.Is(err, billing.ErrInvalidBillingProfile) {
+		return apperr.NewBadRequest("Invalid or incomplete billing profile")
 	}
 	if err != nil {
 		return err

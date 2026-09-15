@@ -84,6 +84,57 @@ func TestSuspensionViewsExcludeDeletingProject(t *testing.T) {
 	}
 }
 
+func TestSuspensionViewsAreAggregatedAndPaginated(t *testing.T) {
+	fixture := suspensionFixture(t, models.BillableTypeProject)
+	olderDueAt := fixture.dueAt.AddDate(0, 0, -2)
+	olderInvoice := models.Invoice{UserID: fixture.resource.UserID, WalletID: 1, PeriodStart: olderDueAt, PeriodEnd: fixture.dueAt, TotalCredits: 10, Status: models.InvoiceStatusPaymentDue, IdempotencyKey: "older-" + t.Name(), DueAt: &olderDueAt}
+	if err := fixture.db.Create(&olderInvoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.Create(&models.InvoiceItem{InvoiceID: olderInvoice.ID, BillableResourceID: fixture.resource.ID, SpecID: fixture.resource.SpecID, Description: "Older due item", Credits: 10}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	secondProject := models.Project{UID: "second-" + t.Name(), UserID: fixture.resource.UserID, Name: "Second suspended", GithubURL: "https://github.com/example/second", Subdomain: "second-" + t.Name(), Status: models.StatusRunning}
+	if err := fixture.db.Create(&secondProject).Error; err != nil {
+		t.Fatal(err)
+	}
+	secondResource := models.BillableResource{UserID: fixture.resource.UserID, Type: models.BillableTypeProject, ResourceID: secondProject.ID, SpecID: fixture.resource.SpecID, BillingStatus: models.BillableResourceStatusSuspended, CurrentPeriodStart: fixture.dueAt, NextInvoiceAt: fixture.dueAt.AddDate(0, 1, 0), BillingAnchorDay: fixture.dueAt.Day()}
+	if err := fixture.db.Create(&secondResource).Error; err != nil {
+		t.Fatal(err)
+	}
+	secondDueAt := fixture.dueAt.AddDate(0, 0, 1)
+	secondInvoice := models.Invoice{UserID: fixture.resource.UserID, WalletID: 1, PeriodStart: secondDueAt, PeriodEnd: secondDueAt.AddDate(0, 1, 0), TotalCredits: 10, Status: models.InvoiceStatusPaymentDue, IdempotencyKey: "second-" + t.Name(), DueAt: &secondDueAt}
+	if err := fixture.db.Create(&secondInvoice).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.Create(&models.InvoiceItem{InvoiceID: secondInvoice.ID, BillableResourceID: secondResource.ID, SpecID: secondResource.SpecID, Description: "Second due item", Credits: 10}).Error; err != nil {
+		t.Fatal(err)
+	}
+	brokenProject := models.Project{UID: "broken-" + t.Name(), UserID: fixture.resource.UserID, Name: "Missing invoice evidence", GithubURL: "https://github.com/example/broken", Subdomain: "broken-" + t.Name(), Status: models.StatusRunning}
+	if err := fixture.db.Create(&brokenProject).Error; err != nil {
+		t.Fatal(err)
+	}
+	brokenResource := models.BillableResource{UserID: fixture.resource.UserID, Type: models.BillableTypeProject, ResourceID: brokenProject.ID, SpecID: fixture.resource.SpecID, BillingStatus: models.BillableResourceStatusSuspended, CurrentPeriodStart: fixture.dueAt, NextInvoiceAt: fixture.dueAt.AddDate(0, 1, 0), BillingAnchorDay: fixture.dueAt.Day()}
+	if err := fixture.db.Create(&brokenResource).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewSuspensionService(fixture.db, &config.Config{BillingEnabled: true, BillingGraceDays: 7})
+	firstPage, err := service.ListSuspensionViews(context.Background(), 1, 1, fixture.dueAt.AddDate(0, 0, 7))
+	if err != nil || firstPage.Total != 3 || len(firstPage.Data) != 1 || firstPage.Data[0].ResourceID != fixture.resource.ResourceID || firstPage.Data[0].UserName != "Suspension" || firstPage.Data[0].OldestDueAt == nil || !firstPage.Data[0].OldestDueAt.Equal(olderDueAt) {
+		t.Fatalf("first suspension page=%#v err=%v", firstPage, err)
+	}
+	secondPage, err := service.ListSuspensionViews(context.Background(), 2, 1, fixture.dueAt.AddDate(0, 0, 7))
+	if err != nil || secondPage.Total != 3 || len(secondPage.Data) != 1 || secondPage.Data[0].ResourceID != secondResource.ResourceID {
+		t.Fatalf("second suspension page=%#v err=%v", secondPage, err)
+	}
+	thirdPage, err := service.ListSuspensionViews(context.Background(), 3, 1, fixture.dueAt.AddDate(0, 0, 7))
+	if err != nil || thirdPage.Total != 3 || len(thirdPage.Data) != 1 || thirdPage.Data[0].ResourceID != brokenResource.ResourceID || thirdPage.Data[0].OldestDueAt != nil {
+		t.Fatalf("broken suspension page=%#v err=%v", thirdPage, err)
+	}
+}
+
 type suspensionFixtureData struct {
 	db          *gorm.DB
 	resource    models.BillableResource

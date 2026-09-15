@@ -198,15 +198,20 @@ export const ResourceBillingCard = memo(function ResourceBillingCard({ overview,
                           type="button"
                           size="sm"
                           className="h-8 w-fit px-3 text-xs font-medium"
-                          disabled={paymentLoading[resourceKey]}
-                          onClick={() => setPendingDuePayment({
-                            resource_id: resource.resource_id,
-                            resource_type: resource.resource_type,
-                            resource_name: resourceName,
-                            period_start: resource.payment_due_period_start,
-                            period_end: resource.payment_due_period_end,
-                            credits: resource.payment_due_credits,
-                          })}
+                          disabled={paymentLoading[resourceKey] || resource.payment_due_invoice_id === undefined || resource.payment_due_item_id === undefined || resource.payment_due_period_start === undefined || resource.payment_due_period_end === undefined || resource.payment_due_credits === undefined}
+                          onClick={() => {
+                            if (resource.payment_due_invoice_id === undefined || resource.payment_due_item_id === undefined || resource.payment_due_period_start === undefined || resource.payment_due_period_end === undefined || resource.payment_due_credits === undefined) return
+                            setPendingDuePayment({
+                              resource_id: resource.resource_id,
+                              resource_type: resource.resource_type,
+                              resource_name: resourceName,
+                              invoice_id: resource.payment_due_invoice_id,
+                              invoice_item_id: resource.payment_due_item_id,
+                              period_start: resource.payment_due_period_start,
+                              period_end: resource.payment_due_period_end,
+                              credits: resource.payment_due_credits,
+                            })
+                          }}
                         >
                           {paymentLoading[resourceKey] && <Loader2 className="size-3.5 animate-spin" />}
                           {t('billing.payDueNow')}

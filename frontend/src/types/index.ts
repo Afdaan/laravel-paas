@@ -288,6 +288,8 @@ export interface BillingOverview {
     payment_due_period_start?: string;
     payment_due_period_end?: string;
     payment_due_credits?: number;
+    payment_due_invoice_id?: number;
+    payment_due_item_id?: number;
     auto_renew: boolean;
   }>;
   upcoming_required_credits: number;

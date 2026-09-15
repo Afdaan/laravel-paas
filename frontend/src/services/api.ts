@@ -575,15 +575,20 @@ export const billingAPI = {
   updateAutoRenew: (resourceId: number, resourceType: 'project' | 'database', autoRenew: boolean) =>
     api.put('/billing/resources/auto-renew', { resource_id: resourceId, resource_type: resourceType, auto_renew: autoRenew }),
 
-  payDueResource: (resourceId: number, resourceType: 'project' | 'database') =>
-    api.post(`/billing/resources/${resourceType}/${resourceId}/pay`),
+  payDueResource: (resourceId: number, resourceType: 'project' | 'database', expected: {
+    invoice_id: number
+    invoice_item_id: number
+    period_start: string
+    period_end: string
+    credits: number
+  }) => api.post(`/billing/resources/${resourceType}/${resourceId}/pay`, expected),
 
   adminCatalog: () => api.get('/admin/billing/catalog'),
-  adminSuspensions: () => api.get('/admin/billing/suspensions'),
+  adminSuspensions: (params: { page?: number; limit?: number } = {}) => api.get('/admin/billing/suspensions', { params }),
   adminWallet: (userID: number) => api.get(`/admin/billing/wallets/${userID}`),
-  adminWallets: (params: { page?: number; limit?: number } = {}) => api.get('/admin/billing/wallets', { params }),
-  adminInvoices: (params: { page?: number; limit?: number } = {}) => api.get('/admin/billing/invoices', { params }),
-  adminTopups: (params: { page?: number; limit?: number } = {}) => api.get('/admin/billing/topups', { params }),
+  adminWallets: (params: { page?: number; limit?: number; search?: string } = {}) => api.get('/admin/billing/wallets', { params }),
+  adminInvoices: (params: { page?: number; limit?: number; search?: string; status?: string } = {}) => api.get('/admin/billing/invoices', { params }),
+  adminTopups: (params: { page?: number; limit?: number; search?: string; status?: string } = {}) => api.get('/admin/billing/topups', { params }),
   createSpec: (data: unknown) => api.post('/admin/billing/specs', data),
   createTopupPackage: (data: unknown) => api.post('/admin/billing/topup-packages', data),
   updateTopupPackage: (id: number, data: unknown) => api.put(`/admin/billing/topup-packages/${id}`, data),

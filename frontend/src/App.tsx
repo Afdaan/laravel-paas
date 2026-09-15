@@ -17,7 +17,7 @@ import useTranslation from './lib/useTranslation'
 
 // Layouts & Global Components
 import DashboardLayout from './components/DashboardLayout'
-import ReauthModal from './components/ReauthModal' 
+import ReauthModal from './components/ReauthModal'
 import LoadingScreen from './components/LoadingScreen'
 import Setup from './pages/Setup'
 

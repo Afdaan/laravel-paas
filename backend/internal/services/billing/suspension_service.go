@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,6 +22,45 @@ const billingSuspensionInterval = time.Minute
 type SuspensionService struct {
 	db        *gorm.DB
 	graceDays int
+}
+
+type scannedTime struct {
+	Time  time.Time
+	Valid bool
+}
+
+func (value *scannedTime) Scan(source any) error {
+	if source == nil {
+		return nil
+	}
+	if parsed, ok := source.(time.Time); ok {
+		value.Time, value.Valid = parsed, true
+		return nil
+	}
+	text := ""
+	switch typed := source.(type) {
+	case string:
+		text = typed
+	case []byte:
+		text = string(typed)
+	default:
+		return fmt.Errorf("unsupported billing due time type %T", source)
+	}
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999-07:00", "2006-01-02 15:04:05-07:00", "2006-01-02 15:04:05.999999999"} {
+		parsed, err := time.Parse(layout, text)
+		if err == nil {
+			value.Time, value.Valid = parsed, true
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid billing due time %q", text)
+}
+
+func (value scannedTime) Value() (driver.Value, error) {
+	if !value.Valid {
+		return nil, nil
+	}
+	return value.Time, nil
 }
 
 func NewSuspensionService(db *gorm.DB, cfg *config.Config) *SuspensionService {
@@ -207,53 +247,108 @@ func ensureDatabaseStatusOperationTaskTx(tx *gorm.DB, resource models.BillableRe
 
 // SuspensionViews returns a deliberately narrow admin view without wallet or payment internals.
 func (s *SuspensionService) SuspensionViews(ctx context.Context, now time.Time) ([]SuspensionView, error) {
-	return s.suspensionViews(ctx, nil, now)
+	views, _, err := s.suspensionViews(ctx, nil, now, 0, 0)
+	return views, err
+}
+
+func (s *SuspensionService) ListSuspensionViews(ctx context.Context, page, limit int, now time.Time) (AdminCollection[SuspensionView], error) {
+	page, limit, err := normalizeAdminCollectionPage(page, limit)
+	if err != nil {
+		return AdminCollection[SuspensionView]{}, err
+	}
+	views, total, err := s.suspensionViews(ctx, nil, now, page, limit)
+	if err != nil {
+		return AdminCollection[SuspensionView]{}, err
+	}
+	return AdminCollection[SuspensionView]{Data: views, Page: page, Limit: limit, Total: total}, nil
 }
 
 func (s *SuspensionService) SuspensionViewsForUser(ctx context.Context, userID uint, now time.Time) ([]SuspensionView, error) {
 	if userID == 0 {
 		return nil, ErrInvalidInvoiceInput
 	}
-	return s.suspensionViews(ctx, &userID, now)
+	views, _, err := s.suspensionViews(ctx, &userID, now, 0, 0)
+	return views, err
 }
 
-func (s *SuspensionService) suspensionViews(ctx context.Context, userID *uint, now time.Time) ([]SuspensionView, error) {
+func (s *SuspensionService) suspensionViews(ctx context.Context, userID *uint, now time.Time, page, limit int) ([]SuspensionView, int64, error) {
 	if s == nil || s.db == nil {
-		return nil, ErrInvoiceServiceUnavailable
+		return nil, 0, ErrInvoiceServiceUnavailable
 	}
-	query := s.db.WithContext(ctx).
-		Where("billing_status IN ?", []models.BillableResourceStatus{models.BillableResourceStatusPaymentDue, models.BillableResourceStatusSuspended}).
+	query := s.db.WithContext(ctx).Table("billable_resources").
+		Joins("LEFT JOIN invoice_items ON invoice_items.billable_resource_id = billable_resources.id").
+		Joins("LEFT JOIN invoices ON invoices.id = invoice_items.invoice_id AND invoices.status = ? AND invoices.due_at IS NOT NULL", models.InvoiceStatusPaymentDue).
+		Joins("LEFT JOIN users ON users.id = billable_resources.user_id").
+		Where("billable_resources.billing_status IN ?", []models.BillableResourceStatus{models.BillableResourceStatusPaymentDue, models.BillableResourceStatusSuspended}).
 		Where(`
-			(type = ? AND EXISTS (SELECT 1 FROM projects WHERE projects.id = billable_resources.resource_id AND projects.status <> ?))
-			OR (type = ? AND EXISTS (SELECT 1 FROM database_instances WHERE database_instances.id = billable_resources.resource_id AND database_instances.status <> ?))
+			(billable_resources.type = ? AND EXISTS (SELECT 1 FROM projects WHERE projects.id = billable_resources.resource_id AND projects.status <> ?))
+			OR (billable_resources.type = ? AND EXISTS (SELECT 1 FROM database_instances WHERE database_instances.id = billable_resources.resource_id AND database_instances.status <> ?))
 		`, models.BillableTypeProject, models.StatusDeleting, models.BillableTypeDatabase, models.DBStatusDeleted).
-		Order("id ASC")
+		Group("billable_resources.id, billable_resources.resource_id, billable_resources.type, billable_resources.user_id, billable_resources.billing_status, users.name, users.email")
 	if userID != nil {
-		query = query.Where("user_id = ?", *userID)
+		query = query.Where("billable_resources.user_id = ?", *userID)
 	}
-	var resources []models.BillableResource
-	if err := query.Find(&resources).Error; err != nil {
-		return nil, fmt.Errorf("list billing suspension resources: %w", err)
-	}
-	views := make([]SuspensionView, 0, len(resources))
-	for _, resource := range resources {
-		dueAt, err := billinggate.OldestOpenInvoiceDueAt(ctx, s.db, resource.ID)
-		if err != nil {
-			return nil, err
+
+	var total int64
+	if page > 0 {
+		countQuery := s.db.WithContext(ctx).Table("billable_resources").
+			Joins("LEFT JOIN invoice_items ON invoice_items.billable_resource_id = billable_resources.id").
+			Joins("LEFT JOIN invoices ON invoices.id = invoice_items.invoice_id AND invoices.status = ? AND invoices.due_at IS NOT NULL", models.InvoiceStatusPaymentDue).
+			Where("billable_resources.billing_status IN ?", []models.BillableResourceStatus{models.BillableResourceStatusPaymentDue, models.BillableResourceStatusSuspended}).
+			Where(`
+				(billable_resources.type = ? AND EXISTS (SELECT 1 FROM projects WHERE projects.id = billable_resources.resource_id AND projects.status <> ?))
+				OR (billable_resources.type = ? AND EXISTS (SELECT 1 FROM database_instances WHERE database_instances.id = billable_resources.resource_id AND database_instances.status <> ?))
+			`, models.BillableTypeProject, models.StatusDeleting, models.BillableTypeDatabase, models.DBStatusDeleted)
+		if userID != nil {
+			countQuery = countQuery.Where("billable_resources.user_id = ?", *userID)
 		}
-		view := SuspensionView{ResourceID: resource.ResourceID, ResourceType: resource.Type, UserID: resource.UserID, Status: resource.BillingStatus, OldestDueAt: dueAt}
+		if err := countQuery.Distinct("billable_resources.id").Count(&total).Error; err != nil {
+			return nil, 0, fmt.Errorf("count billing suspension resources: %w", err)
+		}
+		query = query.Offset((page - 1) * limit).Limit(limit)
+	}
+
+	type suspensionRow struct {
+		ResourceID   uint
+		ResourceType models.BillableType
+		UserID       uint
+		UserName     string
+		UserEmail    string
+		Status       models.BillableResourceStatus
+		OldestDueAt  scannedTime
+	}
+	var rows []suspensionRow
+	if err := query.
+		Select("billable_resources.resource_id, billable_resources.type AS resource_type, billable_resources.user_id, COALESCE(users.name, '') AS user_name, COALESCE(users.email, '') AS user_email, billable_resources.billing_status AS status, MIN(invoices.due_at) AS oldest_due_at").
+		Order("billable_resources.id ASC").
+		Scan(&rows).Error; err != nil {
+		return nil, 0, fmt.Errorf("list billing suspension resources: %w", err)
+	}
+	if page == 0 {
+		total = int64(len(rows))
+	}
+	views := make([]SuspensionView, 0, len(rows))
+	for _, row := range rows {
+		var dueAt *time.Time
+		if row.OldestDueAt.Valid {
+			parsed := row.OldestDueAt.Time.UTC()
+			dueAt = &parsed
+		}
+		view := SuspensionView{ResourceID: row.ResourceID, ResourceType: row.ResourceType, UserID: row.UserID, UserName: row.UserName, UserEmail: row.UserEmail, Status: row.Status, OldestDueAt: dueAt}
 		if dueAt != nil && now.After(*dueAt) {
-			view.PaymentDueDays = int(now.UTC().Sub(dueAt.UTC()) / (24 * time.Hour))
+			view.PaymentDueDays = int(now.UTC().Sub(*dueAt) / (24 * time.Hour))
 		}
 		views = append(views, view)
 	}
-	return views, nil
+	return views, total, nil
 }
 
 type SuspensionView struct {
 	ResourceID     uint                          `json:"resource_id"`
 	ResourceType   models.BillableType           `json:"resource_type"`
 	UserID         uint                          `json:"user_id"`
+	UserName       string                        `json:"user_name"`
+	UserEmail      string                        `json:"user_email"`
 	Status         models.BillableResourceStatus `json:"status"`
 	OldestDueAt    *time.Time                    `json:"oldest_due_at,omitempty"`
 	PaymentDueDays int                           `json:"payment_due_days"`

@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { act } from 'react'
 import AdminBilling from './Billing'
-import { billingAPI } from '@/services/api'
+import { billingAPI, usersAPI } from '@/services/api'
 import useAuthStore from '@/stores/authStore'
 
 vi.mock('@/services/api', () => ({
@@ -93,7 +93,7 @@ describe('AdminBilling pricing form payload', () => {
     ;(billingAPI.adminWallets as ReturnType<typeof vi.fn>).mockResolvedValue({ data: emptyPage })
     ;(billingAPI.adminInvoices as ReturnType<typeof vi.fn>).mockResolvedValue({ data: emptyPage })
     ;(billingAPI.adminTopups as ReturnType<typeof vi.fn>).mockResolvedValue({ data: emptyPage })
-    ;(billingAPI.adminSuspensions as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] })
+    ;(billingAPI.adminSuspensions as ReturnType<typeof vi.fn>).mockResolvedValue({ data: emptyPage })
   })
 
   afterEach(() => {
@@ -197,6 +197,67 @@ describe('AdminBilling pricing form payload', () => {
     expect(passedKey).toMatch(/^adj-/)
   })
 
+  it('sends wallet search to server after debounce', async () => {
+    render(<AdminBilling />)
+    await waitFor(() => expect(billingAPI.adminWallets).toHaveBeenCalled())
+    ;(billingAPI.adminWallets as ReturnType<typeof vi.fn>).mockClear()
+
+    fireEvent.change(screen.getByPlaceholderText('billing.admin.searchWallets'), { target: { value: 'target user' } })
+    await act(async () => vi.advanceTimersByTime(300))
+
+    await waitFor(() => expect(billingAPI.adminWallets).toHaveBeenLastCalledWith({ page: 1, limit: 10, search: 'target user' }))
+  })
+
+  it('shows row role for regular admin when user is outside the user-list limit', async () => {
+    ;(useAuthStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(false)
+    ;(billingAPI.adminWallets as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: {
+        page: 1,
+        limit: 10,
+        total: 2,
+        data: [
+          { user_id: 101, user_name: 'User 101', user_email: 'user101@example.test', user_role: 'user', balance_credits: 20, updated_at: '2026-09-15T00:00:00Z' },
+          { user_id: 102, user_name: 'User 102', user_email: 'user102@example.test', balance_credits: 10, updated_at: '2026-09-15T00:00:00Z' },
+        ],
+      },
+    })
+
+    render(<AdminBilling />)
+
+    expect(await screen.findByText('User 101')).toBeInTheDocument()
+    expect(screen.getByText('user')).toBeInTheDocument()
+    expect(within(screen.getByText('User 102').closest('tr') as HTMLElement).getByText('—')).toBeInTheDocument()
+    expect(usersAPI.list).not.toHaveBeenCalled()
+  })
+
+  it('ignores an older billing response that resolves after a newer search', async () => {
+    render(<AdminBilling />)
+    await waitFor(() => expect(billingAPI.adminWallets).toHaveBeenCalled())
+
+    let resolveOld: (value: unknown) => void = () => {}
+    let resolveNew: (value: unknown) => void = () => {}
+    ;(billingAPI.adminWallets as ReturnType<typeof vi.fn>).mockImplementation(({ search }) => new Promise((resolve) => {
+      if (search === 'old') resolveOld = resolve
+      if (search === 'new') resolveNew = resolve
+    }))
+
+    const search = screen.getByPlaceholderText('billing.admin.searchWallets')
+    fireEvent.change(search, { target: { value: 'old' } })
+    await act(async () => vi.advanceTimersByTime(300))
+    await waitFor(() => expect(billingAPI.adminWallets).toHaveBeenLastCalledWith({ page: 1, limit: 10, search: 'old' }))
+
+    fireEvent.change(search, { target: { value: 'new' } })
+    await act(async () => vi.advanceTimersByTime(300))
+    await waitFor(() => expect(billingAPI.adminWallets).toHaveBeenLastCalledWith({ page: 1, limit: 10, search: 'new' }))
+
+    await act(async () => resolveNew({ data: { page: 1, limit: 10, total: 1, data: [{ user_id: 102, user_name: 'Newest User', user_email: 'new@example.test', balance_credits: 20, updated_at: '2026-09-15T00:00:00Z' }] } }))
+    expect(await screen.findByText('Newest User')).toBeInTheDocument()
+
+    await act(async () => resolveOld({ data: { page: 1, limit: 10, total: 1, data: [{ user_id: 101, user_name: 'Stale User', user_email: 'old@example.test', balance_credits: 10, updated_at: '2026-09-14T00:00:00Z' }] } }))
+    expect(screen.getByText('Newest User')).toBeInTheDocument()
+    expect(screen.queryByText('Stale User')).not.toBeInTheDocument()
+  })
+
   it('paginates suspended resources to keep the table bounded', async () => {
     const suspensions = Array.from({ length: 12 }, (_, index) => ({
       user_id: index + 1,
@@ -206,7 +267,14 @@ describe('AdminBilling pricing form payload', () => {
       oldest_due_at: '2026-09-07T00:00:00Z',
       payment_due_days: 6,
     }))
-    ;(billingAPI.adminSuspensions as ReturnType<typeof vi.fn>).mockResolvedValue({ data: suspensions })
+    ;(billingAPI.adminSuspensions as ReturnType<typeof vi.fn>).mockImplementation(({ page = 1, limit = 10 }) => Promise.resolve({
+      data: {
+        page,
+        limit,
+        total: suspensions.length,
+        data: suspensions.slice((page - 1) * limit, page * limit),
+      },
+    }))
 
     render(<AdminBilling />)
 
@@ -235,6 +303,7 @@ describe('AdminBilling pricing form payload', () => {
 
     try {
       await act(async () => fireEvent.click(within(pagination).getByRole('button', { name: 'Next' })))
+      await waitFor(() => expect(billingAPI.adminSuspensions).toHaveBeenLastCalledWith({ page: 2, limit: 10 }))
       await act(async () => frame?.(0))
 
       expect(screen.getByText('database #11')).toBeInTheDocument()

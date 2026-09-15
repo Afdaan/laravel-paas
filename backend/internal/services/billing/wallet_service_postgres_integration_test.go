@@ -357,6 +357,10 @@ func createPostgresWalletTestUser(t *testing.T, db *gorm.DB) models.User {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
+	profile := models.BillingProfile{UserID: user.ID, CompanyName: "Wallet Service Test", Email: user.Email, Phone: "081234567890", AddressLine1: "Jalan Pengujian 123", City: "Jakarta", PostalCode: "12345", Country: "ID"}
+	if err := db.Create(&profile).Error; err != nil {
+		t.Fatal(err)
+	}
 	return user
 }
 

@@ -100,6 +100,22 @@ type mockLimiter struct {
 	err     error
 }
 
+type countingLimiter struct {
+	counts map[string]int
+	fail   bool
+}
+
+func (l *countingLimiter) RateLimit(key string, limit int, duration time.Duration) (bool, time.Duration, error) {
+	if l.fail {
+		return false, 0, assert.AnError
+	}
+	if l.counts == nil {
+		l.counts = make(map[string]int)
+	}
+	l.counts[key]++
+	return l.counts[key] <= limit, duration, nil
+}
+
 func (m *mockLimiter) RateLimit(key string, limit int, duration time.Duration) (bool, time.Duration, error) {
 	return m.allowed, m.ttl, m.err
 }
@@ -279,6 +295,60 @@ func TestRateLimitTopupCreateMiddleware(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 429, resp.StatusCode)
 	assert.Equal(t, "45", resp.Header.Get("Retry-After"))
+}
+
+func TestRateLimitOverduePaymentMiddleware(t *testing.T) {
+	newApp := func(limiter distributedRateLimiter, identity any) *fiber.App {
+		app := fiber.New(fiber.Config{
+			ErrorHandler: func(c *fiber.Ctx, err error) error {
+				if appErr, ok := err.(*apperr.AppError); ok {
+					return c.Status(appErr.HTTPStatus).JSON(fiber.Map{"error": appErr.Message})
+				}
+				return c.SendStatus(500)
+			},
+		})
+		app.Post("/billing/pay", func(c *fiber.Ctx) error {
+			if identity != nil {
+				c.Locals("user_id", identity)
+			}
+			return c.Next()
+		}, RateLimitOverduePayment(limiter), func(c *fiber.Ctx) error {
+			return c.SendString("ok")
+		})
+		return app
+	}
+
+	limiter := &countingLimiter{}
+	app := newApp(limiter, uint(42))
+	for requestNumber := 1; requestNumber <= 10; requestNumber++ {
+		response, err := app.Test(httptest.NewRequest("POST", "/billing/pay", nil))
+		assert.NoError(t, err)
+		assert.Equal(t, fiber.StatusOK, response.StatusCode)
+	}
+	response, err := app.Test(httptest.NewRequest("POST", "/billing/pay", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusTooManyRequests, response.StatusCode)
+	assert.Equal(t, "60", response.Header.Get("Retry-After"))
+
+	isolatedResponse, err := newApp(limiter, uint(43)).Test(httptest.NewRequest("POST", "/billing/pay", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, isolatedResponse.StatusCode)
+
+	limiter.counts = make(map[string]int)
+	recoveredResponse, err := app.Test(httptest.NewRequest("POST", "/billing/pay", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, recoveredResponse.StatusCode)
+
+	failedResponse, err := newApp(&countingLimiter{fail: true}, uint(42)).Test(httptest.NewRequest("POST", "/billing/pay", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusServiceUnavailable, failedResponse.StatusCode)
+
+	missingIdentityResponse, err := newApp(limiter, nil).Test(httptest.NewRequest("POST", "/billing/pay", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusUnauthorized, missingIdentityResponse.StatusCode)
+	invalidIdentityResponse, err := newApp(limiter, "42").Test(httptest.NewRequest("POST", "/billing/pay", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusUnauthorized, invalidIdentityResponse.StatusCode)
 }
 
 func TestRateLimitTopupReconcileMiddleware(t *testing.T) {

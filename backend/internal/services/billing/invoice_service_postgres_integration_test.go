@@ -67,7 +67,7 @@ func TestInvoiceSchedulerPostgresRecoversSuspendedCurrentPeriodAfterMissedWebhoo
 	if err := db.Where("user_id = ?", user.ID).First(&wallet).Error; err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second)
 	spec := models.BillableSpec{Type: models.BillableTypeProject, Name: "Scheduler Recovery", Slug: fmt.Sprintf("scheduler-recovery-%d", unique), CPUMillicores: 500, MemoryMB: 512, StorageGB: 10, MonthlyCredits: 100, Version: 1, IsActive: true}
 	if err := db.Create(&spec).Error; err != nil {
 		t.Fatal(err)

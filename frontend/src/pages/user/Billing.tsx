@@ -452,17 +452,20 @@ export default function Billing() {
 
   const confirmDuePayment = useCallback(async () => {
     if (!pendingDuePayment) return
-    const { resource_id: resourceID, resource_type: resourceType } = pendingDuePayment
+    const { resource_id: resourceID, resource_type: resourceType, invoice_id, invoice_item_id, period_start, period_end, credits } = pendingDuePayment
     const key = `${resourceType}-${resourceID}`
     setPendingDuePayment(null)
     setPaymentLoading((current) => ({ ...current, [key]: true }))
     try {
-      await billingAPI.payDueResource(resourceID, resourceType)
+      await billingAPI.payDueResource(resourceID, resourceType, { invoice_id, invoice_item_id, period_start, period_end, credits })
       await load()
       toast.success(t('billing.overduePaymentSuccess'))
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.data?.code === 'INSUFFICIENT_CREDITS') {
         toast.error(t('billing.overdueInsufficientCredits'))
+      } else if (axios.isAxiosError(error) && error.response?.data?.code === 'DUE_PAYMENT_STALE') {
+        await load()
+        toast.error(t('billing.overduePaymentStale'))
       } else {
         toast.error(t('billing.overduePaymentFailed'))
       }

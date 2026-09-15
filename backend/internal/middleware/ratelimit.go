@@ -506,6 +506,35 @@ func RateLimitAutoRenew(redis ...distributedRateLimiter) fiber.Handler {
 	}
 }
 
+// RateLimitOverduePayment protects wallet and invoice row locks with a strict distributed limit.
+func RateLimitOverduePayment(redis distributedRateLimiter) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		userID, ok := c.Locals("user_id").(uint)
+		if !ok || userID == 0 {
+			return apperr.ErrUnauthorized
+		}
+		if redis == nil {
+			return apperr.New(503, "RATE_LIMIT_UNAVAILABLE", "Payment protection is temporarily unavailable")
+		}
+
+		key := fmt.Sprintf("billing:overdue-payment:user:%d", userID)
+		allowed, ttl, err := redis.RateLimit(key, 10, time.Minute)
+		if err != nil {
+			slog.Error("Redis overdue payment rate limit failed", "error", err, "user_id", userID)
+			return apperr.New(503, "RATE_LIMIT_UNAVAILABLE", "Payment protection is temporarily unavailable")
+		}
+		if !allowed {
+			seconds := int(math.Ceil(ttl.Seconds()))
+			if seconds < 1 {
+				seconds = 1
+			}
+			c.Set("Retry-After", strconv.Itoa(seconds))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many overdue payment attempts", seconds), seconds)
+		}
+		return c.Next()
+	}
+}
+
 // RateLimitMidtransWebhook applies provider-aware rate limiting for Midtrans webhooks
 func RateLimitMidtransWebhook(redis distributedRateLimiter) fiber.Handler {
 	return func(c *fiber.Ctx) error {

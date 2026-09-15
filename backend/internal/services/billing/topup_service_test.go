@@ -407,13 +407,14 @@ func topupServiceFixture(t *testing.T) (*gorm.DB, models.User, *TopupService, *f
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Project{}, &models.ProjectSuspensionTask{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.InvoiceItem{}, &models.PaymentEvent{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Project{}, &models.ProjectSuspensionTask{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.BillableSpec{}, &models.BillableResource{}, &models.Invoice{}, &models.InvoiceItem{}, &models.PaymentEvent{}, &models.BillingProfile{}); err != nil {
 		t.Fatal(err)
 	}
 	user := models.User{Email: fmt.Sprintf("%s@example.test", t.Name()), Password: "test", Name: "Topup"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
+	createValidBillingProfile(t, db, user.ID)
 	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100000, AmountMinor: 25000, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
@@ -421,6 +422,18 @@ func topupServiceFixture(t *testing.T) (*gorm.DB, models.User, *TopupService, *f
 	gateway := &fakeMidtransGateway{}
 	service := NewTopupService(db, NewWalletService(db), &config.Config{BillingEnabled: true, BillingTopupEnabled: true, BillingTopupProvider: models.BillingProviderMidtrans, MidtransServerKey: "server-key", MidtransMerchantID: "merchant-id"}, gateway)
 	return db, user, service, gateway
+}
+
+func createValidBillingProfile(t *testing.T, db *gorm.DB, userID uint) models.BillingProfile {
+	t.Helper()
+	profile := models.BillingProfile{
+		UserID: userID, CompanyName: "Runara Test", Email: "billing@example.test", Phone: "081234567890",
+		AddressLine1: "Jalan Pengujian 123", City: "Jakarta", PostalCode: "12345", Country: "ID",
+	}
+	if err := db.Create(&profile).Error; err != nil {
+		t.Fatal(err)
+	}
+	return profile
 }
 
 // gatewaySees points the fake gateway's status response at the given webhook
@@ -921,13 +934,14 @@ func TestTopupServiceWithPakasirProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}, &models.BillingProfile{}); err != nil {
 		t.Fatal(err)
 	}
 	user := models.User{Email: "pakasir@example.test", Password: "test", Name: "Pakasir User"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
+	createValidBillingProfile(t, db, user.ID)
 	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
@@ -1319,13 +1333,14 @@ func TestTopupServiceSingleProviderResolutionPerCreate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.Setting{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.Setting{}, &models.BillingProfile{}); err != nil {
 		t.Fatal(err)
 	}
 	user := models.User{Email: "single-res@example.test", Password: "test", Name: "Single Resolution User"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
+	createValidBillingProfile(t, db, user.ID)
 	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
@@ -1520,13 +1535,14 @@ func TestTopupReconcilePakasirByProviderOrderID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}, &models.BillingProfile{}); err != nil {
 		t.Fatal(err)
 	}
 	user := models.User{Email: "pakasir-reconcile-ref@example.test", Password: "test", Name: "Pakasir Reconcile User"}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
+	createValidBillingProfile(t, db, user.ID)
 	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 100, AmountMinor: 10000, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
@@ -1673,7 +1689,7 @@ func TestTopupServiceCrossWalletReversalIndependence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Wallet{}, &models.WalletLedgerEntry{}, &models.TopupPackage{}, &models.Topup{}, &models.PaymentEvent{}, &models.BillingProfile{}); err != nil {
 		t.Fatal(err)
 	}
 	user1 := models.User{Email: "user1-reversal-test@example.test", Password: "test", Name: "User 1"}
@@ -1684,6 +1700,8 @@ func TestTopupServiceCrossWalletReversalIndependence(t *testing.T) {
 	if err := db.Create(&user2).Error; err != nil {
 		t.Fatal(err)
 	}
+	createValidBillingProfile(t, db, user1.ID)
+	createValidBillingProfile(t, db, user2.ID)
 	pkg := models.TopupPackage{Currency: models.BillingCurrencyIDR, Credits: 250, AmountMinor: 25000, Version: 1, IsActive: true}
 	if err := db.Create(&pkg).Error; err != nil {
 		t.Fatal(err)
