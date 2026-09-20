@@ -27,6 +27,7 @@ const Login = lazy(() => import('./pages/Login'))
 const UserDashboard = lazy(() => import('./pages/user/Dashboard'))
 const UserProjects = lazy(() => import('./pages/user/Projects'))
 const UserNewProject = lazy(() => import('./pages/user/NewProject'))
+const UserProjectProvisioning = lazy(() => import('./pages/user/ProjectProvisioning'))
 const UserProjectDetail = lazy(() => import('./pages/user/ProjectDetail'))
 const DatabaseManager = lazy(() => import('./pages/user/DatabaseStudio'))
 const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'))
@@ -240,6 +241,7 @@ function App() {
           <Route path="/dashboard" element={<UserDashboard />} />
           <Route path="/projects" element={<UserProjects />} />
           <Route path="/projects/new" element={<UserNewProject />} />
+          <Route path="/projects/:uid/provisioning" element={<UserProjectProvisioning />} />
           <Route path="/projects/:uid" element={<UserProjectDetail />} />
           <Route path="/databases" element={<UserDatabases />} />
           <Route path="/billing" element={<UserBilling />} />

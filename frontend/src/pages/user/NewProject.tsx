@@ -608,13 +608,7 @@ function UserNewProject() {
         port: formData.port === '' ? undefined : Number(formData.port),
       }
       const response = await projectsAPI.create(payload)
-      navigate(`/projects/${response.data.project.uid}`, {
-        state: {
-          projectCreation: {
-            projectName: response.data.project.name || formData.name,
-          },
-        },
-      })
+      navigate(`/projects/${response.data.project.uid}/provisioning`, { replace: true })
     } catch (error: unknown) {
       const axiosError = error as AxiosError<{ error: string; reason?: string }>
       let errorMsg = axiosError.response?.data?.error || t('common.actionFailed')

@@ -5,8 +5,6 @@ import useTranslation from '../lib/useTranslation'
 import { projectsAPI, billingAPI } from '../services/api'
 import { Project } from '../types'
 import { FrameworkIcon } from './FrameworkIcon'
-import { ProjectCreationLoading } from './project/ProjectCreationProgress'
-import { getProjectCreationContext } from './project/projectCreationContext'
 import { getDisplayedFramework } from '@/lib/runtimes'
 import { LanguageSwitcher } from './LanguageSwitcher'
 import { usePolling } from '@/lib/usePolling'
@@ -76,11 +74,7 @@ const MIN_EXPANDED_SIDEBAR_WIDTH = 200
 const MAX_EXPANDED_SIDEBAR_WIDTH = 320
 const COLLAPSE_DRAG_THRESHOLD = 150
 
-function DashboardPageFallback({ label, projectName }: { label: string; projectName?: string }) {
-  if (projectName) {
-    return <ProjectCreationLoading projectName={projectName} />
-  }
-
+function DashboardPageFallback({ label }: { label: string }) {
   return (
     <div className="space-y-6" aria-label={label} aria-live="polite">
       <div className="h-8 w-48 animate-pulse rounded-md bg-muted" />
@@ -157,7 +151,6 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
   const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
-  const projectCreationContext = getProjectCreationContext(location.state)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('paas-sidebar-collapsed') === 'true'
   })
@@ -862,7 +855,7 @@ function DashboardLayout({ isAdmin = false }: DashboardLayoutProps) {
 
         {/* Global Main Stream */}
         <main ref={mainContentRef} id="main-content" className="flex-1 p-8 overflow-auto">
-          <Suspense fallback={<DashboardPageFallback label={t('common.loading')} projectName={projectCreationContext?.projectName} />}>
+          <Suspense fallback={<DashboardPageFallback label={t('common.loading')} />}>
             <Outlet />
           </Suspense>
         </main>

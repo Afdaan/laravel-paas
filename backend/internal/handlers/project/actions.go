@@ -310,9 +310,18 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) (handlerErr error) {
 	jobID, err := h.redisService.EnqueueDeployment(project.ID, userID, "deploy")
 	if err != nil {
 		slog.Error("Failed to enqueue deployment", "project_id", project.ID, "error", err.Error())
+		failureMessage := "Initial deployment could not be queued. Retry deployment."
+		if statusErr := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusFailed, failureMessage, 0, ""); statusErr != nil {
+			slog.Error("Failed to persist initial deployment queue failure", "project_id", project.ID, "error", statusErr)
+		} else {
+			project.DeploymentStatus = models.DepStatusFailed
+			project.DeploymentProgress = 0
+			project.DeploymentMessage = &failureMessage
+		}
+		h.projectService.PopulateURL(project)
 		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 			"project": project,
-			"warning": "Project created but deployment queue failed. Please redeploy.",
+			"warning": failureMessage,
 		})
 	}
 

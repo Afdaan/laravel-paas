@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import useTranslation from '../../lib/useTranslation'
 import {
@@ -54,8 +54,7 @@ import { BuildTab } from '../../components/project/detail/BuildTab'
 import { DomainsTab } from '../../components/project/detail/DomainsTab'
 import { SettingsTab } from '../../components/project/detail/SettingsTab'
 import { PROJECT_DETAIL_TABS, isProjectDetailTab } from '../../components/project/detail/tabs'
-import { ProjectCreationBanner, ProjectCreationLoading, ProjectCreationPhase } from '../../components/project/ProjectCreationProgress'
-import { getProjectCreationContext, getProjectCreationPhase, isTerminalDeploymentStatus, isFailedDeploymentStatus } from '../../components/project/projectCreationContext'
+import { isTerminalDeploymentStatus, isFailedDeploymentStatus } from '../../components/project/projectCreationContext'
 
 
 const ESCAPE_CHAR = String.fromCharCode(27)
@@ -114,15 +113,11 @@ function UserProjectDetail() {
   const { t } = useTranslation()
   const { uid } = useParams<{ uid: string }>()
   const navigate = useNavigate()
-  const location = useLocation()
-  const projectCreationContext = getProjectCreationContext(location.state)
-  const projectCreationKey = projectCreationContext ? `${uid}:${projectCreationContext.projectName || ''}` : null
   const [project, setProject] = useState<Project | null>(null)
   const [logs, setLogs] = useState('')
   const [stats, setStats] = useState<ProjectStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isDeleting, setIsDeleting] = useState(false)
-  const [showCreationNotice, setShowCreationNotice] = useState(() => Boolean(projectCreationContext))
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = searchParams.get('tab') || (() => {
     const hash = window.location.hash.replace('#', '')
@@ -912,10 +907,6 @@ function UserProjectDetail() {
   }
 
   useEffect(() => {
-    setShowCreationNotice(projectCreationKey !== null)
-  }, [projectCreationKey])
-
-  useEffect(() => {
     activeProjectUidRef.current = uid || null
     settingsProjectUidRef.current = null
     setSettingsProjectUid(null)
@@ -994,10 +985,6 @@ function UserProjectDetail() {
   }
 
   if (isLoading) {
-    if (projectCreationContext) {
-      return <ProjectCreationLoading projectName={projectCreationContext.projectName} />
-    }
-
     return (
       <div className="flex min-h-[calc(100dvh-12rem)] flex-col items-center justify-center gap-4">
         <Loader2 className="w-10 h-10 text-primary animate-spin" />
@@ -1014,7 +1001,6 @@ function UserProjectDetail() {
   const isStopped = project.status === 'stopped'
   const displayedFrameworkLabel = displayedFramework && displayedFramework !== 'Other' ? displayedFramework : t('common.general')
   const frameworkLabel = project.framework && project.framework !== 'Other' ? project.framework : t('common.general')
-  const creationPhase: ProjectCreationPhase = getProjectCreationPhase(project)
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-20 animate-in fade-in duration-500">
@@ -1022,14 +1008,6 @@ function UserProjectDetail() {
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         {...confirmModal}
       />
-
-      {showCreationNotice && (
-        creationPhase === 'deploying' ? (
-          <ProjectCreationLoading projectName={projectCreationContext?.projectName || project.name} />
-        ) : (
-          <ProjectCreationBanner phase={creationPhase} onDismiss={() => setShowCreationNotice(false)} />
-        )
-      )}
 
       {/* Restarting Banner */}
       {project.status === 'restarting' && (

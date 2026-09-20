@@ -1,7 +1,3 @@
-export type ProjectCreationContext = {
-  projectName?: string
-}
-
 export type ProjectCreationPhase = 'deploying' | 'ready' | 'failed'
 
 export const TERMINAL_DEPLOYMENT_STATUSES = ['completed', 'failed', 'rollback', 'cancelled'] as const
@@ -24,12 +20,15 @@ export function getProjectCreationPhase(project: {
   status?: string | null
   deployment_status?: string | null
 }): ProjectCreationPhase {
-  if (
-    project.status === 'failed' ||
-    (project.deployment_status && isFailedDeploymentStatus(project.deployment_status))
-  ) {
+  if (project.deployment_status && isFailedDeploymentStatus(project.deployment_status)) {
     return 'failed'
   }
+
+  if (project.deployment_status && !isTerminalDeploymentStatus(project.deployment_status)) {
+    return 'deploying'
+  }
+
+  if (project.status === 'failed') return 'failed'
 
   if (
     project.status === 'running' &&
@@ -39,13 +38,4 @@ export function getProjectCreationPhase(project: {
   }
 
   return 'deploying'
-}
-
-export function getProjectCreationContext(state: unknown): ProjectCreationContext | null {
-  if (!state || typeof state !== 'object') return null
-  const context = (state as { projectCreation?: unknown }).projectCreation
-  if (!context || typeof context !== 'object') return null
-
-  const projectName = (context as { projectName?: unknown }).projectName
-  return { projectName: typeof projectName === 'string' ? projectName : undefined }
 }
