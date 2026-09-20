@@ -49,6 +49,7 @@ const { mockT } = vi.hoisted(() => {
     'projectDetail.messages.creationCreated': 'Project created',
     'projectDetail.messages.creationPreparingTitle': 'Preparing {{name}}',
     'projectDetail.messages.creationPreparingDesc': 'Project saved and deployment starting.',
+    'projectDetail.messages.creationInProgress': 'Deployment in progress',
     'projectDetail.messages.creationDeployment': 'Initial deployment',
     'projectDetail.messages.creationReady': 'Application ready',
     'projectDetail.messages.creationSuccessTitle': 'Project created successfully',

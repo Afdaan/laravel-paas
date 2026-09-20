@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
-import { AlertTriangle, CheckCircle2, Circle, Loader2, Rocket, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Circle, Loader2, X } from 'lucide-react'
 
 import useTranslation from '@/lib/useTranslation'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import type { ProjectCreationPhase } from './projectCreationContext'
 
@@ -13,57 +14,54 @@ export function ProjectCreationLoading({ projectName }: { projectName?: string }
   const name = projectName || t('projectDetail.messages.creationProjectFallback')
 
   return (
-    <div className="mx-auto flex min-h-[calc(100dvh-12rem)] w-full max-w-3xl items-center justify-center py-8" role="status" aria-live="polite">
-      <div className="w-full overflow-hidden rounded-2xl border border-emerald-500/20 bg-card shadow-sm">
-        <div className="h-1 w-full bg-muted">
-          <div className="h-full w-2/3 animate-pulse bg-emerald-500" />
-        </div>
+    <div className="mx-auto flex min-h-[calc(100dvh-12rem)] w-full max-w-4xl items-center py-8" role="status" aria-live="polite">
+      <Card className="w-full gap-0 py-0 shadow-none">
+        <CardContent className="p-0">
+          <div className="grid lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <div className="p-6 sm:p-8 lg:p-10">
+              <div className="inline-flex items-center gap-2 text-sm font-medium text-foreground">
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                {t('projectDetail.messages.creationInProgress')}
+              </div>
 
-        <div className="p-6 sm:p-8">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-            <div className="relative flex size-14 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-500">
-              <Rocket className="size-6" aria-hidden="true" />
-              <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border-2 border-card bg-emerald-500 text-white">
-                <CheckCircle2 className="size-3" aria-hidden="true" />
-              </span>
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-500">
-                {t('projectDetail.messages.creationCreated')}
-              </p>
-              <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
+              <h1 className="mt-5 max-w-2xl text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
                 {t('projectDetail.messages.creationPreparingTitle', { name })}
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground text-pretty">
                 {t('projectDetail.messages.creationPreparingDesc')}
               </p>
             </div>
-          </div>
 
-          <div className="mt-8 divide-y rounded-xl border bg-muted/20 px-4">
-            <CreationStep icon={<CheckCircle2 className="size-4" />} label={t('projectDetail.messages.creationCreated')} state="complete" />
-            <CreationStep icon={<Loader2 className="size-4 animate-spin" />} label={t('projectDetail.messages.creationDeployment')} state="active" />
-            <CreationStep icon={<Circle className="size-4" />} label={t('projectDetail.messages.creationReady')} state="pending" />
+            <div className="border-t bg-muted/20 px-6 py-5 lg:border-l lg:border-t-0 lg:px-7 lg:py-8">
+              <div className="divide-y">
+                <CreationStep icon={<CheckCircle2 className="size-3.5" />} label={t('projectDetail.messages.creationCreated')} state="complete" />
+                <CreationStep icon={<Loader2 className="size-3.5 animate-spin" />} label={t('projectDetail.messages.creationDeployment')} state="active" />
+                <CreationStep icon={<Circle className="size-3.5" />} label={t('projectDetail.messages.creationReady')} state="pending" />
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
 
 function CreationStep({ icon, label, state }: { icon: ReactNode; label: string; state: 'complete' | 'active' | 'pending' }) {
   return (
-    <div className="flex items-center gap-3 py-3.5">
+    <div className="flex items-center gap-3 py-4 first:pt-0 last:pb-0">
       <div className={cn(
-        'flex size-8 shrink-0 items-center justify-center rounded-lg border',
-        state === 'complete' && 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500',
-        state === 'active' && 'border-blue-500/20 bg-blue-500/10 text-blue-500',
-        state === 'pending' && 'border-border bg-background text-muted-foreground/50',
+        'flex size-6 shrink-0 items-center justify-center rounded-full border bg-background',
+        state === 'complete' && 'border-emerald-500/30 text-emerald-500',
+        state === 'active' && 'border-foreground/20 text-foreground',
+        state === 'pending' && 'border-border text-muted-foreground/40',
       )}>
         {icon}
       </div>
-      <span className={cn('text-sm font-medium', state === 'pending' && 'text-muted-foreground')}>
+      <span className={cn(
+        'text-sm font-medium',
+        state === 'active' && 'text-foreground',
+        state === 'pending' && 'text-muted-foreground/60',
+      )}>
         {label}
       </span>
     </div>

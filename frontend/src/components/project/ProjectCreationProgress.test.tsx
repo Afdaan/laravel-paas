@@ -20,6 +20,7 @@ const messages: Record<string, string> = {
   'projectDetail.messages.creationCreated': 'Project created',
   'projectDetail.messages.creationPreparingTitle': 'Preparing {{name}}',
   'projectDetail.messages.creationPreparingDesc': 'Project saved and deployment starting.',
+  'projectDetail.messages.creationInProgress': 'Deployment in progress',
   'projectDetail.messages.creationDeployment': 'Initial deployment',
   'projectDetail.messages.creationReady': 'Application ready',
   'projectDetail.messages.creationSuccessTitle': 'Project created successfully',
@@ -47,7 +48,7 @@ describe('ProjectCreationProgress', () => {
     render(<ProjectCreationLoading projectName="billing-api" />)
 
     expect(screen.getByRole('status')).toHaveTextContent('Preparing billing-api')
-    expect(screen.getAllByText('Project created')).toHaveLength(2)
+    expect(screen.getByText('Project created')).toBeInTheDocument()
     expect(screen.getByText('Initial deployment')).toBeInTheDocument()
     expect(screen.getByText('Application ready')).toBeInTheDocument()
   })
