@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,9 +18,9 @@ func (s *DockerService) RemoveImage(subdomain string) error {
 	imageName := fmt.Sprintf("paas-%s", subdomain)
 	res, err := utils.Run(30*time.Second, "docker", "images", "--format", "{{.Tag}}", imageName)
 	if err != nil {
-		slog.Warn("Failed to list project images for deletion", "image", imageName, "error", err)
-		return nil
+		return fmt.Errorf("list project images %s: %w", imageName, err)
 	}
+	var removeErr error
 	tags := strings.Split(strings.TrimSpace(res.Stdout), "\n")
 	for _, tag := range tags {
 		if tag == "" {
@@ -27,12 +28,12 @@ func (s *DockerService) RemoveImage(subdomain string) error {
 		}
 		imgToDel := fmt.Sprintf("%s:%s", imageName, tag)
 		if delRes, delErr := utils.Run(30*time.Second, "docker", "rmi", "-f", imgToDel); delErr != nil {
-			slog.Warn("Failed to remove project image tag", "image", imgToDel, "error", delErr, "stderr", delRes.Stderr)
+			removeErr = errors.Join(removeErr, fmt.Errorf("remove project image %s: %w: %s", imgToDel, delErr, strings.TrimSpace(delRes.Stderr)))
 		} else {
 			slog.Info("Successfully removed project image tag", "image", imgToDel)
 		}
 	}
-	return nil
+	return removeErr
 }
 
 // PruneImages removes dangling images and unused project images

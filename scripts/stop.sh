@@ -11,6 +11,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/traefik-config.sh"
 
 # 1. Environment & Paths Initialization
 init_vars() {
@@ -59,7 +60,8 @@ prepare_env() {
     docker network create paas-network 2>/dev/null || true
     sudo mkdir -p "$DB_DATA_DIR" "$PG_DATA_DIR" "$USER_PG_DATA_DIR" "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
     sudo chown -R $(id -u):$(id -g) "$REDIS_DATA_DIR" "$PROJECTS_PATH" "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
-    chmod 777 "$DATA_PATH" "$TRAEFIK_DYNAMIC_DIR"
+    chmod 777 "$DATA_PATH"
+    chmod 700 "$TRAEFIK_DYNAMIC_DIR"
 }
 
 # Helper to get next numeric tag for a service
@@ -243,12 +245,13 @@ start_traefik() {
     echo -e "${YELLOW}Starting Traefik (paas-traefik)...${NC}"
     prepare_env
     docker rm -f paas-traefik 2>/dev/null || true
-    local traefik_conf="${PROJECT_ROOT}/docker/traefik/traefik.yml"
+    local traefik_template="${PROJECT_ROOT}/docker/traefik/traefik.yml.template"
+    local traefik_conf
     local dynamic_template="${PROJECT_ROOT}/docker/traefik/dynamic.yml.template"
     local dynamic_conf="${TRAEFIK_DYNAMIC_DIR}/dynamic.yml"
 
-    if [ ! -f "$traefik_conf" ]; then
-        echo -e "${RED}Error: traefik.yml not found at $traefik_conf${NC}"
+    if ! traefik_conf=$(render_traefik_static_config "$traefik_template"); then
+        echo -e "${RED}Error: failed to render Traefik static config.${NC}"
         return 1
     fi
     if [ -f "$dynamic_template" ]; then
@@ -266,7 +269,7 @@ start_traefik() {
         -p ${HTTPS_PORT}:443 \
         -v /var/run/docker.sock:/var/run/docker.sock:ro \
         -v "${traefik_conf}:/traefik.yml:ro" \
-        -v "${TRAEFIK_DYNAMIC_DIR}:/etc/traefik/dynamic:rw" \
+        -v "${TRAEFIK_DYNAMIC_DIR}:/etc/traefik/dynamic:ro" \
         -v paas-letsencrypt:/letsencrypt \
         traefik:v3.6
 }
@@ -297,6 +300,7 @@ start_backend() {
         -v "${TRAEFIK_DYNAMIC_DIR}:/etc/traefik/dynamic:rw" \
         -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
         -e APP_MODE="$APP_MODE" \
+        -e INTERNAL_API_TOKEN="$INTERNAL_API_TOKEN" \
         -e HOST_ROOT_PATH="$HOST_ROOT_PATH" \
         -e HOST_PROJECTS_PATH="$PROJECTS_PATH" \
         -e HOST_DATA_PATH="$DATA_PATH" \
@@ -307,6 +311,7 @@ start_backend() {
         -e PG_PASSWORD="$PG_PASSWORD" \
         -e PG_DATABASE="$PG_DATABASE" \
         -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
+        -e MYSQL_CONTAINER_NAME="$MYSQL_CONTAINER_NAME" \
         -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
         -e MYSQL_USER="$MYSQL_USER" \
         -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
@@ -324,6 +329,7 @@ start_backend() {
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
         -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
+        -e POSTGRES_CONTAINER_NAME="$POSTGRES_CONTAINER_NAME" \
         -e DOCKER_NETWORK=paas-network \
         --label "traefik.enable=true" \
         --label "traefik.http.routers.backend.rule=Host(\`$BASE_DOMAIN\`) && PathPrefix(\`/api\`)" \
@@ -358,7 +364,6 @@ start_worker() {
         -v "${DATA_PATH}:/app/data" \
         -v "${PROJECT_ROOT}/docker/templates:/app/docker/templates:ro" \
         -v "${PROJECT_ROOT}/railpacks:/app/railpacks:ro" \
-        -v "${PROJECT_ROOT}/.env:/app/.env:ro" \
         -v "${TRAEFIK_DYNAMIC_DIR}:/etc/traefik/dynamic:rw" \
         -e TRAEFIK_DYNAMIC_DIR=/etc/traefik/dynamic \
         -e APP_MODE=docker \
@@ -376,7 +381,6 @@ start_worker() {
         -e REDIS_HOST=paas-redis \
         -e REDIS_PORT="${REDIS_PORT:-6379}" \
         -e REDIS_PASSWORD="$REDIS_PASSWORD" \
-        -e JWT_SECRET="$JWT_SECRET" \
         -e UID_SALT="$UID_SALT" \
         -e CREDENTIAL_ENCRYPTION_KEY="$CREDENTIAL_ENCRYPTION_KEY" \
         -e CREDENTIAL_ENCRYPTION_KEY_PREVIOUS="${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}" \
@@ -384,15 +388,22 @@ start_worker() {
         -e BASE_DOMAIN="$BASE_DOMAIN" \
         -e PROJECT_DOMAIN="${PROJECT_DOMAIN:-$BASE_DOMAIN}" \
         -e MYSQL_HOST="${MYSQL_HOST:-$MYSQL_CONTAINER_NAME}" \
+        -e MYSQL_CONTAINER_NAME="$MYSQL_CONTAINER_NAME" \
         -e MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \
         -e USER_PG_PASSWORD="$USER_PG_PASSWORD" \
         -e USER_PG_HOST="${USER_PG_HOST:-$POSTGRES_CONTAINER_NAME}" \
         -e USER_PG_PORT="${USER_PG_PORT:-5432}" \
+        -e POSTGRES_CONTAINER_NAME="$POSTGRES_CONTAINER_NAME" \
+        -e APP_ENV="${APP_ENV:-production}" \
+        -e TRUSTED_PROXY_CIDRS="${TRUSTED_PROXY_CIDRS:-}" \
         -e DOCKER_NETWORK=paas-network \
         -e NGINX_WEBHOOK_ENABLED="${NGINX_WEBHOOK_ENABLED:-false}" \
         -e NGINX_WEBHOOK_URL="$NGINX_WEBHOOK_URL" \
         -e NGINX_WEBHOOK_KEY="$NGINX_WEBHOOK_KEY" \
         -e INTERNAL_IP="${INTERNAL_IP:-127.0.0.1}" \
+        -e GITHUB_APP_ID="${GITHUB_APP_ID:-}" \
+        -e GITHUB_APP_PRIVATE_KEY_PATH="${GITHUB_APP_PRIVATE_KEY_PATH:-}" \
+        -e GITHUB_APP_WEBHOOK_SECRET="${GITHUB_APP_WEBHOOK_SECRET:-}" \
         paas-worker:latest
 }
 

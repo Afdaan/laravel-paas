@@ -102,15 +102,13 @@ func (s *ProjectService) UpdateActivity(projectID uint) {
 
 // PopulateURL sets the URL and UID fields on a project model
 func (s *ProjectService) PopulateURL(project *models.Project) {
-	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
-	project.URL = "https://" + project.GetFullDomain(projectDomain)
+	project.URL = "https://" + project.GetFullDomain(s.cfg.ProjectDomain)
 }
 
 // PopulateURLs sets the URL and UID fields on a slice of project models
 func (s *ProjectService) PopulateURLs(projects []models.Project) {
-	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
 	for i := range projects {
-		projects[i].URL = "https://" + projects[i].GetFullDomain(projectDomain)
+		projects[i].URL = "https://" + projects[i].GetFullDomain(s.cfg.ProjectDomain)
 	}
 }
 

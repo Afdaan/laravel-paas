@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -135,12 +136,9 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 
 	timestamp := time.Now().Unix()
 	containerName := fmt.Sprintf("paas-project-%s-%d", project.Subdomain, timestamp)
-	routerName := fmt.Sprintf("%s-%d", project.Subdomain, timestamp)
-	serviceName := project.Subdomain
-
 	finalCPUs := models.DefaultDockerCPULimit
 	if cpuLimit > 0 {
-		finalCPUs = fmt.Sprintf("%.1f", cpuLimit)
+		finalCPUs = strconv.FormatFloat(cpuLimit, 'f', -1, 64)
 	}
 
 	finalMemory := models.DefaultDockerMemoryLimit
@@ -169,7 +167,7 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"run", "-d",
 		"--name", containerName,
 		"--network", models.NetworkName,
-		"--network-alias", "project-" + project.Subdomain,
+		"--network-alias", fmt.Sprintf("project-%s", project.Subdomain),
 		"--restart", "unless-stopped",
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
@@ -181,21 +179,9 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 
 	runArgs = append(runArgs, TenantHardeningArgs(finalMemory)...)
 
-	if exposure.WebFacing {
-		runArgs = append(runArgs,
-			"--label", "traefik.enable=true",
-			"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",
-				routerName, fmt.Sprintf("Host(`%s.%s`)", project.Subdomain, projectDomain)),
-			"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
-			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
-			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=%s", serviceName, project.GetHealthCheckPath()),
-			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=10s", serviceName),
-		)
-	} else {
-		runArgs = append(runArgs,
-			"--label", "traefik.enable=false",
-		)
-	}
+	// Project ingress is resolved by the authenticated backend proxy after database
+	// promotion. Docker-provider routing would expose an unvalidated rollout early.
+	runArgs = append(runArgs, "--label", "traefik.enable=false")
 
 	runArgs = append(runArgs,
 		// Runara metadata labels
@@ -246,7 +232,13 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 
 	if project.DatabaseOption == "sqlite" {
 		if err := s.EnsureSQLiteFile(mainContainerID); err != nil {
-			_ = utils.RunSilent(30*time.Second, "docker", "rm", "-f", mainContainerID)
+			cleanupErr := s.RemoveContainer(mainContainerID, nil)
+			if cleanupErr != nil {
+				return mainContainerID, errors.Join(
+					fmt.Errorf("initialize SQLite database: %w", err),
+					fmt.Errorf("cleanup main rollout container: %w", cleanupErr),
+				)
+			}
 			return "", fmt.Errorf("failed to initialize SQLite database: %w", err)
 		}
 	}
@@ -256,10 +248,16 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		slog.Info("Starting background worker container", "subdomain", project.Subdomain, "command", project.WorkerCommand)
 		workerID, err := s.StartWorkerContainer(project, imageName, finalCPUs, finalMemory)
 		if err != nil {
-			slog.Error("Failed to start worker container", "subdomain", project.Subdomain, "error", err)
-		} else {
-			project.WorkerContainerID = &workerID
+			cleanupErr := s.RemoveContainer(mainContainerID, nil)
+			if cleanupErr != nil {
+				return mainContainerID, errors.Join(
+					fmt.Errorf("start required worker container: %w", err),
+					fmt.Errorf("cleanup main rollout container: %w", cleanupErr),
+				)
+			}
+			return "", fmt.Errorf("start required worker container: %w", err)
 		}
+		project.WorkerContainerID = &workerID
 	}
 
 	return mainContainerID, nil

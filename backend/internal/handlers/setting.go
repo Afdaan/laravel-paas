@@ -8,18 +8,22 @@ package handlers
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/apperr"
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/services/setting"
 )
 
 // SettingHandler handles settings endpoints
 type SettingHandler struct {
 	service *setting.SettingService
+	cfg     *config.Config
 }
 
 // NewSettingHandler creates a new setting handler
-func NewSettingHandler(service *setting.SettingService) *SettingHandler {
+func NewSettingHandler(service *setting.SettingService, cfg *config.Config) *SettingHandler {
 	return &SettingHandler{
 		service: service,
+		cfg:     cfg,
 	}
 }
 
@@ -31,6 +35,16 @@ func (h *SettingHandler) List(c *fiber.Ctx) error {
 	}
 
 	settingsMap, _ := h.service.ListAll()
+	settingsMap[models.SettingBaseDomain] = h.cfg.BaseDomain
+	settingsMap[models.SettingProjectDomain] = h.cfg.ProjectDomain
+	for i := range settings {
+		switch settings[i].Key {
+		case models.SettingBaseDomain:
+			settings[i].Value = h.cfg.BaseDomain
+		case models.SettingProjectDomain:
+			settings[i].Value = h.cfg.ProjectDomain
+		}
+	}
 
 	return c.JSON(fiber.Map{
 		"data": settings,
@@ -50,8 +64,12 @@ func (h *SettingHandler) Update(c *fiber.Ctx) error {
 		return apperr.ErrBadRequest
 	}
 
+	if _, exists := req.Settings[models.SettingDefaultPaymentProvider]; exists {
+		return apperr.NewBadRequest("default_payment_provider must be updated via dedicated finance endpoint /admin/billing/payment-provider")
+	}
+
 	if err := h.service.UpdateBulk(req.Settings); err != nil {
-		return apperr.New(500, "SETTING_UPDATE_FAILED", "Failed to save system settings")
+		return err
 	}
 
 	return c.JSON(fiber.Map{

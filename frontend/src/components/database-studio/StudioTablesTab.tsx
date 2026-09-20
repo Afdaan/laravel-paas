@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { usePaginationScroll } from '@/lib/usePaginationScroll'
 import { databaseAPI } from '../../services/api'
 import { useStudio, SchemaColumn } from './StudioContext'
 import {
@@ -94,6 +95,7 @@ export function StudioTablesTab() {
   const [tableLimit] = useState(25)
   const [tableTotal, setTableTotal] = useState(0)
   const [tableSearch, setTableSearch] = useState('')
+  const { paginationAnchorRef, updatePagination } = usePaginationScroll()
 
   // Visual Dynamic Insert Row states
   const [showInsertModal, setShowInsertModal] = useState(false)
@@ -539,7 +541,7 @@ export function StudioTablesTab() {
       </Card>
 
       {/* Right Column: Data Grid */}
-      <Card className="lg:col-span-3 p-6 flex flex-col overflow-hidden">
+      <Card ref={paginationAnchorRef} className="lg:col-span-3 p-6 flex flex-col overflow-hidden">
         <div className="flex items-start sm:items-center justify-between gap-4 border-b pb-4 mb-5">
           <div className="flex items-center gap-3">
             <Table className="w-5 h-5 text-primary" />
@@ -760,7 +762,7 @@ export function StudioTablesTab() {
                   <Button
                     variant="outline"
                     size="xs"
-                    onClick={() => setTablePage(prev => Math.max(prev - 1, 1))}
+                    onClick={() => updatePagination(() => setTablePage(prev => Math.max(prev - 1, 1)))}
                     disabled={tablePage === 1}
                     className="font-bold h-8 text-xs px-3 rounded-lg cursor-pointer"
                     style={{ cursor: 'pointer' }}
@@ -770,7 +772,7 @@ export function StudioTablesTab() {
                   <Button
                     variant="outline"
                     size="xs"
-                    onClick={() => setTablePage(prev => prev + 1)}
+                    onClick={() => updatePagination(() => setTablePage(prev => prev + 1))}
                     disabled={tablePage * tableLimit >= tableTotal}
                     className="font-bold h-8 text-xs px-3 rounded-lg cursor-pointer"
                     style={{ cursor: 'pointer' }}

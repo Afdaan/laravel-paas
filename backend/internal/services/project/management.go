@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/laravel-paas/backend/internal/services/billing"
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/infrastructure/nginx"
@@ -79,13 +80,37 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 		"name", project.Name,
 		"subdomain", project.Subdomain)
 
-	project.Status = models.StatusDeleting
-	if err := s.projectRepo.UpdateStatus(project.ID, project.Status); err != nil {
-		return err
-	}
-
-	_, err := s.redisService.EnqueueDeployment(project.ID, project.UserID, "delete")
-	return err
+	return s.projectRepo.DB().Transaction(func(tx *gorm.DB) error {
+		var locked models.Project
+		if err := tx.Where("id = ?", project.ID).First(&locked).Error; err != nil {
+			return err
+		}
+		if locked.Status != models.StatusDeleting {
+			if err := tx.Model(&locked).Update("status", models.StatusDeleting).Error; err != nil {
+				return fmt.Errorf("mark project deleting: %w", err)
+			}
+		}
+		// Keep the billable resource as immutable invoice history, but terminate
+		// its lifecycle before asynchronous cleanup. This prevents a deleted
+		// project from remaining in payment-due or suspension responses.
+		if err := tx.Model(&models.BillableResource{}).
+			Where("type = ? AND resource_id = ?", models.BillableTypeProject, locked.ID).
+			Update("billing_status", models.BillableResourceStatusDeleted).Error; err != nil {
+			return fmt.Errorf("terminate project billing: %w", err)
+		}
+		if locked.Status == models.StatusFailed {
+			invoiceService := billing.NewInvoiceService(tx, billing.NewWalletService(tx))
+			if err := invoiceService.RefundInitialResourceTx(tx, locked.UserID, models.BillableTypeProject, locked.ID, "Failed project deleted"); err != nil {
+				return fmt.Errorf("refund initial project credits: %w", err)
+			}
+		}
+		task := models.ProjectDeletionTask{ProjectID: locked.ID, UserID: locked.UserID}
+		if err := tx.Where("project_id = ?", locked.ID).FirstOrCreate(&task).Error; err != nil {
+			return fmt.Errorf("create project deletion dispatch task: %w", err)
+		}
+		project.Status = models.StatusDeleting
+		return nil
+	})
 }
 
 // SyncProjectNginx triggers a sync to the remote Nginx proxy and stores the resulting config hash.
@@ -127,7 +152,7 @@ func (s *ProjectService) SyncProjectNginxFrom(project *models.Project, triggerSo
 		"loadedCustomDomains", loadedDomains,
 		"verifiedCustomDomains", verifiedDomains)
 
-	projectDomain := s.GetSetting(models.SettingProjectDomain, s.cfg.ProjectDomain)
+	projectDomain := s.cfg.ProjectDomain
 	serverNames := append([]string{freshProject.GetFullDomain(projectDomain)}, verifiedDomains...)
 	if len(freshProject.CustomDomains) > 0 && len(verifiedDomains) == 0 {
 		metrics.GetCollector().IncrNginxReloadFailedTotal()
@@ -165,12 +190,19 @@ func (s *ProjectService) SyncProjectNginxFrom(project *models.Project, triggerSo
 	return hash, nil
 }
 
-// GetSSLStatus queries the remote Nginx VM for SSL certificate status
-func (s *ProjectService) GetSSLStatus(domain string) (*nginx.SSLStatusResponse, error) {
-	return s.nginxService.GetSSLStatus(domain)
+// ListProjects returns paginated projects with filtering
+func (s *ProjectService) GetSSLStatus(project *models.Project, domain string) (*nginx.SSLStatusResponse, error) {
+	if project == nil || project.Subdomain == "" {
+		return nil, fmt.Errorf("cannot query ssl status for empty project")
+	}
+
+	projectDomain := s.cfg.ProjectDomain
+	if projectDomain == "" {
+		projectDomain = s.cfg.BaseDomain
+	}
+	return s.nginxService.GetSSLStatus(project.GetFullDomain(projectDomain), domain)
 }
 
-// ListProjects returns paginated projects with filtering
 func (s *ProjectService) ListProjects(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error) {
 	projects, total, err := s.projectRepo.List(page, limit, userID, status, search)
 	if err != nil {
@@ -192,13 +224,14 @@ func (s *ProjectService) CreateProject(userID uint, role models.Role, name, gith
 
 // CreateProjectTx handles the initial creation of a project record within a transaction context
 func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.Role, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
-	// Enforce per-user project limit (bypass for admins and superadmins)
+	// Check per-user project limit setting (0 or negative means unlimited)
 	if role != models.RoleAdmin && role != models.RoleSuperAdmin {
-		maxProjects, _ := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
-		count, _ := s.projectRepo.CountByUserID(userID)
-
-		if int(count) >= maxProjects {
-			return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
+		maxProjects, err := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
+		if err == nil && maxProjects > 0 {
+			count, _ := s.projectRepo.CountByUserID(userID)
+			if int(count) >= maxProjects {
+				return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
+			}
 		}
 	}
 
@@ -300,12 +333,35 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.R
 			return nil, err
 		}
 		if duplicateCount > 0 {
+			uniqueName := fmt.Sprintf("%s_%s", *dbName, utils.GenerateRandom(4))
+			if len(uniqueName) > 63 {
+				uniqueName = uniqueName[:63]
+			}
+			dbName = &uniqueName
+			duplicateCount = 0
+			if err := dbConn.Model(&models.DatabaseInstance{}).Where("name = ? AND status != ?", *dbName, models.DBStatusDeleted).Count(&duplicateCount).Error; err != nil {
+				return nil, err
+			}
+		}
+		if duplicateCount > 0 {
 			return nil, apperr.New(409, "DATABASE_NAME_CONFLICT", fmt.Sprintf("A database with name '%s' already exists in the system", *dbName))
 		}
 
 		var duplicateUserCount int64
 		if err := dbConn.Model(&models.DatabaseInstance{}).Where("username = ? AND status != ?", dbUsername, models.DBStatusDeleted).Count(&duplicateUserCount).Error; err != nil {
 			return nil, err
+		}
+		if duplicateUserCount > 0 {
+			baseUser := dbUsername
+			if len(baseUser) > 20 {
+				baseUser = baseUser[:20]
+			}
+			baseUser = strings.TrimSuffix(baseUser, "_")
+			dbUsername = fmt.Sprintf("%s_%s", baseUser, utils.GenerateRandom(4))
+			duplicateUserCount = 0
+			if err := dbConn.Model(&models.DatabaseInstance{}).Where("username = ? AND status != ?", dbUsername, models.DBStatusDeleted).Count(&duplicateUserCount).Error; err != nil {
+				return nil, err
+			}
 		}
 		if duplicateUserCount > 0 {
 			return nil, apperr.New(409, "DATABASE_USER_CONFLICT", fmt.Sprintf("A database user with username '%s' already exists in the system", dbUsername))
@@ -351,15 +407,14 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.R
 		}
 
 		instance := &models.DatabaseInstance{
-			UserID:            userID,
-			Engine:            databaseEngine,
-			Status:            models.DBStatusActive,
-			Name:              *dbName,
-			Username:          dbUsername,
-			Password:          dbPassword,
-			Host:              host,
-			Port:              port,
-			StorageAllocation: 1073741824, // 1GB
+			UserID:   userID,
+			Engine:   databaseEngine,
+			Status:   models.DBStatusActive,
+			Name:     *dbName,
+			Username: dbUsername,
+			Password: dbPassword,
+			Host:     host,
+			Port:     port,
 		}
 		project.DatabaseInstance = instance
 	}

@@ -1,11 +1,14 @@
 package docker
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +42,7 @@ func (s *DockerService) StartWorkerContainer(project *models.Project, imageName,
 		"run", "-d",
 		"--name", containerName,
 		"--network", models.NetworkName,
+		"--network-alias", fmt.Sprintf("project-%s", project.Subdomain),
 		"--restart", "unless-stopped",
 		"--cpus", cpuLimit,
 		"--memory", memoryLimit,
@@ -195,9 +199,6 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 
 	timestamp := time.Now().Unix()
 	containerName := fmt.Sprintf("paas-project-%s-%d", project.Subdomain, timestamp)
-	routerName := fmt.Sprintf("%s-%d", project.Subdomain, timestamp)
-	serviceName := project.Subdomain
-
 	detectedPort, detectErr := s.DetectExposedPort(imageName)
 	exposure := project.ResolveRuntimeExposure(0)
 	if detectErr == nil {
@@ -226,7 +227,7 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 
 	finalCPUs := models.DefaultDockerCPULimit
 	if project.CPULimit != nil {
-		finalCPUs = fmt.Sprintf("%.1f", *project.CPULimit)
+		finalCPUs = strconv.FormatFloat(*project.CPULimit, 'f', -1, 64)
 	}
 
 	finalMemory := models.DefaultDockerMemoryLimit
@@ -238,7 +239,7 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"run", "-d",
 		"--name", containerName,
 		"--network", models.NetworkName,
-		"--network-alias", "project-" + project.Subdomain,
+		"--network-alias", fmt.Sprintf("project-%s", project.Subdomain),
 		"--restart", "unless-stopped",
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
@@ -248,19 +249,9 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 	}
 
 	runArgs = append(runArgs, TenantHardeningArgs(finalMemory)...)
-	if exposure.WebFacing {
-		runArgs = append(runArgs,
-			"--label", "traefik.enable=true",
-			"--label", fmt.Sprintf("traefik.http.routers.%s.rule=%s",
-				routerName, fmt.Sprintf("Host(`%s.%s`)", project.Subdomain, projectDomain)),
-			"--label", fmt.Sprintf("traefik.http.routers.%s.service=%s", routerName, serviceName),
-			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%s", serviceName, internalPort),
-			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.path=%s", serviceName, project.GetHealthCheckPath()),
-			"--label", fmt.Sprintf("traefik.http.services.%s.loadbalancer.healthcheck.interval=2s", serviceName),
-		)
-	} else {
-		runArgs = append(runArgs, "--label", "traefik.enable=false")
-	}
+	// Promotion updates backend proxy state. Keep rollout containers invisible to
+	// Traefik's Docker provider until that state transition has completed.
+	runArgs = append(runArgs, "--label", "traefik.enable=false")
 
 	volumes := []string{
 		"-v", fmt.Sprintf("%s:/var/www/html/storage/app", hostPersistentPath),
@@ -302,10 +293,16 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		slog.Info("Restarting background worker container for existing image", "subdomain", project.Subdomain)
 		workerID, err := s.StartWorkerContainer(project, imageName, finalCPUs, finalMemory)
 		if err != nil {
-			slog.Error("Failed to restart worker container", "subdomain", project.Subdomain, "error", err)
-		} else {
-			project.WorkerContainerID = &workerID
+			cleanupErr := s.RemoveContainer(mainContainerID, nil)
+			if cleanupErr != nil {
+				return "", errors.Join(
+					fmt.Errorf("start required worker container: %w", err),
+					fmt.Errorf("cleanup main rollout container: %w", cleanupErr),
+				)
+			}
+			return "", fmt.Errorf("start required worker container: %w", err)
 		}
+		project.WorkerContainerID = &workerID
 	}
 
 	return mainContainerID, nil
@@ -313,7 +310,7 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 
 // StopContainer stops a running container
 func (s *DockerService) StopContainer(containerID string) error {
-	return utils.RunSilent(30*time.Second, "docker", "stop", containerID)
+	return ignoreStoppedContainer(utils.RunSilent(30*time.Second, "docker", "stop", containerID))
 }
 
 // StartContainer starts a stopped container
@@ -328,19 +325,46 @@ func (s *DockerService) RestartContainer(containerID string) error {
 
 // RemoveContainer stops and removes a container, including associated workers
 func (s *DockerService) RemoveContainer(containerID string, workerContainerID *string) error {
+	var removeErr error
 	if workerContainerID != nil && *workerContainerID != "" {
 		slog.Debug("Removing worker container", "workerID", *workerContainerID)
-		_ = utils.RunSilent(30*time.Second, "docker", "stop", *workerContainerID)
-		_ = utils.RunSilent(30*time.Second, "docker", "rm", "-f", *workerContainerID)
+		if err := ignoreMissingContainer(utils.RunSilent(30*time.Second, "docker", "stop", *workerContainerID)); err != nil {
+			removeErr = errors.Join(removeErr, fmt.Errorf("stop worker container %s: %w", *workerContainerID, err))
+		}
+		if err := ignoreMissingContainer(utils.RunSilent(30*time.Second, "docker", "rm", "-f", *workerContainerID)); err != nil {
+			removeErr = errors.Join(removeErr, fmt.Errorf("remove worker container %s: %w", *workerContainerID, err))
+		}
 	}
 
-	if err := utils.RunSilent(30*time.Second, "docker", "stop", containerID); err != nil {
-		slog.Warn("Failed to stop container during removal", "containerID", containerID, "error", err)
+	if err := ignoreMissingContainer(utils.RunSilent(30*time.Second, "docker", "stop", containerID)); err != nil {
+		removeErr = errors.Join(removeErr, fmt.Errorf("stop container %s: %w", containerID, err))
 	}
-	if err := utils.RunSilent(30*time.Second, "docker", "rm", "-f", containerID); err != nil {
-		slog.Warn("Failed to remove container", "containerID", containerID, "error", err)
+	if err := ignoreMissingContainer(utils.RunSilent(30*time.Second, "docker", "rm", "-f", containerID)); err != nil {
+		removeErr = errors.Join(removeErr, fmt.Errorf("remove container %s: %w", containerID, err))
 	}
-	return nil
+	return removeErr
+}
+
+func ignoreMissingContainer(err error) error {
+	if err == nil {
+		return nil
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "no such container") || strings.Contains(message, "container not found") {
+		return nil
+	}
+	return err
+}
+
+func ignoreStoppedContainer(err error) error {
+	if err == nil {
+		return nil
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "is not running") || strings.Contains(message, "no such container") || strings.Contains(message, "container not found") {
+		return nil
+	}
+	return err
 }
 
 // CleanupLegacyContainers finds and removes any running or stopped containers for a project that do NOT match the current active container IDs.
@@ -403,25 +427,25 @@ func parseArtisanMigrationCommand(cmdStr string) string {
 // Unlike ExecProjectCommand which uses the project's current ContainerID, this method targets
 // a specific container (typically a rollout container that hasn't been promoted yet).
 // Returns the combined stdout+stderr output and any error encountered.
-func (s *DockerService) RunMigrations(containerID string) (string, error) {
+func (s *DockerService) RunMigrations(ctx context.Context, containerID string) (string, error) {
 	if containerID == "" {
 		return "", fmt.Errorf("container ID is empty")
 	}
 
 	// Detect the correct user to run artisan commands as
 	user := "root"
-	if res, err := utils.Run(5*time.Second, "docker", "exec", containerID, "id", "-u", "www-data"); err == nil && strings.TrimSpace(res.Stdout) != "" {
+	if res, err := utils.RunCtx(ctx, 5*time.Second, "docker", "exec", containerID, "id", "-u", "www-data"); err == nil && strings.TrimSpace(res.Stdout) != "" {
 		user = "www-data"
 
 		// Fix permissions before running as www-data to prevent storage/cache write errors
-		if res, err := utils.Run(10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", "www-data:www-data", "storage", "bootstrap/cache"); err != nil {
+		if res, err := utils.RunCtx(ctx, 10*time.Second, "docker", "exec", "-u", "root", containerID, "chown", "-R", "www-data:www-data", "storage", "bootstrap/cache"); err != nil {
 			slog.Warn("Failed to fix permissions before migration", "containerID", containerID, "error", err, "stderr", res.Stderr)
 		}
 	}
 
 	// Check if --isolated flag is supported by artisan (Laravel 9+)
 	useIsolated := false
-	if helpRes, errHelp := utils.Run(5*time.Second, "docker", "exec", containerID, "php", "artisan", "migrate", "--help"); errHelp == nil {
+	if helpRes, errHelp := utils.RunCtx(ctx, 5*time.Second, "docker", "exec", containerID, "php", "artisan", "migrate", "--help"); errHelp == nil {
 		if strings.Contains(helpRes.Stdout, "--isolated") {
 			useIsolated = true
 			slog.Info("Detected Laravel 9+ with migration isolation support. Appending --isolated flag.", "containerID", containerID)
@@ -436,7 +460,7 @@ func (s *DockerService) RunMigrations(containerID string) (string, error) {
 
 	// Run artisan migrate
 	// 5-minute timeout accommodates large migrations but prevents indefinite hangs
-	res, err := utils.Run(5*time.Minute, "docker", migrationArgs...)
+	res, err := utils.RunCtx(ctx, 5*time.Minute, "docker", migrationArgs...)
 
 	output := strings.TrimSpace(res.Stdout + "\n" + res.Stderr)
 	if err != nil {

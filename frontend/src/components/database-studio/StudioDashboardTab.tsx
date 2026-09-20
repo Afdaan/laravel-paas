@@ -40,6 +40,7 @@ export function StudioDashboardTab() {
     isActionLoading,
     setIsActionLoading,
     loadStudioData,
+    loadCredentials,
     triggerConfirmation,
     setActiveTab,
     t
@@ -61,6 +62,29 @@ export function StudioDashboardTab() {
   const [showTransferModal, setShowTransferModal] = useState(false)
   const [chartPoints, setChartPoints] = useState<number[]>([15, 22, 18, 35, 28, 42, 38, 55, 48, 65])
   const [revealPassword, setRevealPassword] = useState(false)
+
+  const loadPassword = async () => {
+    if (dbOverview?.password) {
+      return dbOverview.password
+    }
+
+    setIsActionLoading(true)
+    try {
+      return await loadCredentials()
+    } catch {
+      toast.error(t('common.actionFailed'))
+      return ''
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  const handleTogglePassword = async () => {
+    if (!revealPassword && !await loadPassword()) {
+      return
+    }
+    setRevealPassword(current => !current)
+  }
 
   // Simulate database query/load activity chart points
   useEffect(() => {
@@ -414,10 +438,13 @@ export function StudioDashboardTab() {
                     className="bg-transparent border-none outline-none focus:ring-0 flex-1 min-w-0 pr-4 font-mono text-xs text-foreground/90 font-semibold"
                   />
                   <div className="flex items-center gap-3 shrink-0">
-                    <button onClick={() => setRevealPassword(!revealPassword)} className="text-muted-foreground hover:text-foreground cursor-pointer" style={{ cursor: 'pointer' }}>
+                    <button onClick={handleTogglePassword} className="text-muted-foreground hover:text-foreground cursor-pointer" style={{ cursor: 'pointer' }}>
                       {revealPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
-                    <button onClick={() => copyToClipboard(dbOverview?.password || '')} className="text-muted-foreground hover:text-foreground cursor-pointer" style={{ cursor: 'pointer' }}>
+                    <button onClick={async () => {
+                      const password = await loadPassword()
+                      if (password) copyToClipboard(password)
+                    }} className="text-muted-foreground hover:text-foreground cursor-pointer" style={{ cursor: 'pointer' }}>
                       <Copy className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -470,14 +497,16 @@ DB_PASSWORD=${revealPassword ? (dbOverview?.password || '') : '•••••�
                 <Button
                   variant="outline"
                   size="xs"
-                  onClick={() => {
+                  onClick={async () => {
+                    const password = await loadPassword()
+                    if (!password) return
                     let text = ''
                     if (credentialsTab === 'env') {
-                      text = `DB_CONNECTION=${(dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 'pgsql' : 'mysql'}\nDB_HOST=${dbOverview?.host || 'localhost'}\nDB_PORT=${dbOverview?.port || ((dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 5432 : 3306)}\nDB_DATABASE=${dbOverview?.database || ''}\nDB_USERNAME=${dbOverview?.username || ''}\nDB_PASSWORD=${dbOverview?.password || ''}`
+                      text = `DB_CONNECTION=${(dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 'pgsql' : 'mysql'}\nDB_HOST=${dbOverview?.host || 'localhost'}\nDB_PORT=${dbOverview?.port || ((dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 5432 : 3306)}\nDB_DATABASE=${dbOverview?.database || ''}\nDB_USERNAME=${dbOverview?.username || ''}\nDB_PASSWORD=${password}`
                     } else if (credentialsTab === 'uri') {
-                      text = `${(dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 'postgresql' : 'mysql'}://${dbOverview?.username || ''}:${dbOverview?.password || ''}@${dbOverview?.host || 'localhost'}:${dbOverview?.port || ((dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 5432 : 3306)}/${dbOverview?.database || ''}`
+                      text = `${(dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 'postgresql' : 'mysql'}://${dbOverview?.username || ''}:${password}@${dbOverview?.host || 'localhost'}:${dbOverview?.port || ((dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 5432 : 3306)}/${dbOverview?.database || ''}`
                     } else {
-                      text = `$pdo = new PDO(\n  "${(dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 'pgsql' : 'mysql'}:host=${dbOverview?.host || 'localhost'};port=${dbOverview?.port || ((dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 5432 : 3306)};dbname=${dbOverview?.database || ''}",\n  "${dbOverview?.username || ''}",\n  "${dbOverview?.password || ''}"\n);`
+                      text = `$pdo = new PDO(\n  "${(dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 'pgsql' : 'mysql'}:host=${dbOverview?.host || 'localhost'};port=${dbOverview?.port || ((dbOverview?.engine || 'mysql').toLowerCase().includes('post') ? 5432 : 3306)};dbname=${dbOverview?.database || ''}",\n  "${dbOverview?.username || ''}",\n  "${password}"\n);`
                     }
                     copyToClipboard(text)
                   }}

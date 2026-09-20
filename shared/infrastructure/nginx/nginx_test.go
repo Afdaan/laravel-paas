@@ -10,6 +10,34 @@ import (
 	"github.com/laravel-paas/shared/models"
 )
 
+func TestGetSSLStatus_UsesProjectCertificateIdentity(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("cert_name"); got != "app.paas.test" {
+			t.Fatalf("Expected cert_name app.paas.test, got %q", got)
+		}
+		if got := r.URL.Query().Get("domain"); got != "custom.example.com" {
+			t.Fatalf("Expected domain custom.example.com, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cert_name":"app.paas.test","domain":"custom.example.com","status":"ssl_active"}`))
+	}))
+	defer server.Close()
+
+	service := NewNginxWebhookService(&config.Config{
+		NginxWebhookEnabled: true,
+		NginxWebhookURL:     server.URL,
+		NginxWebhookKey:     "testkey",
+	})
+
+	status, err := service.GetSSLStatus("app.paas.test", "custom.example.com")
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if status.Status != "ssl_active" {
+		t.Fatalf("Expected ssl_active, got %q", status.Status)
+	}
+}
+
 func TestSyncProject_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
