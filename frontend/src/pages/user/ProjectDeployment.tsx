@@ -64,7 +64,7 @@ function getStepStates(phase: ProjectCreationPhase): [StepState, StepState, Step
   return ['complete', 'active', 'pending']
 }
 
-export default function ProjectProvisioning() {
+export default function ProjectDeployment() {
   const { uid } = useParams<{ uid: string }>()
   const { language, t } = useTranslation()
   const [project, setProject] = useState<Project | null>(null)

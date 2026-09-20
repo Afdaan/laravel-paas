@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Project } from '@/types'
 import { projectsAPI } from '@/services/api'
-import ProjectProvisioning from './ProjectProvisioning'
+import ProjectDeployment from './ProjectDeployment'
 
 vi.mock('@/lib/usePolling', () => ({ usePolling: vi.fn() }))
 vi.mock('@/services/api', () => ({
@@ -17,7 +17,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const messages: Record<string, string> = {
   'common.retry': 'Retry',
-  'projectDetail.provisioning.eyebrow': 'Project provisioning',
+  'projectDetail.provisioning.eyebrow': 'Deployment status',
   'projectDetail.provisioning.loading': 'Loading deployment status...',
   'projectDetail.provisioning.loadFailed': 'Deployment status unavailable',
   'projectDetail.provisioning.loadFailedDesc': 'Could not load status.',
@@ -84,15 +84,15 @@ function createProject(overrides: Partial<Project> = {}): Project {
 
 function renderPage() {
   return render(
-    <MemoryRouter initialEntries={['/projects/proj-123/provisioning']}>
+    <MemoryRouter initialEntries={['/projects/proj-123/deployments/current']}>
       <Routes>
-        <Route path="/projects/:uid/provisioning" element={<ProjectProvisioning />} />
+        <Route path="/projects/:uid/deployments/current" element={<ProjectDeployment />} />
       </Routes>
     </MemoryRouter>,
   )
 }
 
-describe('ProjectProvisioning', () => {
+describe('ProjectDeployment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })

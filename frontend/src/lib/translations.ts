@@ -737,7 +737,7 @@ export const translations = {
         streamingLogs: "Streaming logs from railpack build...",
       },
       provisioning: {
-        eyebrow: "Project provisioning",
+        eyebrow: "Deployment status",
         loading: "Loading deployment status...",
         loadFailed: "Deployment status unavailable",
         loadFailedDesc: "The project exists, but its latest deployment status could not be loaded. Retry to reconnect.",
@@ -2854,7 +2854,7 @@ export const translations = {
         streamingLogs: "Streaming log dari railpack build...",
       },
       provisioning: {
-        eyebrow: "Provisioning project",
+        eyebrow: "Status deployment",
         loading: "Memuat status deployment...",
         loadFailed: "Status deployment tidak tersedia",
         loadFailedDesc: "Project sudah tersimpan, tetapi status deployment terbaru gagal dimuat. Coba lagi untuk menyambungkan ulang.",
