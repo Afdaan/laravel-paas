@@ -6,7 +6,6 @@ import useTranslation from '@/lib/useTranslation'
 import {
   Globe,
   Shield,
-  Activity,
   Save,
   AlertCircle,
   Server,
@@ -267,14 +266,6 @@ const AdminSettings = () => {
                 </div>
               </div>
             </div>
-
-            <div className="p-4 rounded-lg bg-muted/50 border space-y-2">
-              <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-emerald-500" />
-                <span className="text-xs font-bold uppercase tracking-widest">{t('admin.settings.enforcementPolicy')}</span>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed" dangerouslySetInnerHTML={{ __html: t('admin.settings.enforcementDesc') }} />
-            </div>
           </CardContent>
         </Card>
 
@@ -372,4 +363,3 @@ const AdminSettings = () => {
 }
 
 export default AdminSettings
-

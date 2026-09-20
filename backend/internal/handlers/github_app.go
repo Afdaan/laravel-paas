@@ -177,7 +177,6 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 			if err := h.projectService.UpdateDeploymentStatus(p.ID, models.DepStatusQueued, "GitHub Push trigger: "+payload.HeadCommit.Message, 0, jobID); err != nil {
 				slog.Warn("Failed to update status", "id", p.ID, "error", err)
 			}
-			h.projectService.UpdateActivity(p.ID)
 		}
 
 	} else if event == "installation" {

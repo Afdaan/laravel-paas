@@ -368,13 +368,6 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.R
 		}
 	}
 
-	expiryDays, _ := strconv.Atoi(s.GetSetting(models.SettingProjectExpiry, models.DefaultProjectExpiry))
-	var expiresAt *time.Time
-	if expiryDays > 0 {
-		t := time.Now().AddDate(0, 0, expiryDays)
-		expiresAt = &t
-	}
-
 	project := &models.Project{
 		UserID:               userID,
 		Name:                 name,
@@ -391,7 +384,6 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.R
 		QueueEnabled:         queueEnabled,
 		Status:               models.StatusPending,
 		DeploymentStatus:     models.DepStatusQueued,
-		ExpiresAt:            expiresAt,
 		UID:                  utils.GenerateRandomUID(),
 		GithubInstallationID: githubInstallationID,
 		GithubRepoOwner:      githubRepoOwner,

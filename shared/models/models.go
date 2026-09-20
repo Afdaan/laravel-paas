@@ -146,11 +146,9 @@ type Project struct {
 	CPULimit    *float64 `json:"cpu_limit,omitempty"`
 	MemoryLimit *string  `gorm:"size:20" json:"memory_limit,omitempty"`
 
-	LastAccessedAt *time.Time     `json:"last_accessed_at,omitempty"`
-	ExpiresAt      *time.Time     `json:"expires_at,omitempty"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-	DeletedAt      gorm.DeletedAt `gorm:"index:idx_status_active" json:"-"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index:idx_status_active" json:"-"`
 
 	// Virtual field for frontend
 	URL string `gorm:"-" json:"url,omitempty"`
@@ -385,7 +383,6 @@ func isHexString(s string) bool {
 	}
 	return true
 }
-
 
 // GetFullDomain returns complete project URL
 func (p *Project) GetFullDomain(baseDomain string) string {
@@ -1298,22 +1295,21 @@ type PaymentEvent struct {
 	CreatedAt       time.Time  `json:"created_at"`
 }
 
-
 // BillingProfile represents user's billing and tax details
 type BillingProfile struct {
-	ID             uint           `gorm:"primaryKey" json:"id"`
-	UserID         uint           `gorm:"uniqueIndex:idx_billing_profiles_user_id;not null" json:"user_id"`
-	User           *User          `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"user,omitempty"`
-	CompanyName    string         `gorm:"size:255" json:"company_name"`
-	TaxID          string         `gorm:"size:100" json:"tax_id"`
-	Email          string         `gorm:"size:255" json:"email"`
-	Phone          string         `gorm:"size:50" json:"phone"`
-	AddressLine1   string         `gorm:"size:255" json:"address_line1"`
-	AddressLine2   string         `gorm:"size:255" json:"address_line2"`
-	City           string         `gorm:"size:100" json:"city"`
-	StateProvince  string         `gorm:"size:100" json:"state_province"`
-	PostalCode     string         `gorm:"size:20" json:"postal_code"`
-	Country        string         `gorm:"size:2;default:'ID'" json:"country"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	UserID        uint      `gorm:"uniqueIndex:idx_billing_profiles_user_id;not null" json:"user_id"`
+	User          *User     `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"user,omitempty"`
+	CompanyName   string    `gorm:"size:255" json:"company_name"`
+	TaxID         string    `gorm:"size:100" json:"tax_id"`
+	Email         string    `gorm:"size:255" json:"email"`
+	Phone         string    `gorm:"size:50" json:"phone"`
+	AddressLine1  string    `gorm:"size:255" json:"address_line1"`
+	AddressLine2  string    `gorm:"size:255" json:"address_line2"`
+	City          string    `gorm:"size:100" json:"city"`
+	StateProvince string    `gorm:"size:100" json:"state_province"`
+	PostalCode    string    `gorm:"size:20" json:"postal_code"`
+	Country       string    `gorm:"size:2;default:'ID'" json:"country"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }

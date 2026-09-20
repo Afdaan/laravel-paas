@@ -96,7 +96,6 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 		return apperr.NewNotFound("Project", c.Params("id"))
 	}
 
-	h.projectService.UpdateActivity(project.ID)
 	h.projectService.PopulateURL(project)
 
 	return c.JSON(project)
@@ -178,8 +177,6 @@ func (h *ProjectHandler) Logs(c *fiber.Ctx) error {
 		slog.Warn("Failed to get project logs", "project_id", project.ID, "error", err.Error())
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to retrieve logs"})
 	}
-
-	h.projectService.UpdateActivity(project.ID)
 
 	return c.JSON(fiber.Map{"logs": logs})
 }
@@ -365,8 +362,6 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 
-	h.projectService.UpdateActivity(project.ID)
-
 	ctx := c.Context()
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
@@ -487,8 +482,6 @@ func (h *ProjectHandler) StreamLogs(c *fiber.Ctx) error {
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
-
-	h.projectService.UpdateActivity(project.ID)
 
 	ctx := c.Context()
 
@@ -616,8 +609,6 @@ func (h *ProjectHandler) Stats(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get stats"})
 	}
 
-	h.projectService.UpdateActivity(project.ID)
-
 	return c.JSON(stats)
 }
 
@@ -676,18 +667,6 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	if err == nil && project.Status == models.StatusRunning && project.ContainerID != nil {
 		target := buildProxyTargetAndHeaders(&project)
 
-
-		// Throttled update of LastAccessedAt to once per minute to preserve DB performance
-		now := time.Now()
-		if project.LastAccessedAt == nil || now.Sub(*project.LastAccessedAt) > 1*time.Minute {
-			go func(pid uint, t time.Time) {
-				h.db.Model(&models.Project{}).Where("id = ?", pid).Update("last_accessed_at", &t)
-			}(project.ID, now)
-			project.LastAccessedAt = &now
-			_ = h.redisService.SetCache(cacheKey, project, 24*time.Hour)
-		}
-
-		h.projectService.UpdateActivity(project.ID)
 		return proxy.Forward(target)(c)
 	}
 
@@ -700,17 +679,10 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found or not running"})
 	}
 
-	// Update LastAccessedAt on cache miss
-	now := time.Now()
-	project_db.LastAccessedAt = &now
-	h.db.Model(&models.Project{}).Where("id = ?", project_db.ID).Update("last_accessed_at", &now)
-
 	// 3. Populate Cache for the next request
 	if err := h.projectService.CacheSubdomainMapping(project_db); err != nil {
 		slog.Warn("Failed to cache subdomain mapping during proxy fallback", "subdomain", subdomain, "error", err)
 	}
-	h.projectService.UpdateActivity(project_db.ID)
-
 	if project_db.ContainerID == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Project container not configured"})
 	}
@@ -720,7 +692,6 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 
 	return proxy.Forward(target)(c)
 }
-
 
 // GetQueueStats returns deployment queue statistics and job lists
 func (h *ProjectHandler) GetQueueStats(c *fiber.Ctx) error {

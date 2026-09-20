@@ -2,9 +2,7 @@ package project
 
 import (
 	"fmt"
-	"log/slog"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -77,27 +75,6 @@ func NewProjectService(
 // GetSetting fetches a platform setting with a fallback
 func (s *ProjectService) GetSetting(key, defaultValue string) string {
 	return s.settingService.Get(key, defaultValue)
-}
-
-// UpdateActivity updates the last_accessed_at and expires_at fields
-func (s *ProjectService) UpdateActivity(projectID uint) {
-	go func() {
-		now := time.Now()
-		expiryDays, _ := strconv.Atoi(s.GetSetting(models.SettingProjectExpiry, models.DefaultProjectExpiry))
-
-		updates := map[string]interface{}{
-			"last_accessed_at": now,
-		}
-		if expiryDays > 0 {
-			updates["expires_at"] = now.AddDate(0, 0, expiryDays)
-		} else {
-			updates["expires_at"] = nil
-		}
-
-		if err := s.projectRepo.UpdateMetadata(projectID, updates); err != nil {
-			slog.Error("Failed to update project activity", "id", projectID, "error", err)
-		}
-	}()
 }
 
 // PopulateURL sets the URL and UID fields on a project model

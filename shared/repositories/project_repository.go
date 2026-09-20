@@ -20,7 +20,6 @@ type ProjectRepository interface {
 	List(page, limit int, userID uint, status string, search string) ([]models.Project, int64, error)
 	ListByUserID(userID uint) ([]models.Project, error)
 	ListAll() ([]models.Project, error)
-	ListExpired() ([]models.Project, error)
 	ListByStatus(status models.ProjectStatus) ([]models.Project, error)
 	ListByStatuses(statuses []models.ProjectStatus) ([]models.Project, error)
 	Create(project *models.Project) error
@@ -30,7 +29,6 @@ type ProjectRepository interface {
 	UpdateMetadata(id uint, updates map[string]interface{}) error
 	UpdateConfigHash(id uint, newHash string, expectedOldHash string) error
 	Delete(id uint) error
-	UpdateActivity(id uint) error
 	CountTotal() (int64, error)
 	CountByUserID(userID uint) (int64, error)
 	CountRunning() (int64, error)
@@ -141,12 +139,6 @@ func (r *projectRepository) ListByUserID(userID uint) ([]models.Project, error) 
 func (r *projectRepository) ListAll() ([]models.Project, error) {
 	var projects []models.Project
 	err := r.db.Preload("User").Preload("CustomDomains").Preload("DatabaseInstance").Order("created_at DESC").Find(&projects).Error
-	return projects, err
-}
-
-func (r *projectRepository) ListExpired() ([]models.Project, error) {
-	var projects []models.Project
-	err := r.db.Where("expires_at IS NOT NULL AND expires_at < NOW() AND status != ?", models.StatusStopped).Find(&projects).Error
 	return projects, err
 }
 
@@ -282,10 +274,6 @@ func (r *projectRepository) Delete(id uint) error {
 
 		return nil
 	})
-}
-
-func (r *projectRepository) UpdateActivity(id uint) error {
-	return r.db.Model(&models.Project{}).Where("id = ?", id).Update("last_accessed_at", gorm.Expr("NOW()")).Error
 }
 
 func (r *projectRepository) CountTotal() (int64, error) {
