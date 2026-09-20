@@ -65,11 +65,6 @@ function Login() {
       if (remaining <= 0) {
         setRateLimitDeadline(null)
         toast.dismiss('login-rate-limit')
-      } else {
-        toast.error(t('login.rateLimited', { seconds: remaining }), {
-          id: 'login-rate-limit',
-          duration: 1100,
-        })
       }
     }
 
@@ -101,7 +96,6 @@ function Login() {
         setRetryAfterSeconds(remaining)
         toast.error(t('login.rateLimited', { seconds: remaining }), {
           id: 'login-rate-limit',
-          duration: 1100,
         })
         return
       }
@@ -134,6 +128,9 @@ function Login() {
         const deadline = Date.now() + retryAfter * 1000
         setRateLimitDeadline(deadline)
         setRetryAfterSeconds(retryAfter)
+        toast.error(t('login.rateLimited', { seconds: retryAfter }), {
+          id: 'login-rate-limit',
+        })
         return
       }
       toast.error(axiosError.response?.data?.error || t('login.failed'))

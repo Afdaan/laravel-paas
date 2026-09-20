@@ -136,6 +136,7 @@ describe('Login 429 rate limit countdown and unlock flow', () => {
       'Too many login attempts. Try again in 3 seconds.',
       expect.objectContaining({ id: 'login-rate-limit' })
     )
+    expect(toast.error).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: /try again in 3s/i })).toBeDisabled()
 
     // Advance 1 second: countdown to 2s
@@ -143,10 +144,7 @@ describe('Login 429 rate limit countdown and unlock flow', () => {
       vi.advanceTimersByTime(1000)
     })
     expect(screen.getByRole('button', { name: /try again in 2s/i })).toBeDisabled()
-    expect(toast.error).toHaveBeenCalledWith(
-      'Too many login attempts. Try again in 2 seconds.',
-      expect.objectContaining({ id: 'login-rate-limit' })
-    )
+    expect(toast.error).toHaveBeenCalledTimes(1)
 
     // Advance 1 second: countdown to 1s
     await act(async () => {
