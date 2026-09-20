@@ -1024,7 +1024,11 @@ function UserProjectDetail() {
       />
 
       {showCreationNotice && (
-        <ProjectCreationBanner phase={creationPhase} onDismiss={() => setShowCreationNotice(false)} />
+        creationPhase === 'deploying' ? (
+          <ProjectCreationLoading projectName={projectCreationContext?.projectName || project.name} />
+        ) : (
+          <ProjectCreationBanner phase={creationPhase} onDismiss={() => setShowCreationNotice(false)} />
+        )
       )}
 
       {/* Restarting Banner */}

@@ -225,9 +225,11 @@ describe('ProjectDetail creation banner outcomes', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Project created successfully')).toBeInTheDocument()
+      expect(screen.getByText('Preparing billing-service')).toBeInTheDocument()
     })
 
-    expect(screen.getByText(/The first deployment is still running/i)).toBeInTheDocument()
+    expect(screen.getByText('Initial deployment')).toBeInTheDocument()
+    expect(screen.getByText('Application ready')).toBeInTheDocument()
+    expect(screen.queryByText(/The first deployment is still running/i)).not.toBeInTheDocument()
   })
 })
