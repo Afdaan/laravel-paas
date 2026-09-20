@@ -180,7 +180,6 @@ func TestCreateProjectBillingRollsBackManagedDatabaseWhenCreditsAreInsufficient(
 	}
 
 	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-	mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
 	reqPayload := CreateProjectRequest{
 		Name:                   "Billed Project",
 		GithubURL:              "https://github.com/test/billed-project",
@@ -243,7 +242,6 @@ func TestCreateProject_BillingDeductsCreditsSuccessfully(t *testing.T) {
 	}
 
 	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-	mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
 	mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
 	mock.ExpectLLen("deployment:queue").SetVal(1)
 
@@ -289,7 +287,6 @@ func TestCreateProject_BillingDeductsCreditsSuccessfully(t *testing.T) {
 	}
 }
 
-
 func intPointer(value int) *int {
 	return &value
 }
@@ -317,7 +314,6 @@ func TestCreateProject_RollbackOnAttachFailure(t *testing.T) {
 
 	// Mock settings expectations as valid JSON strings
 	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-	mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
 
 	reqPayload := CreateProjectRequest{
 		Name:                "New Project",
@@ -373,7 +369,6 @@ func TestCreateProject_RollbackOnSecretStoreFailure(t *testing.T) {
 
 	// Mock settings expectations as valid JSON strings
 	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-	mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
 
 	reqPayload := CreateProjectRequest{
 		Name:           "SQLite Project",
@@ -424,7 +419,6 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 
 	// Mock settings expectations for the successful request as valid JSON strings
 	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-	mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
 
 	// Mock queue expectations for the single successful enqueue
 	mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
@@ -529,7 +523,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	t.Run("uppercase database name", func(t *testing.T) {
 		app, _, mock := setupTestApp(t, "db_val_upper_name")
 		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
 
 		reqPayload := CreateProjectRequest{
 			Name:           "Test Project",
@@ -557,7 +550,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	t.Run("uppercase database username", func(t *testing.T) {
 		app, _, mock := setupTestApp(t, "db_val_upper_user")
 		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
 
 		reqPayload := CreateProjectRequest{
 			Name:             "Test Project",
@@ -586,7 +578,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	t.Run("weak database password", func(t *testing.T) {
 		app, _, mock := setupTestApp(t, "db_val_weak_pass")
 		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
 
 		reqPayload := CreateProjectRequest{
 			Name:             "Test Project",
@@ -616,7 +607,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	t.Run("distinct name and username persistence", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_distinct")
 		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
 		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
 		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
 		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
@@ -669,7 +659,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	t.Run("spaced database username trimming", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_spaced_user")
 		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
 		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
 		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
 		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
@@ -714,7 +703,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	t.Run("long project name username generation", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_long_name")
 		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectGet("setting:project_expiry_days").SetVal("\"0\"")
 		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
 		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
 		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)

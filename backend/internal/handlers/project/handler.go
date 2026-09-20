@@ -81,8 +81,6 @@ func (h *ProjectHandler) StreamDeploymentEvents(c *fiber.Ctx) error {
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 
-	h.projectService.UpdateActivity(project.ID)
-
 	ctx := c.Context()
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {

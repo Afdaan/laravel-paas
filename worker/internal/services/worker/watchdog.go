@@ -76,7 +76,6 @@ func (w *CentralWatchdog) Start() {
 	w.recoverOrphanedBuilds()
 
 	w.StartPruneScheduler()
-	// w.StartExpiryJanitor() -- disabled: credit billing manages lifecycle
 	w.StartStaleBuildWatchdog()
 	w.StartDelayedJobScheduler()
 	w.StartAutoHealingWatchdog()
@@ -421,52 +420,6 @@ func (w *CentralWatchdog) StartPruneScheduler() {
 			if err := exec.Command("docker", "builder", "prune", "-f", "--filter", "until=48h").Run(); err != nil {
 				slog.Warn("Central watchdog: failed to prune docker builder", "error", err)
 			}
-		}
-	}()
-}
-
-func (w *CentralWatchdog) StartExpiryJanitor() {
-	go func() {
-		time.Sleep(1 * time.Minute)
-
-		for w.running {
-			slog.Info("Central watchdog: running project expiry janitor")
-			w.cleanupExpiredProjects()
-
-			select {
-			case <-w.stopChan:
-				return
-			case <-time.After(1 * time.Hour):
-			}
-		}
-	}()
-}
-
-func (w *CentralWatchdog) cleanupExpiredProjects() {
-	expiredProjects, err := w.projectRepo.ListExpired()
-	if err != nil {
-		slog.Error("Central watchdog: failed to query expired projects", "error", err)
-		return
-	}
-
-	if len(expiredProjects) == 0 {
-		return
-	}
-
-	slog.Info("Central watchdog: auto-deleting expired projects", "count", len(expiredProjects))
-
-	for i := range expiredProjects {
-		project := expiredProjects[i]
-		slog.Info("Central watchdog: auto-deleting expired project via service", "name", project.Name, "id", project.ID)
-
-		if err := w.projectService.DeleteProject(&project); err != nil {
-			slog.Error("Central watchdog: failed to auto-delete expired project", "id", project.ID, "error", err)
-		}
-	}
-
-	go func() {
-		if err := w.dockerService.PruneImages(); err != nil {
-			slog.Error("Central watchdog: background image prune failed", "error", err)
 		}
 	}()
 }

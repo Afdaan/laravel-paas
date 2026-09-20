@@ -36,8 +36,6 @@ func (h *ProjectHandler) GetEnv(c *fiber.Ctx) error {
 
 	envContent := utils.FormatEnvMap(envMap)
 
-	h.projectService.UpdateActivity(project.ID)
-
 	return c.JSON(fiber.Map{"content": envContent})
 }
 
@@ -147,8 +145,6 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 	// since we explicitly queue a redeployment for it at the end of this handler.
 	go h.secretStoreService.PropagateSecretStoreUpdatesExcept(storeID, lockedProject.ID)
 
-	h.projectService.UpdateActivity(lockedProject.ID)
-
 	if err := h.projectService.UpdateProjectStatus(lockedProject.ID, models.StatusRestarting); err != nil {
 		slog.Warn("Failed to update project status after env update", "id", lockedProject.ID, "error", err)
 	}
@@ -217,8 +213,6 @@ func (h *ProjectHandler) ListBranches(c *fiber.Ctx) error {
 	} else {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Project has no Git source configured"})
 	}
-
-	h.projectService.UpdateActivity(project.ID)
 
 	return c.JSON(fiber.Map{"data": branches})
 }

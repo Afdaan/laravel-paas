@@ -26,6 +26,7 @@ import (
 )
 
 const defensiveMigrationLockIdentity = "runara:defensive-migration-bootstrap"
+const legacyProjectExpirySettingKey = "project_expiry_days"
 
 // DefensiveMigrationBootstrap orchestrates the safe migration pipeline.
 // Existence checks matter because historical databases experience schema drift
@@ -165,6 +166,9 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 			return fmt.Errorf("AutoMigrate failed for table %s: %w", tableName, err)
 		}
 	}
+	if err := removeLegacyProjectExpirySetting(db); err != nil {
+		return err
+	}
 	if err := repairBillingCatalog(db); err != nil {
 		return fmt.Errorf("repair billing catalog failed: %w", err)
 	}
@@ -243,6 +247,17 @@ func defensiveMigrationBootstrap(db *gorm.DB) error {
 	}
 
 	slog.Info("Defensive migration bootstrap completed successfully.")
+	return nil
+}
+
+func removeLegacyProjectExpirySetting(db *gorm.DB) error {
+	result := db.Where("setting_key = ?", legacyProjectExpirySettingKey).Delete(&models.Setting{})
+	if result.Error != nil {
+		return fmt.Errorf("remove legacy project expiry setting: %w", result.Error)
+	}
+	if result.RowsAffected > 0 {
+		slog.Info("Removed legacy project expiry setting")
+	}
 	return nil
 }
 

@@ -411,8 +411,6 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 			"error": "Failed to queue redeployment",
 		})
 	}
-	h.projectService.UpdateActivity(project.ID)
-
 	// Get queue position
 	queueLength, _ := h.redisService.GetQueueLength()
 
@@ -502,8 +500,6 @@ func (h *ProjectHandler) RunConsoleCommand(c *fiber.Ctx) error {
 			"error":  "Command failed (non-zero exit code)",
 		})
 	}
-
-	h.projectService.UpdateActivity(project.ID)
 
 	return c.JSON(fiber.Map{"output": output})
 }

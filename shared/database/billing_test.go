@@ -22,6 +22,34 @@ func billingTestDB(t *testing.T, name string) *gorm.DB {
 	return db
 }
 
+func TestRemoveLegacyProjectExpirySetting(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Setting{}); err != nil {
+		t.Fatalf("migrate settings: %v", err)
+	}
+	if err := db.Create(&models.Setting{Key: legacyProjectExpirySettingKey, Value: "30", Type: "int"}).Error; err != nil {
+		t.Fatalf("create legacy setting: %v", err)
+	}
+
+	if err := removeLegacyProjectExpirySetting(db); err != nil {
+		t.Fatalf("remove legacy setting: %v", err)
+	}
+	if err := removeLegacyProjectExpirySetting(db); err != nil {
+		t.Fatalf("repeat legacy setting removal: %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&models.Setting{}).Where("setting_key = ?", legacyProjectExpirySettingKey).Count(&count).Error; err != nil {
+		t.Fatalf("count legacy setting: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("legacy project expiry setting still exists")
+	}
+}
+
 func TestBackfillBillableResourceAnchorsUsesEarliestInvoicePeriod(t *testing.T) {
 	db := billingTestDB(t, t.Name())
 	resource := models.BillableResource{UserID: 1, Type: models.BillableTypeProject, ResourceID: 1, SpecID: 1, BillingStatus: models.BillableResourceStatusActive, CurrentPeriodStart: time.Date(2025, time.February, 28, 0, 0, 0, 0, time.UTC), NextInvoiceAt: time.Date(2025, time.March, 28, 0, 0, 0, 0, time.UTC)}
