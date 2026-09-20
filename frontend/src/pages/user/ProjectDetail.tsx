@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import useTranslation from '../../lib/useTranslation'
 import {
@@ -54,6 +54,8 @@ import { BuildTab } from '../../components/project/detail/BuildTab'
 import { DomainsTab } from '../../components/project/detail/DomainsTab'
 import { SettingsTab } from '../../components/project/detail/SettingsTab'
 import { PROJECT_DETAIL_TABS, isProjectDetailTab } from '../../components/project/detail/tabs'
+import { ProjectCreationBanner, ProjectCreationLoading, ProjectCreationPhase } from '../../components/project/ProjectCreationProgress'
+import { getProjectCreationContext, getProjectCreationPhase, isTerminalDeploymentStatus, isFailedDeploymentStatus } from '../../components/project/projectCreationContext'
 
 
 const ESCAPE_CHAR = String.fromCharCode(27)
@@ -112,11 +114,15 @@ function UserProjectDetail() {
   const { t } = useTranslation()
   const { uid } = useParams<{ uid: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  const projectCreationContext = getProjectCreationContext(location.state)
+  const projectCreationKey = projectCreationContext ? `${uid}:${projectCreationContext.projectName || ''}` : null
   const [project, setProject] = useState<Project | null>(null)
   const [logs, setLogs] = useState('')
   const [stats, setStats] = useState<ProjectStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [showCreationNotice, setShowCreationNotice] = useState(() => Boolean(projectCreationContext))
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = searchParams.get('tab') || (() => {
     const hash = window.location.hash.replace('#', '')
@@ -504,7 +510,7 @@ function UserProjectDetail() {
     return t('projectDetail.metrics.managedStack')
   }, [displayedFramework, project, t])
 
-  const isDeploying = Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
+  const isDeploying = Boolean(project?.deployment_status && !isTerminalDeploymentStatus(project.deployment_status))
   const deployLocked = isDeploying || project?.status === 'queued' || project?.status === 'pending' || project?.status === 'building' || project?.status === 'restarting'
 
   const deploymentPhase = useMemo(() => {
@@ -605,7 +611,7 @@ function UserProjectDetail() {
   useEffect(() => {
     if (!project) return
     const isDeploying = ['queued', 'pending', 'building', 'restarting'].includes(project.status) ||
-      Boolean(project.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
+      Boolean(project.deployment_status && !isTerminalDeploymentStatus(project.deployment_status))
     if (isDeploying) {
       const interval = setInterval(() => {
         fetchProject(true)
@@ -906,6 +912,10 @@ function UserProjectDetail() {
   }
 
   useEffect(() => {
+    setShowCreationNotice(projectCreationKey !== null)
+  }, [projectCreationKey])
+
+  useEffect(() => {
     activeProjectUidRef.current = uid || null
     settingsProjectUidRef.current = null
     setSettingsProjectUid(null)
@@ -984,8 +994,12 @@ function UserProjectDetail() {
   }
 
   if (isLoading) {
+    if (projectCreationContext) {
+      return <ProjectCreationLoading projectName={projectCreationContext.projectName} />
+    }
+
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
+      <div className="flex min-h-[calc(100dvh-12rem)] flex-col items-center justify-center gap-4">
         <Loader2 className="w-10 h-10 text-primary animate-spin" />
         <div className="text-muted-foreground animate-pulse font-medium">{t('common.loading')}</div>
       </div>
@@ -1000,6 +1014,7 @@ function UserProjectDetail() {
   const isStopped = project.status === 'stopped'
   const displayedFrameworkLabel = displayedFramework && displayedFramework !== 'Other' ? displayedFramework : t('common.general')
   const frameworkLabel = project.framework && project.framework !== 'Other' ? project.framework : t('common.general')
+  const creationPhase: ProjectCreationPhase = getProjectCreationPhase(project)
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-20 animate-in fade-in duration-500">
@@ -1007,6 +1022,10 @@ function UserProjectDetail() {
         onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         {...confirmModal}
       />
+
+      {showCreationNotice && (
+        <ProjectCreationBanner phase={creationPhase} onDismiss={() => setShowCreationNotice(false)} />
+      )}
 
       {/* Restarting Banner */}
       {project.status === 'restarting' && (
@@ -1028,11 +1047,11 @@ function UserProjectDetail() {
       )}
 
       {/* Building Banner */}
-      {project.status !== 'restarting' && (isDeploying || project.deployment_status === 'failed' || project.status === 'failed') && (
+      {project.status !== 'restarting' && (isDeploying || isFailedDeploymentStatus(project.deployment_status) || project.status === 'failed') && (
         <Card className={cn(
           "border-blue-500/20 bg-blue-500/5 p-6 mb-6",
           isDeploying && "border-blue-500/30 bg-blue-500/10",
-          (project.deployment_status === 'failed' || project.status === 'failed') && "border-rose-500/20 bg-rose-500/5"
+          (isFailedDeploymentStatus(project.deployment_status) || project.status === 'failed') && "border-rose-500/20 bg-rose-500/5"
         )}>
           <div className="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
             <div className={cn(
@@ -1044,7 +1063,7 @@ function UserProjectDetail() {
             <div className="flex-1">
               <h3 className={cn(
                 "text-lg font-bold",
-                (project.deployment_status === 'failed' || project.status === 'failed') && "text-rose-500"
+                (isFailedDeploymentStatus(project.deployment_status) || project.status === 'failed') && "text-rose-500"
               )}>
                 {isDeploying
                   ? (deploymentPhase ? `${deploymentPhase.label}...` : t('projectDetail.messages.buildTitle'))

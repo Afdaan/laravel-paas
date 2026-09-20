@@ -435,7 +435,7 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	results := make(chan int, 2)
 	errorsChan := make(chan error, 2)
 
-	runRequest := func(projName, subdomain string, delay time.Duration) {
+	runRequest := func(projName string, delay time.Duration) {
 		defer wg.Done()
 
 		if delay > 0 {
@@ -463,8 +463,8 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	}
 
 	// Fire both with a tiny delay to ensure SQLite locks serialize properly
-	go runRequest("Project 1", "proj1", 0)
-	go runRequest("Project 2", "proj2", 50*time.Millisecond)
+	go runRequest("Project 1", 0)
+	go runRequest("Project 2", 50*time.Millisecond)
 
 	wg.Wait()
 	close(results)
@@ -487,9 +487,10 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	successCount := 0
 	failureCount := 0
 	for _, status := range statusCodes {
-		if status == http.StatusCreated {
+		switch status {
+		case http.StatusCreated:
 			successCount++
-		} else if status == http.StatusBadRequest {
+		case http.StatusBadRequest:
 			failureCount++
 		}
 	}

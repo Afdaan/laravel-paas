@@ -5,6 +5,7 @@ import { projectsAPI } from '../../services/api'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
+import { isTerminalDeploymentStatus } from './projectCreationContext'
 import ConfirmationModal from '../ConfirmationModal'
 import {
   DropdownMenu,
@@ -46,7 +47,7 @@ export function RedeployButton({
   const [isClean, setIsClean] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const isCurrentlyDeploying = Boolean(deploymentStatus && !['completed', 'failed', 'rollback', 'cancelled'].includes(deploymentStatus))
+  const isCurrentlyDeploying = Boolean(deploymentStatus && !isTerminalDeploymentStatus(deploymentStatus))
   const deployLocked = isSubmitting || isCurrentlyDeploying || status === 'queued' || status === 'pending' || status === 'building' || status === 'restarting'
 
   const handleRedeploy = async (e: React.MouseEvent, clean: boolean = false) => {

@@ -37,6 +37,22 @@ export const getCSRFToken = () => {
   return ''
 }
 
+type RateLimitErrorResponse = {
+  retry_after?: unknown
+  details?: { retry_after?: unknown }
+}
+
+export function getRetryAfterSeconds(error: unknown): number | null {
+  const axiosError = error as AxiosError<RateLimitErrorResponse>
+  const response = axiosError.response
+  const rawValue = response?.headers?.['retry-after']
+    ?? response?.data?.retry_after
+    ?? response?.data?.details?.retry_after
+  const seconds = Number(rawValue)
+
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : null
+}
+
 // Request interceptor - add CSRF token for cookie-authenticated unsafe requests
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const method = (config.method || 'get').toUpperCase()

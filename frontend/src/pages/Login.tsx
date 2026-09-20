@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, Link, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
-import { systemAPI } from '../services/api'
+import { getRetryAfterSeconds, systemAPI } from '../services/api'
 import { AxiosError } from 'axios'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
@@ -20,6 +20,8 @@ function Login() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [rateLimitDeadline, setRateLimitDeadline] = useState<number | null>(null)
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState(0)
   const [validationErrors, setValidationErrors] = useState<Record<string, string | null>>({})
 
   const login = useAuthStore((state) => state.login)
@@ -53,8 +55,59 @@ function Login() {
     }
   }, [token, user, navigate, from])
 
+  useEffect(() => {
+    if (!rateLimitDeadline) return
+
+    const syncRemaining = () => {
+      const remaining = Math.max(0, Math.ceil((rateLimitDeadline - Date.now()) / 1000))
+      setRetryAfterSeconds(remaining)
+
+      if (remaining <= 0) {
+        setRateLimitDeadline(null)
+        toast.dismiss('login-rate-limit')
+      } else {
+        toast.error(t('login.rateLimited', { seconds: remaining }), {
+          id: 'login-rate-limit',
+          duration: 1100,
+        })
+      }
+    }
+
+    syncRemaining()
+
+    const interval = window.setInterval(syncRemaining, 1000)
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        syncRemaining()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus)
+    window.addEventListener('focus', handleVisibilityOrFocus)
+
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus)
+      window.removeEventListener('focus', handleVisibilityOrFocus)
+    }
+  }, [rateLimitDeadline, t])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (rateLimitDeadline) {
+      const remaining = Math.max(0, Math.ceil((rateLimitDeadline - Date.now()) / 1000))
+      if (remaining > 0) {
+        setRetryAfterSeconds(remaining)
+        toast.error(t('login.rateLimited', { seconds: remaining }), {
+          id: 'login-rate-limit',
+          duration: 1100,
+        })
+        return
+      }
+      setRateLimitDeadline(null)
+      setRetryAfterSeconds(0)
+    }
 
     const errors: Record<string, string | null> = {}
     if (!email.trim()) errors.email = t('login.emailRequired')
@@ -76,6 +129,13 @@ function Login() {
       navigate(destination)
     } catch (error: unknown) {
       const axiosError = error as AxiosError<{ error: string }>
+      const retryAfter = getRetryAfterSeconds(error)
+      if (axiosError.response?.status === 429 && retryAfter) {
+        const deadline = Date.now() + retryAfter * 1000
+        setRateLimitDeadline(deadline)
+        setRetryAfterSeconds(retryAfter)
+        return
+      }
       toast.error(axiosError.response?.data?.error || t('login.failed'))
     } finally {
       setIsLoading(false)
@@ -200,8 +260,10 @@ function Login() {
                     )}
                   </div>
 
-                  <Button type="submit" size="lg" className="min-h-12 w-full font-bold" disabled={isLoading}>
-                    {isLoading ? (
+                  <Button type="submit" size="lg" className="min-h-12 w-full font-bold" disabled={isLoading || retryAfterSeconds > 0}>
+                    {retryAfterSeconds > 0 ? (
+                      t('login.retryIn', { seconds: retryAfterSeconds })
+                    ) : isLoading ? (
                       <>
                         <Spinner className="size-4" />
                         {t('login.loggingIn')}

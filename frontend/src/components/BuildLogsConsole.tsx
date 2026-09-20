@@ -8,6 +8,7 @@ import useTranslation from '@/lib/useTranslation'
 import ConfirmationModal from './ConfirmationModal'
 import { cn } from '@/lib/utils'
 import { Project, DeploymentEvent } from '@/types'
+import { isTerminalDeploymentStatus } from './project/projectCreationContext'
 import {
   appendBuildLogLines,
   clearVisibleBuildLogs,
@@ -266,7 +267,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
 
 
   const isDeploying = useMemo(() => {
-    return Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
+    return Boolean(project?.deployment_status && !isTerminalDeploymentStatus(project.deployment_status))
   }, [project?.deployment_status])
 
   const pendingDeploymentLogLines = useMemo(() => {
