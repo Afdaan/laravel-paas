@@ -95,6 +95,7 @@ func (s *ProjectService) PromoteRolloutForJob(project *models.Project, jobID, ne
 	updates["rollout_container_id"] = nil
 	updates["rollout_worker_container_id"] = nil
 	updates["status"] = models.StatusRunning
+	updates["port"] = project.Port
 	updates["last_commit_hash"] = project.LastCommitHash
 	return s.projectRepo.UpdateMetadataForJob(project.ID, jobID, updates, newContainerID)
 }
@@ -240,7 +241,7 @@ func (s *ProjectService) SyncProjectNginxFrom(project *models.Project, triggerSo
 	return hash, nil
 }
 
-func (s *ProjectService) RecreateProjectZeroDowntime(ctx context.Context, project *models.Project, logFunc func(string), jobID string) error {
+func (s *ProjectService) RecreateProjectZeroDowntime(ctx context.Context, project *models.Project, logFunc func(string), jobID string, requireCommitTag bool) error {
 	if logFunc == nil {
 		logFunc = func(string) {}
 	}
@@ -257,7 +258,7 @@ func (s *ProjectService) RecreateProjectZeroDowntime(ctx context.Context, projec
 
 	if project.ContainerID == nil || *project.ContainerID == "" {
 		if jobID != "" {
-			return errors.New("no running container to replace during rollback")
+			return errors.New("no running container to replace")
 		}
 		return nil
 	}
@@ -278,7 +279,7 @@ func (s *ProjectService) RecreateProjectZeroDowntime(ctx context.Context, projec
 	project.WorkerContainerID = nil
 
 	logFunc(">> Starting new application instance...")
-	newID, err := s.dockerService.StartExistingImage(project, projectDomain, jobID != "")
+	newID, err := s.dockerService.StartExistingImage(project, projectDomain, requireCommitTag)
 	if err != nil {
 		logFunc("✗ Failed to start new application instance: " + err.Error())
 		slog.Error("Failed to start new container during recreation", "subdomain", project.Subdomain, "error", err)

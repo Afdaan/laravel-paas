@@ -1298,7 +1298,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if job.Type == "update_env" {
-		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "env_update_started", "Applying environment configuration")
+		if !w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "env_update_started", "Applying environment configuration") {
+			return
+		}
 		if project.ContainerID == nil || *project.ContainerID == "" {
 			appendLog(">> Project is stopped. Regenerating environment configuration on disk...")
 			projectDomain := w.cfg.ProjectDomain
@@ -1312,9 +1314,13 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			appendLog("✓ Environment configuration updated successfully on disk.")
 			slog.Info("Project container is stopped. Skipping container restart for env update.", "subdomain", project.Subdomain)
 			w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "env_update_skipped_stopped", "Container is stopped. Environment updated on disk.")
-			_ = w.projectRepo.UpdateStatus(project.ID, models.StatusStopped)
-			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment updated on disk")
-			w.acknowledgeProjectEnvironmentSync(project.ID, job.EnvSyncGeneration)
+			if err := w.projectRepo.UpdateMetadataForJob(project.ID, job.JobID, map[string]interface{}{"status": models.StatusStopped}); err != nil {
+				slog.Warn("Environment sync superseded before stopped status update", "projectId", project.ID, "jobId", job.JobID, "error", err)
+				return
+			}
+			if w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment updated on disk") {
+				w.acknowledgeProjectEnvironmentSync(project.ID, job.EnvSyncGeneration)
+			}
 			return
 		}
 
@@ -1322,7 +1328,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		slog.Info("Performing instant environment update", "subdomain", project.Subdomain)
 		w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "env_update_started", "Updating environment and restarting container")
 
-		if err := w.instantUpdateEnv(project, appendLog); err != nil {
+		if err := w.instantUpdateEnv(ctx, project, job.JobID, appendLog); err != nil {
 			appendLog("")
 			appendLog("✗ Environment update failed: " + err.Error())
 			slog.Error("Instant update failed", "subdomain", project.Subdomain, "error", err)
@@ -1331,9 +1337,13 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			appendLog("")
 			appendLog("✓ Environment update completed successfully!")
 			w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "env_update_completed", "Environment variables updated successfully")
-			_ = w.projectRepo.UpdateStatus(project.ID, models.StatusRunning)
-			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment variables updated successfully")
-			w.acknowledgeProjectEnvironmentSync(project.ID, job.EnvSyncGeneration)
+			if err := w.projectRepo.UpdateMetadataForJob(project.ID, job.JobID, map[string]interface{}{"status": models.StatusRunning}); err != nil {
+				slog.Warn("Environment sync superseded before running status update", "projectId", project.ID, "jobId", job.JobID, "error", err)
+				return
+			}
+			if w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "env_update_completed", "Environment variables updated successfully") {
+				w.acknowledgeProjectEnvironmentSync(project.ID, job.EnvSyncGeneration)
+			}
 		}
 		return
 	}
@@ -1491,11 +1501,13 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 	if job.Type == "restart" {
 		slog.Info("Performing container restart action", "subdomain", project.Subdomain)
-		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "restart_started", "Restarting application container(s)")
+		if !w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "restart_started", "Restarting application container(s)") {
+			return
+		}
 		w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "restart_started", "Restarting application container(s)")
 		appendLog(">> Restarting application container(s)...")
 
-		if err := w.projectService.RecreateProjectZeroDowntime(ctx, project, appendLog, ""); err != nil {
+		if err := w.projectService.RecreateProjectZeroDowntime(ctx, project, appendLog, job.JobID, false); err != nil {
 			appendLog("")
 			appendLog("✗ Restart failed: " + err.Error())
 			slog.Error("Restart failed", "subdomain", project.Subdomain, "error", err)
@@ -2709,7 +2721,7 @@ func (w *DeploymentWorker) checkDiskSpace() {
 	}
 }
 
-func (w *DeploymentWorker) instantUpdateEnv(project *models.Project, logFunc func(string)) error {
+func (w *DeploymentWorker) instantUpdateEnv(ctx context.Context, project *models.Project, jobID string, logFunc func(string)) error {
 	if logFunc == nil {
 		logFunc = func(string) {}
 	}
@@ -2733,7 +2745,7 @@ func (w *DeploymentWorker) instantUpdateEnv(project *models.Project, logFunc fun
 	}
 
 	logFunc("")
-	return w.projectService.RecreateProjectZeroDowntime(context.Background(), project, logFunc, "")
+	return w.projectService.RecreateProjectZeroDowntime(ctx, project, logFunc, jobID, false)
 }
 
 func (w *DeploymentWorker) redeployExistingImage(ctx context.Context, project *models.Project, jobID string, logFunc func(string)) error {
@@ -2761,7 +2773,7 @@ func (w *DeploymentWorker) redeployExistingImage(ctx context.Context, project *m
 	}
 
 	logFunc("")
-	return w.projectService.RecreateProjectZeroDowntime(ctx, project, logFunc, jobID)
+	return w.projectService.RecreateProjectZeroDowntime(ctx, project, logFunc, jobID, true)
 }
 
 // getSecretsToRedact compiles a list of decrypted secrets linked to the project.

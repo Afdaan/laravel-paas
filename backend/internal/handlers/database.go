@@ -200,14 +200,8 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 	// 3. Trigger fan-out env propagation to OTHER projects bound to the same secret store
 	h.secretStoreService.PropagateDatabaseEnvFanout(&lockedProject)
 
-	if jobID, err = h.redisService.EnqueueDeploymentEnvSync(lockedProject.ID, lockedProject.UserID, envSyncGeneration); err != nil {
+	if jobID, err = services.NewProjectEnvSyncService(h.db, h.redisService).Enqueue(c.Context(), lockedProject.ID, envSyncGeneration); err != nil {
 		slog.Error("Queue durable database environment sync failed", "project_id", lockedProject.ID, "generation", envSyncGeneration, "error", err)
-	} else {
-		// Route through the transition manager so the state machine, progress reset
-		// and lifecycle timestamps stay consistent with every other enqueue path.
-		if errUpdate := h.projectService.UpdateDeploymentStatus(lockedProject.ID, models.DepStatusQueued, "Credentials rotation env update", 0, jobID); errUpdate != nil {
-			slog.Error("Failed to update project deployment status after successful enqueue", "project_id", lockedProject.ID, "error", errUpdate.Error())
-		}
 	}
 
 	h.databaseService.InvalidateProjectDB(instance.Name)
@@ -776,12 +770,12 @@ func (h *DatabaseHandler) TransferDatabase(c *fiber.Ctx) error {
 	h.recordAuditLog(c, sourceProject.ID, "db_transfer", oldProjIDStr, strconv.Itoa(int(targetProject.ID)), "completed", "")
 
 	// 9. Durable environment synchronization for both projects.
-	sourceJobID, err := h.redisService.EnqueueDeploymentEnvSync(sourceProject.ID, sourceProject.UserID, sourceEnvGeneration)
+	sourceJobID, err := services.NewProjectEnvSyncService(h.db, h.redisService).Enqueue(c.Context(), sourceProject.ID, sourceEnvGeneration)
 	if err != nil {
 		slog.Warn("Failed to enqueue source project update_env deployment", "project_id", sourceProject.ID, "error", err)
 	}
 
-	targetJobID, err := h.redisService.EnqueueDeploymentEnvSync(targetProject.ID, targetProject.UserID, targetEnvGeneration)
+	targetJobID, err := services.NewProjectEnvSyncService(h.db, h.redisService).Enqueue(c.Context(), targetProject.ID, targetEnvGeneration)
 	if err != nil {
 		slog.Warn("Failed to enqueue target project update_env deployment", "project_id", targetProject.ID, "error", err)
 	}
@@ -1239,7 +1233,7 @@ func (h *DatabaseHandler) AttachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to attach database: " + errMsg})
 	}
 
-	if _, err := h.redisService.EnqueueDeploymentEnvSync(project.ID, project.UserID, envSyncGeneration); err != nil {
+	if _, err := services.NewProjectEnvSyncService(h.db, h.redisService).Enqueue(c.Context(), project.ID, envSyncGeneration); err != nil {
 		slog.Warn("Queue durable database attach environment sync failed", "project_id", project.ID, "generation", envSyncGeneration, "error", err)
 	}
 	// Propagate env updates (after commit). Report enqueue failure in audit.
@@ -1340,7 +1334,7 @@ func (h *DatabaseHandler) DetachDatabase(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to detach database: " + errMsg})
 	}
 
-	if _, err := h.redisService.EnqueueDeploymentEnvSync(project.ID, project.UserID, envSyncGeneration); err != nil {
+	if _, err := services.NewProjectEnvSyncService(h.db, h.redisService).Enqueue(c.Context(), project.ID, envSyncGeneration); err != nil {
 		slog.Warn("Queue durable database detach environment sync failed", "project_id", project.ID, "generation", envSyncGeneration, "error", err)
 	}
 	// Propagate env updates (removes DB_* vars since association is now nil, after commit)

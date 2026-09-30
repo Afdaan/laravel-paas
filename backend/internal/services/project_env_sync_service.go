@@ -9,6 +9,8 @@ import (
 
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/shared/pkg/utils"
+	"github.com/laravel-paas/shared/services/deployment"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -44,6 +46,54 @@ func RequestProjectEnvSyncTx(tx *gorm.DB, projectID uint) (uint, error) {
 	return next, nil
 }
 
+func (s *ProjectEnvSyncService) Enqueue(ctx context.Context, projectID, generation uint) (string, error) {
+	if generation == 0 {
+		return "", errors.New("environment sync generation is required")
+	}
+	var expected models.Project
+	if err := s.db.WithContext(ctx).First(&expected, projectID).Error; err != nil {
+		return "", err
+	}
+	if expected.DeploymentStatus != "" && !models.IsTerminalDeploymentStatus(expected.DeploymentStatus) {
+		return "", nil
+	}
+	token, err := s.redis.ReserveDeployment(projectID)
+	if err != nil || token == "" {
+		return "", err
+	}
+	defer s.redis.ReleaseDeploymentLock(projectID, token)
+
+	jobID := utils.GenerateRandomUID()
+	manager := deployment.NewTransitionManager(s.db, s.redis)
+	if _, err := manager.RequeueDeploymentIfMatch(ctx, &expected, jobID, "Synchronizing database environment"); err != nil {
+		return "", err
+	}
+	job := &infrastructure.DeploymentJob{
+		ProjectID: projectID, UserID: expected.UserID, JobID: jobID, Type: "update_env",
+		EnvSyncGeneration: generation, EnqueuedAt: time.Now(),
+	}
+	if err := s.redis.EnqueueReplacingDeploymentJob(job, token); err != nil {
+		if !infrastructure.IsStaleOwnerError(err) {
+			queued, checkErr := s.redis.HasDeploymentJob(jobID)
+			if checkErr != nil {
+				return "", errors.Join(err, checkErr)
+			}
+			if queued {
+				return jobID, nil
+			}
+			var current models.Project
+			if readErr := s.db.WithContext(ctx).First(&current, projectID).Error; readErr == nil && current.DeploymentJobID != nil && *current.DeploymentJobID == jobID && current.DeploymentStatus != models.DepStatusQueued {
+				return jobID, nil
+			}
+		}
+		if _, failErr := manager.FailQueuedDeploymentIfUnchanged(ctx, projectID, jobID, "Database environment sync could not be queued", false); failErr != nil {
+			return "", errors.Join(err, failErr)
+		}
+		return "", err
+	}
+	return jobID, nil
+}
+
 func (s *ProjectEnvSyncService) Run(ctx context.Context) {
 	if s == nil || s.db == nil || s.redis == nil || ctx == nil {
 		return
@@ -68,12 +118,7 @@ func (s *ProjectEnvSyncService) dispatch(ctx context.Context) {
 		return
 	}
 	for _, task := range tasks {
-		var project models.Project
-		if err := s.db.WithContext(ctx).First(&project, task.ProjectID).Error; err != nil {
-			s.recordFailure(ctx, task.ID, err)
-			continue
-		}
-		if _, err := s.redis.EnqueueDeploymentEnvSync(project.ID, project.UserID, task.DesiredGeneration); err != nil {
+		if _, err := s.Enqueue(ctx, task.ProjectID, task.DesiredGeneration); err != nil {
 			s.recordFailure(ctx, task.ID, err)
 		}
 	}

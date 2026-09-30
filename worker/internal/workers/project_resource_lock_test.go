@@ -118,7 +118,7 @@ func TestAdminOverrideWaitsForProjectResources(t *testing.T) {
 	if addr == "" {
 		t.Skip("set REDIS_TEST_ADDR to an isolated Redis instance")
 	}
-	client := redis.NewClient(&redis.Options{Addr: addr, DB: 15})
+	client := redis.NewClient(&redis.Options{Addr: addr, DB: 14})
 	t.Cleanup(func() { _ = client.Close() })
 	if err := client.FlushDB(context.Background()).Err(); err != nil {
 		t.Fatal(err)

@@ -23,7 +23,7 @@ func TestRollbackPromotionFencedAndAtomic(t *testing.T) {
 	const targetHash = "2222222222222222222222222222222222222222"
 	for _, scenario := range []string{"admin_before_start", "admin_before_promotion", "write_failure", "success"} {
 		t.Run(scenario, func(t *testing.T) {
-			db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+			db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -101,7 +101,7 @@ func TestRollbackPromotionFencedAndAtomic(t *testing.T) {
 
 func TestRollbackWithoutRunningContainerCannotChangeCommit(t *testing.T) {
 	service := projectServicePkg.NewProjectService(&config.Config{}, nil, nil, nil, nil, nil, nil, nil)
-	if err := service.RecreateProjectZeroDowntime(context.Background(), &models.Project{}, nil, "rollback-A"); err == nil {
+	if err := service.RecreateProjectZeroDowntime(context.Background(), &models.Project{}, nil, "rollback-A", true); err == nil {
 		t.Fatal("rollback without running image must not report success")
 	}
 }
@@ -111,13 +111,13 @@ func TestRollbackAdminPublishBeforePromotion(t *testing.T) {
 	if addr == "" {
 		t.Skip("set REDIS_TEST_ADDR to an isolated Redis instance")
 	}
-	client := redis.NewClient(&redis.Options{Addr: addr, DB: 15})
+	client := redis.NewClient(&redis.Options{Addr: addr, DB: 14})
 	t.Cleanup(func() { _ = client.Close() })
 	if err := client.FlushDB(context.Background()).Err(); err != nil {
 		t.Fatal(err)
 	}
 	redisService := infrastructure.NewRedisServiceWithClient(client)
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}

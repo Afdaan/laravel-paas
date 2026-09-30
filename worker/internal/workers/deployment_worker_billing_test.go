@@ -48,7 +48,7 @@ func TestBillingQuotaReconciliationAction(t *testing.T) {
 }
 
 func TestReconcileProjectBillingQuotaUsesAssignedSpec(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestReconcileProjectBillingQuotaUsesAssignedSpec(t *testing.T) {
 }
 
 func TestReconcileProjectBillingQuotaDoesNotAssignLegacyProject(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +239,7 @@ func TestBillingStopCompensatesContainersStoppedBeforePartialFailure(t *testing.
 }
 
 func TestBillingSuspensionStopRejectsPaidResource(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestBillingSuspensionStopRejectsPaidResource(t *testing.T) {
 }
 
 func TestBillingSuspensionStopCheckpointPersistsPreStopRuntimeState(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +340,7 @@ func TestBillingResumeFenceStopsRecordedContainersAfterPriorCrash(t *testing.T) 
 }
 
 func TestBillingRuntimeGateRejectStopsInterruptedResumeContainers(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestBillingRuntimeGateRejectStopsInterruptedResumeContainers(t *testing.T) 
 }
 
 func TestBillingResumeRejectsRenewedSuspensionAndStopsInterruptedContainers(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +449,7 @@ func TestBillingResumeRejectsRenewedSuspensionAndStopsInterruptedContainers(t *t
 }
 
 func TestFinalizeBillingSuspensionStopKeepsPaidProjectRunning(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +501,7 @@ func TestFinalizeBillingSuspensionStopKeepsPaidProjectRunning(t *testing.T) {
 }
 
 func TestBillingSuspensionPaymentBetweenPrecheckAndFinalizationKeepsProjectRunning(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,7 +540,7 @@ func TestBillingSuspensionPaymentBetweenPrecheckAndFinalizationKeepsProjectRunni
 }
 
 func TestUpdateProjectErrorSkippedWhenStateTransitionRejected(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +596,7 @@ func TestDeploymentWorker_PendingEnvRefresh_InterleavingDoesNotClearNewerMarker(
 	if addr == "" {
 		t.Skip("set REDIS_TEST_ADDR to an isolated Redis instance")
 	}
-	client := redis.NewClient(&redis.Options{Addr: addr, DB: 15})
+	client := redis.NewClient(&redis.Options{Addr: addr, DB: 14})
 	t.Cleanup(func() { _ = client.Close() })
 	redisService := infrastructure.NewRedisServiceWithClient(client)
 	_ = client.FlushDB(context.Background()).Err()

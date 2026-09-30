@@ -437,23 +437,6 @@ func (r *RedisService) EnqueueBillingSuspensionResume(projectID, userID, taskID 
 	return jobID, nil
 }
 
-// EnqueueDeploymentEnvSync queues one durable environment-generation acknowledgement.
-func (r *RedisService) EnqueueDeploymentEnvSync(projectID, userID, generation uint) (string, error) {
-	if generation == 0 {
-		return "", fmt.Errorf("environment sync generation is required")
-	}
-	jobID := utils.GenerateRandomUID()
-	job := DeploymentJob{ProjectID: projectID, UserID: userID, Type: "update_env", EnvSyncGeneration: generation, EnqueuedAt: time.Now(), JobID: jobID}
-	data, err := json.Marshal(job)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal environment sync job: %w", err)
-	}
-	if err := r.enqueueDeploymentPayload(data, projectID); err != nil {
-		return "", fmt.Errorf("failed to enqueue environment sync job: %w", err)
-	}
-	return jobID, nil
-}
-
 // EnqueueEnvUpdateIfQuiet enqueues an update_env job only if no other job for this project is queued or running
 func (r *RedisService) EnqueueEnvUpdateIfQuiet(projectID, userID uint) (string, error) {
 	// Check if already locked (running)

@@ -29,13 +29,13 @@ func TestBuiltRedeployFencedAcrossAdminOverride(t *testing.T) {
 	for _, origin := range []string{"rollback_fallback", "webhook_redeploy"} {
 		for _, step := range []string{"before_hash", "before_promotion", "before_cleanup", "after_promotion_before_legacy_cleanup", "promotion_db_failure", "success"} {
 			t.Run(origin+"/"+step, func(t *testing.T) {
-				client := redis.NewClient(&redis.Options{Addr: addr, DB: 15})
+				client := redis.NewClient(&redis.Options{Addr: addr, DB: 14})
 				t.Cleanup(func() { _ = client.Close() })
 				if err := client.FlushDB(context.Background()).Err(); err != nil {
 					t.Fatal(err)
 				}
 				redisService := infrastructure.NewRedisServiceWithClient(client)
-				db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+				db, err := gorm.Open(sqlite.Open("file:"+t.TempDir()+"/test?mode=memory&cache=shared"), &gorm.Config{})
 				if err != nil {
 					t.Fatal(err)
 				}
