@@ -11,9 +11,13 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/repositories"
+	"github.com/laravel-paas/shared/services/deployment"
 	"github.com/laravel-paas/worker/internal/infrastructure/docker"
+	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -532,5 +536,136 @@ func TestBillingSuspensionPaymentBetweenPrecheckAndFinalizationKeepsProjectRunni
 	}
 	if project.Status != models.StatusRunning {
 		t.Fatalf("stale billing stop persisted status=%s", project.Status)
+	}
+}
+
+func TestUpdateProjectErrorSkippedWhenStateTransitionRejected(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.Project{}, &models.DeploymentEvent{}, &models.User{}); err != nil {
+		t.Fatal(err)
+	}
+	currentJobID := "newer-job"
+	project := models.Project{
+		UserID:           1,
+		Name:             "Worker race",
+		Subdomain:        "worker-race",
+		DeploymentStatus: models.DepStatusQueued,
+		DeploymentJobID:  &currentJobID,
+		Status:           models.StatusQueued,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	repo := repositories.NewProjectRepository(db)
+	transMgr := deployment.NewTransitionManager(db, nil)
+	projService := projectServicePkg.NewProjectService(&config.Config{}, repo, nil, nil, nil, nil, nil, transMgr)
+	worker := &DeploymentWorker{
+		cfg:            &config.Config{ProjectsPath: t.TempDir()},
+		projectRepo:    repo,
+		projectService: projService,
+	}
+
+	// Stale worker running old job "stale-job" fails and calls updateProjectError
+	worker.updateProjectError(&project, "stale-job", "fatal compilation error")
+
+	// Project in DB must remain completely unmodified (not failed, error_log nil, still newer-job)
+	var current models.Project
+	if err := db.First(&current, project.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if current.DeploymentStatus != models.DepStatusQueued {
+		t.Fatalf("expected deployment status queued, got %s", current.DeploymentStatus)
+	}
+	if current.Status != models.StatusQueued {
+		t.Fatalf("expected project status queued, got %s", current.Status)
+	}
+	if current.ErrorLog != nil {
+		t.Fatalf("expected ErrorLog to be nil, got %s", *current.ErrorLog)
+	}
+	if current.DeploymentJobID == nil || *current.DeploymentJobID != currentJobID {
+		t.Fatalf("expected deployment_job_id to remain %s, got %v", currentJobID, current.DeploymentJobID)
+	}
+}
+
+func TestDeploymentWorker_PendingEnvRefresh_InterleavingDoesNotClearNewerMarker(t *testing.T) {
+	addr := os.Getenv("REDIS_TEST_ADDR")
+	if addr == "" {
+		t.Skip("set REDIS_TEST_ADDR to an isolated Redis instance")
+	}
+	client := redis.NewClient(&redis.Options{Addr: addr, DB: 15})
+	t.Cleanup(func() { _ = client.Close() })
+	redisService := infrastructure.NewRedisServiceWithClient(client)
+	_ = client.FlushDB(context.Background()).Err()
+
+	projectID := uint(time.Now().UnixNano() % 1000000000)
+
+	// Step 1: Initial env update sets marker -> generation 1
+	if err := redisService.SetPendingEnvRefresh(projectID); err != nil {
+		t.Fatalf("failed to set pending env refresh: %v", err)
+	}
+	gen1, err := redisService.GetPendingEnvRefresh(projectID)
+	if err != nil || gen1 != 1 {
+		t.Fatalf("expected generation 1, got gen=%d err=%v", gen1, err)
+	}
+
+	// Step 2: Worker A completes and detects pending marker for generation 1
+	// Step 3: During worker A's quiet enqueue/processing, update B commits another change -> generation 2
+	if err := redisService.SetPendingEnvRefresh(projectID); err != nil {
+		t.Fatalf("failed to set second pending env refresh: %v", err)
+	}
+	gen2, err := redisService.GetPendingEnvRefresh(projectID)
+	if err != nil || gen2 != 2 {
+		t.Fatalf("expected generation 2, got gen=%d err=%v", gen2, err)
+	}
+
+	// Step 4: Worker A finishes its quiet enqueue and attempts to clear marker up to generation 1
+	cleared, err := redisService.ClearPendingEnvRefresh(projectID, gen1)
+	if err != nil {
+		t.Fatalf("failed to clear pending env refresh: %v", err)
+	}
+	if cleared {
+		t.Fatalf("expected ClearPendingEnvRefresh(gen1=1) to return false because current is gen2=2")
+	}
+
+	// Step 5: Marker for generation 2 MUST still be active
+	hasPending, err := redisService.HasPendingEnvRefresh(projectID)
+	if err != nil || !hasPending {
+		t.Fatalf("expected pending env refresh marker to remain active for generation 2, hasPending=%v err=%v", hasPending, err)
+	}
+
+	// Step 6: Worker B picks up generation 2 and clears up to generation 2
+	clearedB, err := redisService.ClearPendingEnvRefresh(projectID, gen2)
+	if err != nil {
+		t.Fatalf("failed to clear pending env refresh for gen 2: %v", err)
+	}
+	if !clearedB {
+		t.Fatalf("expected ClearPendingEnvRefresh(gen2=2) to return true")
+	}
+
+	// Step 7: Marker should now be completely cleared
+	hasPendingFinal, err := redisService.HasPendingEnvRefresh(projectID)
+	if err != nil || hasPendingFinal {
+		t.Fatalf("expected pending marker to be fully cleared, hasPending=%v err=%v", hasPendingFinal, err)
+	}
+	if err := redisService.SetPendingEnvRefresh(projectID); err != nil {
+		t.Fatal(err)
+	}
+	gen3, err := redisService.GetPendingEnvRefresh(projectID)
+	if err != nil || gen3 <= gen2 {
+		t.Fatalf("third env update reused old generation: current=%d previous=%d err=%v", gen3, gen2, err)
+	}
+	if cleared, err := redisService.ClearPendingEnvRefresh(projectID, gen2); err != nil || cleared {
+		t.Fatalf("late worker cleared third update: cleared=%v err=%v", cleared, err)
+	}
+	jobID, err := redisService.EnqueueEnvUpdateIfQuiet(projectID, 1)
+	if err != nil || jobID == "" {
+		t.Fatalf("third update must still enqueue: job_id=%q err=%v", jobID, err)
+	}
+	if err := redisService.RemoveDeploymentJob(jobID); err != nil {
+		t.Fatal(err)
 	}
 }

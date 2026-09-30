@@ -183,7 +183,7 @@ func sanitizeBuildError(stderr string) string {
 // swap disablement (--memory-swap), process table limits (--pids-limit=250),
 // and privilege escalation prevention (--security-opt=no-new-privileges:true). Traefik routing rules
 // enforce strict network ingress isolation.
-func (s *DockerService) StartExistingImage(project *models.Project, projectDomain string) (string, error) {
+func (s *DockerService) StartExistingImage(project *models.Project, projectDomain string, requireCommitTag bool) (string, error) {
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 	if project.LastCommitHash != "" {
 		tagToCheck := fmt.Sprintf("%s:%s", imageName, project.LastCommitHash)
@@ -191,7 +191,11 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		if err == nil && len(checkImg) > 0 && strings.TrimSpace(string(checkImg)) != "[]" {
 			imageName = tagToCheck
 			slog.Info("Using specific commit tag image for startup", "tag", tagToCheck)
+		} else if requireCommitTag {
+			return "", fmt.Errorf("rollback image %s unavailable: %v", tagToCheck, err)
 		}
+	} else if requireCommitTag {
+		return "", errors.New("rollback requires target commit image")
 	}
 
 	s.storage.EnsurePersistentPath(project)
@@ -268,6 +272,9 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database/database.sqlite", hostSQLiteFile))
 	}
 	runArgs = append(runArgs, volumes...)
+	if requireCommitTag {
+		runArgs = append(runArgs, "--pull=never")
+	}
 	runArgs = append(runArgs, imageName)
 
 	res, err := utils.Run(3*time.Minute, "docker", runArgs...)

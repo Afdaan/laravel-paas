@@ -7,6 +7,7 @@
 package infrastructure
 
 import (
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -27,6 +28,36 @@ import (
 type GitService struct {
 	cfg *config.Config
 	db  *gorm.DB
+}
+
+// CheckoutCommit pins a cloned working tree to the commit carried by its deployment job.
+func (s *GitService) CheckoutCommit(projectPath, githubURL, commitHash string) (string, error) {
+	if (len(commitHash) != 40 && len(commitHash) != 64) || !validGitCommitHex(commitHash) {
+		return "", fmt.Errorf("invalid target commit hash")
+	}
+	authURL, gitEnv, cleanup, err := gitAuthEnv(githubURL)
+	if err != nil {
+		return "", fmt.Errorf("prepare Git authentication: %w", err)
+	}
+	defer cleanup()
+	if _, err := utils.Run(10*time.Second, "git", "-C", projectPath, "cat-file", "-e", commitHash+"^{commit}"); err != nil {
+		if _, err := utils.RunInDirWithEnv(3*time.Minute, "", gitEnv, "git", "-C", projectPath, "fetch", "--depth=1", "--", authURL, commitHash); err != nil {
+			return "", fmt.Errorf("target commit unavailable: %w", err)
+		}
+	}
+	if _, err := utils.Run(1*time.Minute, "git", "-C", projectPath, "reset", "--hard", commitHash); err != nil {
+		return "", fmt.Errorf("reset to target commit: %w", err)
+	}
+	resolved, err := utils.Run(10*time.Second, "git", "-C", projectPath, "rev-parse", "HEAD")
+	if err != nil || !strings.EqualFold(strings.TrimSpace(resolved.Stdout), commitHash) {
+		return "", fmt.Errorf("target commit did not match requested hash")
+	}
+	return strings.TrimSpace(resolved.Stdout), nil
+}
+
+func validGitCommitHex(commitHash string) bool {
+	_, err := hex.DecodeString(commitHash)
+	return err == nil
 }
 
 var gitCredentialPattern = regexp.MustCompile(`(?i)(https?://)([^/\s:@]+:)?[^/\s@]+@`)

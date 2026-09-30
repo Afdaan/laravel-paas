@@ -122,9 +122,6 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		slog.Info("Automatically detected exposed port from image", "subdomain", project.Subdomain, "port", detectedPort)
 		p := detectedPort
 		project.Port = &p
-		if s.GetDB() != nil {
-			s.GetDB().Model(project).UpdateColumn("port", detectedPort)
-		}
 	}
 
 	// 4. Determine Final Internal Port for Traefik

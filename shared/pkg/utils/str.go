@@ -464,3 +464,34 @@ func detectNpmPackageSpecifier(errorMsg string) string {
 	}
 	return ""
 }
+
+// MaxCommitSubjectLength bounds commit subjects copied into user-facing status
+// columns. Commit messages come from untrusted repositories and are unbounded.
+const MaxCommitSubjectLength = 200
+
+// CommitSubject returns the first line of a commit message, stripped of control
+// characters and truncated to MaxCommitSubjectLength runes.
+func CommitSubject(message string) string {
+	subject := message
+	if idx := strings.IndexAny(subject, "\r\n"); idx >= 0 {
+		subject = subject[:idx]
+	}
+	subject = strings.TrimSpace(StripLogControlSequences(subject))
+	runes := []rune(subject)
+	if len(runes) > MaxCommitSubjectLength {
+		return strings.TrimSpace(string(runes[:MaxCommitSubjectLength])) + "…"
+	}
+	return subject
+}
+
+// ShortCommitHash renders a commit SHA in the abbreviated form used across the UI.
+func ShortCommitHash(hash string) string {
+	hash = strings.TrimSpace(hash)
+	if len(hash) > 7 {
+		return hash[:7]
+	}
+	if hash == "" {
+		return "unknown commit"
+	}
+	return hash
+}

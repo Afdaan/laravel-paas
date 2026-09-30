@@ -11,6 +11,12 @@ vi.mock('@/services/api', () => ({
   projectsAPI: {
     get: vi.fn(),
     redeploy: vi.fn(),
+    // Feeds per-step durations. The page renders without them, so the default
+    // is an empty timeline rather than a fixture.
+    getDeploymentEvents: vi.fn(() => Promise.resolve({ data: [] })),
+    // Inline build output. Default to the placeholder response, which renders
+    // nothing, so these cases stay about the pipeline.
+    buildLogs: vi.fn(() => Promise.resolve({ data: { logs: '', placeholder: true } })),
   },
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -22,24 +28,37 @@ const messages: Record<string, string> = {
   'projectDetail.provisioning.loadFailed': 'Deployment status unavailable',
   'projectDetail.provisioning.loadFailedDesc': 'Could not load status.',
   'projectDetail.provisioning.backToProjects': 'Back to projects',
-  'projectDetail.provisioning.statusDeploying': 'In progress',
+  'projectDetail.provisioning.statusDeploying': 'Deploying',
   'projectDetail.provisioning.statusReady': 'Ready',
-  'projectDetail.provisioning.statusFailed': 'Needs attention',
-  'projectDetail.provisioning.deployingTitle': 'Preparing {{name}}',
+  'projectDetail.provisioning.statusFailed': 'Failed',
+  'projectDetail.provisioning.deployingTitle': 'Deploying {{name}}',
   'projectDetail.provisioning.deployingDesc': 'Building application.',
-  'projectDetail.provisioning.readyTitle': '{{name}} is ready',
-  'projectDetail.provisioning.readyDesc': 'Deployment completed.',
-  'projectDetail.provisioning.failedTitle': '{{name}} could not be deployed',
-  'projectDetail.provisioning.failedDesc': 'Review Build Logs.',
+  'projectDetail.provisioning.readyTitle': '{{name}} is live',
+  'projectDetail.provisioning.readyDesc': 'Application is healthy.',
+  'projectDetail.provisioning.failedTitle': '{{name}} failed',
+  'projectDetail.provisioning.failedDesc': 'Check Build Logs.',
   'projectDetail.provisioning.progress': 'Deployment progress',
-  'projectDetail.provisioning.currentActivity': 'Current activity',
+  'projectDetail.provisioning.pipelineTitle': 'Pipeline',
+  'projectDetail.provisioning.currentActivity': 'Activity',
   'projectDetail.provisioning.waitingMessage': 'Waiting for update...',
   'projectDetail.provisioning.openProject': 'Open project',
-  'projectDetail.provisioning.viewBuildLogs': 'View Build Logs',
+  'projectDetail.provisioning.viewBuildLogs': 'Build Logs',
   'projectDetail.provisioning.retryDeployment': 'Retry deployment',
   'projectDetail.provisioning.retryStarted': 'Deployment retry queued',
   'projectDetail.provisioning.retryFailed': 'Failed to queue retry',
-  'projectDetail.provisioning.refresh': 'Refresh status',
+  'projectDetail.provisioning.refresh': 'Refresh',
+  'projectDetail.provisioning.copyUrl': 'Copy URL',
+  'projectDetail.provisioning.copied': 'Copied',
+  'projectDetail.provisioning.metaDomain': 'Domain',
+  'projectDetail.provisioning.metaSource': 'Source',
+  'projectDetail.provisioning.metaTiming': 'Started',
+  'projectDetail.provisioning.metaRuntime': 'Runtime',
+  'projectDetail.provisioning.metaDuration': 'Started',
+  'projectDetail.provisioning.stepSource': 'Source',
+  'projectDetail.provisioning.stepSourceDetail': 'Checked out',
+  'projectDetail.provisioning.stepBuild': 'Build',
+  'projectDetail.provisioning.stepDatabase': 'Database',
+  'projectDetail.provisioning.stepHealth': 'Health check',
   'projectDetail.provisioning.stepCreated': 'Project created',
   'projectDetail.provisioning.stepDeployment': 'Initial deployment',
   'projectDetail.provisioning.stepReady': 'Application ready',
@@ -102,10 +121,10 @@ describe('ProjectDeployment', () => {
 
     renderPage()
 
-    expect(await screen.findByText('Preparing billing-service')).toBeInTheDocument()
-    expect(screen.getByText('Building application image')).toBeInTheDocument()
+    expect(await screen.findByText('Deploying billing-service')).toBeInTheDocument()
+    expect(screen.getAllByText('Building application image').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('42%')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'View Build Logs' })).toHaveAttribute('href', '/projects/proj-123?tab=build')
+    expect(screen.getByRole('link', { name: /Build Logs/i })).toHaveAttribute('href', '/projects/proj-123?tab=build')
   })
 
   it('keeps successful terminal state visible until user opens project', async () => {
@@ -115,7 +134,7 @@ describe('ProjectDeployment', () => {
 
     renderPage()
 
-    expect(await screen.findByText('billing-service is ready')).toBeInTheDocument()
+    expect(await screen.findByText('billing-service is live')).toBeInTheDocument()
     expect(screen.getByText('100%')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open project' })).toHaveAttribute('href', '/projects/proj-123')
   })
@@ -143,14 +162,72 @@ describe('ProjectDeployment', () => {
 
     renderPage()
 
-    expect(await screen.findByText('billing-service could not be deployed')).toBeInTheDocument()
-    expect(screen.getByText('Initial deployment could not be queued. Retry deployment.')).toBeInTheDocument()
+    expect(await screen.findByText('billing-service failed')).toBeInTheDocument()
+    expect(screen.getAllByText('Initial deployment could not be queued. Retry deployment.').length).toBeGreaterThanOrEqual(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry deployment' }))
+    fireEvent.click(screen.getByRole('button', { name: /Retry deployment/i }))
 
     await waitFor(() => {
       expect(projectsAPI.redeploy).toHaveBeenCalledWith('proj-123')
-      expect(screen.getByText('Preparing billing-service')).toBeInTheDocument()
+      expect(screen.getByText('Deploying billing-service')).toBeInTheDocument()
+    })
+  })
+})
+
+describe('ProjectDeployment build output', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('shows build output while the build is the running stage', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { logs: '#12 3.004 Writing lock file', placeholder: false },
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('#12 3.004 Writing lock file')).toBeInTheDocument()
+  })
+
+  it('renders nothing for a placeholder response', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { logs: 'Initializing build environment...', placeholder: true },
+    })
+
+    renderPage()
+
+    await screen.findByText('Deploying billing-service')
+    expect(screen.queryByText('Initializing build environment...')).not.toBeInTheDocument()
+  })
+
+  it('discards a build-tail response that arrives after the stage advanced', async () => {
+    // Held open so it can resolve after the deployment has moved past building.
+    let releaseBuildLogs: (value: unknown) => void = () => {}
+    const pending = new Promise(resolve => { releaseBuildLogs = resolve })
+
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ data: createProject() })
+      .mockResolvedValueOnce({
+        data: createProject({ deployment_status: 'healthchecking', deployment_progress: 65 }),
+      })
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockReturnValue(pending)
+
+    renderPage()
+
+    await screen.findByText('Deploying billing-service')
+
+    // Refresh pulls the project forward to a stage where build output no longer applies.
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => {
+      expect(projectsAPI.get).toHaveBeenCalledTimes(2)
+    })
+
+    releaseBuildLogs({ data: { logs: 'stale build output', placeholder: false } })
+
+    await waitFor(() => {
+      expect(screen.queryByText('stale build output')).not.toBeInTheDocument()
     })
   })
 })

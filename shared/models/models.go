@@ -85,7 +85,6 @@ const (
 	DepStatusPreparing      DeploymentStatus = "preparing"
 	DepStatusCloning        DeploymentStatus = "cloning"
 	DepStatusBuilding       DeploymentStatus = "building"
-	DepStatusProvisioning   DeploymentStatus = "provisioning"
 	DepStatusStarting       DeploymentStatus = "starting"
 	DepStatusHealthchecking DeploymentStatus = "healthchecking"
 	DepStatusMigrating      DeploymentStatus = "migrating"
@@ -99,32 +98,40 @@ const (
 
 // Project represents a deployed Laravel application
 type Project struct {
-	ID                       uint             `gorm:"primaryKey" json:"id"`
-	UserID                   uint             `gorm:"not null;index" json:"user_id"`
-	User                     User             `gorm:"foreignKey:UserID" json:"user,omitempty"`
-	UserSlug                 string           `gorm:"size:255;not null;default:'user-unknown'" json:"user_slug"`
-	Name                     string           `gorm:"size:255;not null" json:"name"`
-	GithubURL                string           `gorm:"size:500;not null" json:"github_url"`
-	Branch                   string           `gorm:"size:200;not null;default:main" json:"branch"`
-	Subdomain                string           `gorm:"uniqueIndex:uni_projects_subdomain;size:100;not null" json:"subdomain"`
-	DatabaseName             *string          `gorm:"uniqueIndex:uni_projects_database_name;size:100" json:"database_name"`
-	DatabasePassword         string           `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
-	DatabaseOption           string           `gorm:"size:20;not null;default:'none'" json:"database_option"`
-	Status                   ProjectStatus    `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
-	DeploymentStatus         DeploymentStatus `gorm:"size:30;not null;default:completed;index:idx_dep_status" json:"deployment_status"`
-	DeploymentJobID          *string          `gorm:"size:100;index" json:"deployment_job_id,omitempty"`
-	RolloutContainerID       *string          `gorm:"size:100" json:"rollout_container_id,omitempty"`
-	RolloutWorkerContainerID *string          `gorm:"size:100" json:"rollout_worker_container_id,omitempty"`
-	DeploymentStartedAt      *time.Time       `json:"deployment_started_at,omitempty"`
-	DeploymentFinishedAt     *time.Time       `json:"deployment_finished_at,omitempty"`
-	DeploymentHeartbeatAt    *time.Time       `json:"deployment_heartbeat_at,omitempty"`
-	DeploymentMessage        *string          `gorm:"type:text" json:"deployment_message,omitempty"`
-	DeploymentProgress       int              `gorm:"default:0" json:"deployment_progress"`
-	ContainerID              *string          `gorm:"size:100" json:"container_id,omitempty"`
-	Port                     *int             `json:"port,omitempty"`
-	BaseDirectory            string           `gorm:"size:255" json:"base_directory,omitempty"` // Custom build root
-	ErrorLog                 *string          `gorm:"type:text" json:"error_log,omitempty"`
-	LastCommitHash           string           `gorm:"size:100" json:"last_commit_hash,omitempty"`
+	ID               uint             `gorm:"primaryKey" json:"id"`
+	UserID           uint             `gorm:"not null;index" json:"user_id"`
+	User             User             `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	UserSlug         string           `gorm:"size:255;not null;default:'user-unknown'" json:"user_slug"`
+	Name             string           `gorm:"size:255;not null" json:"name"`
+	GithubURL        string           `gorm:"size:500;not null" json:"github_url"`
+	Branch           string           `gorm:"size:200;not null;default:main" json:"branch"`
+	Subdomain        string           `gorm:"uniqueIndex:uni_projects_subdomain;size:100;not null" json:"subdomain"`
+	DatabaseName     *string          `gorm:"uniqueIndex:uni_projects_database_name;size:100" json:"database_name"`
+	DatabasePassword string           `gorm:"size:255;not null;default:''" json:"-"` // Never expose in JSON
+	DatabaseOption   string           `gorm:"size:20;not null;default:'none'" json:"database_option"`
+	Status           ProjectStatus    `gorm:"size:20;not null;default:pending;index:idx_status_active" json:"status"`
+	DeploymentStatus DeploymentStatus `gorm:"size:30;not null;default:completed;index:idx_dep_status" json:"deployment_status"`
+	DeploymentJobID  *string          `gorm:"size:100;index" json:"deployment_job_id,omitempty"`
+	// Rollout containers are in-flight infrastructure detail with no consumer
+	// outside the worker; never expose them through the API.
+	RolloutContainerID       *string    `gorm:"size:100" json:"-"`
+	RolloutWorkerContainerID *string    `gorm:"size:100" json:"-"`
+	DeploymentEnqueuedAt     *time.Time `json:"deployment_enqueued_at,omitempty"`
+	DeploymentStartedAt      *time.Time `json:"deployment_started_at,omitempty"`
+	DeploymentFinishedAt     *time.Time `json:"deployment_finished_at,omitempty"`
+	DeploymentHeartbeatAt    *time.Time `json:"deployment_heartbeat_at,omitempty"`
+	DeploymentMessage        *string    `gorm:"type:text" json:"deployment_message,omitempty"`
+	DeploymentProgress       int        `gorm:"default:0" json:"deployment_progress"`
+	ContainerID              *string    `gorm:"size:100" json:"container_id,omitempty"`
+	Port                     *int       `json:"port,omitempty"`
+	BaseDirectory            string     `gorm:"size:255" json:"base_directory,omitempty"` // Custom build root
+	ErrorLog                 *string    `gorm:"type:text" json:"error_log,omitempty"`
+	// HealthNotice carries runtime health notices (OOM kills, crash restarts) for a
+	// running project. It is deliberately separate from ErrorLog, which means
+	// "the last deployment failed".
+	HealthNotice   *string    `gorm:"type:text" json:"health_notice,omitempty"`
+	HealthNoticeAt *time.Time `json:"health_notice_at,omitempty"`
+	LastCommitHash string     `gorm:"size:100" json:"last_commit_hash,omitempty"`
 
 	// Detected Laravel/PHP versions
 	LaravelVersion    string  `gorm:"size:20" json:"laravel_version,omitempty"`

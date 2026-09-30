@@ -176,6 +176,71 @@
   }
 }
 
+/* Deployment pipeline indicators (pages/user/ProjectDeployment.tsx).
+
+   Both cues are one motion in two geometries: a stroke grows from its start
+   edge, then its trailing edge advances to meet the head, so the cycle closes
+   without a still frame. Nothing scales or fades in and out - a pulsing dot
+   reads as decoration, while a stroke that travels reads as work in progress.
+
+   The arc rides a circle with pathLength="58", so dasharray values are in
+   those units rather than in pixels and stay correct at any rendered size. */
+@keyframes deploy-arc {
+  0%   { stroke-dasharray: 0 58;  stroke-dashoffset: 0; }
+  45%  { stroke-dasharray: 44 58; stroke-dashoffset: 0; }
+  100% { stroke-dasharray: 0 58;  stroke-dashoffset: -58; }
+}
+
+@keyframes deploy-segment {
+  0%   { left: 0;    right: 100%; }
+  45%  { left: 0;    right: 0; }
+  100% { left: 100%; right: 0; }
+}
+
+.deploy-arc {
+  animation: deploy-arc 1.6s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+.deploy-segment::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: currentColor;
+  animation: deploy-segment 1.6s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+/* A stalled worker freezes the stroke mid-sweep instead of hiding it: the step
+   is still the active one, it just stopped reporting. */
+.deploy-arc-stalled {
+  animation: none;
+  stroke-dasharray: 44 58;
+  stroke-dashoffset: 0;
+}
+
+.deploy-segment-stalled::after {
+  animation: none;
+  left: 0;
+  right: 0;
+}
+
+/* This page sits outside .runara-landing / .runara-surface, so the broad
+   reduced-motion rule further down does not reach it. */
+@media (prefers-reduced-motion: reduce) {
+  .deploy-arc {
+    animation: none;
+    stroke-dasharray: 44 58;
+    stroke-dashoffset: 0;
+  }
+
+  .deploy-segment::after {
+    animation: none;
+    left: 0;
+    right: 0;
+  }
+}
+
 .runara-press {
   box-shadow: 4px 4px 0 var(--foreground);
 }

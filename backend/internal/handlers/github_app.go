@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,6 +20,7 @@ import (
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
+	"github.com/laravel-paas/shared/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -160,12 +162,39 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 				}
 			}
 
-			// Update commit hash in DB
-			h.db.Model(&p).Update("last_commit_hash", commitSHA)
-
-			jobID, err := h.redisService.EnqueueDeployment(p.ID, p.UserID, "redeploy")
+			// Reserve deployment admission lock
+			lockToken, err := h.redisService.ReserveDeployment(p.ID)
 			if err != nil {
-				slog.Error("Failed to enqueue push deployment from webhook", "project_id", p.ID, "error", err)
+				slog.Error("Failed to reserve deployment lock for push webhook", "project_id", p.ID, "error", err)
+				continue
+			}
+			if lockToken == "" {
+				slog.Info("Project already queued or locked, skipping webhook push auto-deploy", "project_id", p.ID)
+				continue
+			}
+
+			jobID := utils.GenerateRandomUID()
+			job := &infrastructure.DeploymentJob{
+				ProjectID:          p.ID,
+				UserID:             p.UserID,
+				Type:               "redeploy",
+				JobID:              jobID,
+				TargetCommitHash:   commitSHA,
+				PreviousCommitHash: p.LastCommitHash,
+				EnqueuedAt:         time.Now(),
+			}
+
+			// The commit message is attacker-controlled and unbounded; store only a
+			// bounded first line (utils.CommitSubject).
+			triggerMessage := "GitHub Push trigger"
+			if subject := utils.CommitSubject(payload.HeadCommit.Message); subject != "" {
+				triggerMessage += ": " + subject
+			}
+
+			// Update DB state first under transaction/row-lock
+			if err := h.projectService.RequeueDeploymentIfMatch(context.Background(), &p, jobID, triggerMessage); err != nil {
+				slog.Error("Failed to transition webhook deployment to queued in DB", "project_id", p.ID, "job_id", jobID, "error", err)
+				_ = h.redisService.ReleaseDeploymentLock(p.ID, lockToken)
 				continue
 			}
 
@@ -174,8 +203,19 @@ func (h *GithubAppHandler) Webhook(c *fiber.Ctx) error {
 			_ = os.MkdirAll(projectPath, 0755)
 			_ = os.WriteFile(buildLogPath, initLogContent, 0644)
 
-			if err := h.projectService.UpdateDeploymentStatus(p.ID, models.DepStatusQueued, "GitHub Push trigger: "+payload.HeadCommit.Message, 0, jobID); err != nil {
-				slog.Warn("Failed to update status", "id", p.ID, "error", err)
+			// Publish to Redis with lockToken fencing
+			if err := h.redisService.EnqueueReplacingDeploymentJob(job, lockToken); err != nil {
+				if infrastructure.IsStaleOwnerError(err) {
+					slog.Info("Webhook deploy superseded or lock lost before publish", "project_id", p.ID, "job_id", jobID)
+					_, _ = h.projectService.FailQueuedDeploymentIfUnchanged(context.Background(), p.ID, jobID, "Webhook deployment lock lost before publication", true)
+					continue
+				}
+				slog.Error("Failed to enqueue push deployment from webhook", "project_id", p.ID, "error", err)
+				inQueue, checkErr := h.redisService.HasDeploymentJob(jobID)
+				if checkErr == nil && !inQueue {
+					_, _ = h.projectService.FailQueuedDeploymentIfUnchanged(context.Background(), p.ID, jobID, "Webhook push deployment failed to enqueue", true)
+				}
+				continue
 			}
 		}
 

@@ -4,64 +4,152 @@ import { toast } from 'sonner'
 import {
   AlertTriangle,
   ArrowLeft,
-  CheckCircle2,
-  Circle,
+  Check,
+  Copy,
+  ExternalLink,
   FileText,
-  Loader2,
   RefreshCw,
+  X,
 } from 'lucide-react'
 
 import useTranslation from '@/lib/useTranslation'
 import { usePolling } from '@/lib/usePolling'
+import { useNow } from '@/lib/useNow'
 import { projectsAPI } from '@/services/api'
-import type { Project } from '@/types'
+import type { DeploymentEvent, Project } from '@/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Progress, ProgressLabel, ProgressValue } from '@/components/ui/progress'
+import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
-import { getProjectCreationPhase, type ProjectCreationPhase } from '@/components/project/projectCreationContext'
+import { getProjectCreationPhase } from '@/components/project/projectCreationContext'
+import {
+  clampProgress,
+  DEPLOY_STEPS,
+  deriveStepDurations,
+  formatDuration,
+  getActiveStep,
+  getFailureMessage,
+  getLiveMessage,
+  getStepStates,
+  type DeployStepState,
+} from '@/components/project/deploymentStages'
 
-type StepState = 'complete' | 'active' | 'pending' | 'failed'
+/** Workers refresh deployment_heartbeat_at on a 30s ticker
+ *  (deployment_worker.go). Five missed beats is late enough to be real and
+ *  early enough to land before the server's own 3-minute lease reaper. */
+const HEARTBEAT_SILENCE_MS = 150_000
 
-function clampProgress(value?: number) {
-  return Math.min(100, Math.max(0, value ?? 0))
+/** Lines of build output shown inline. The full log is one click away, so this
+ *  only has to answer "what is it doing right now". */
+const BUILD_TAIL_LINES = 6
+
+/** Age of a server-issued timestamp as the client sees it, used only to seed
+ *  the first heartbeat reading. Returns 0 when the two clocks disagree badly
+ *  enough that the delta is meaningless. */
+function serverHeartbeatAge(timestamp?: string): number {
+  if (!timestamp) return 0
+  const age = Date.now() - new Date(timestamp).getTime()
+  if (Number.isNaN(age) || age < 0 || age > 3_600_000) return 0
+  return age
 }
 
-function ProvisioningStep({ label, state }: { label: string; state: StepState }) {
-  const icon = state === 'complete'
-    ? <CheckCircle2 className="size-4" aria-hidden="true" />
-    : state === 'active'
-      ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-      : state === 'failed'
-        ? <AlertTriangle className="size-4" aria-hidden="true" />
-        : <Circle className="size-4" aria-hidden="true" />
-
+// --- Pipeline progress meter ---
+// Four segments mirroring the four steps below, so the header badge doubles as
+// a map of the card without needing to scroll to it.
+function StepMeter({ states }: { states: DeployStepState[] }) {
   return (
-    <div className="flex items-center gap-3 py-4 first:pt-0 last:pb-0">
-      <div className={cn(
-        'flex size-7 shrink-0 items-center justify-center rounded-full border bg-background',
-        state === 'complete' && 'border-emerald-500/30 text-emerald-500',
-        state === 'active' && 'border-primary/30 text-primary',
-        state === 'failed' && 'border-destructive/30 text-destructive',
-        state === 'pending' && 'border-border text-muted-foreground/40',
-      )}>
-        {icon}
-      </div>
-      <span className={cn(
-        'text-sm font-medium',
-        state === 'pending' ? 'text-muted-foreground/60' : 'text-foreground',
-      )}>
-        {label}
-      </span>
-    </div>
+    <span className="inline-flex shrink-0 items-center gap-px" aria-hidden="true">
+      {states.map((state, index) => (
+        <span
+          key={DEPLOY_STEPS[index]}
+          className={cn(
+            'relative h-[3px] w-2 overflow-hidden rounded-full bg-current',
+            state === 'pending' && 'opacity-15',
+            state === 'complete' && 'opacity-85',
+            state === 'failed' && 'opacity-100',
+            (state === 'active' || state === 'stalled') && 'bg-current/20 deploy-segment',
+            state === 'stalled' && 'deploy-segment-stalled',
+          )}
+        />
+      ))}
+    </span>
   )
 }
 
-function getStepStates(phase: ProjectCreationPhase): [StepState, StepState, StepState] {
-  if (phase === 'ready') return ['complete', 'complete', 'complete']
-  if (phase === 'failed') return ['complete', 'failed', 'pending']
-  return ['complete', 'active', 'pending']
+// --- Step rail indicator ---
+function StepDot({ state }: { state: DeployStepState }) {
+  const running = state === 'active' || state === 'stalled'
+
+  return (
+    <span
+      className={cn(
+        'relative flex size-[18px] shrink-0 items-center justify-center rounded-full border',
+        state === 'complete' && 'border-emerald-500/35 text-emerald-600 dark:text-emerald-400',
+        state === 'failed' && 'border-destructive/40 text-destructive',
+        state === 'active' && 'border-border text-foreground',
+        state === 'stalled' && 'border-border text-amber-600 dark:text-amber-400',
+        state === 'pending' && 'border-border text-muted-foreground/45',
+      )}
+    >
+      {running && (
+        <svg viewBox="0 0 20 20" className="absolute -inset-px size-[calc(100%+2px)] -rotate-90">
+          <circle
+            cx="10"
+            cy="10"
+            r="9"
+            pathLength="58"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            className={cn('deploy-arc', state === 'stalled' && 'deploy-arc-stalled')}
+          />
+        </svg>
+      )}
+      {state === 'complete' && <Check className="size-2.5" strokeWidth={3} aria-hidden="true" />}
+      {state === 'failed' && <X className="size-2.5" strokeWidth={2.5} aria-hidden="true" />}
+      {running && <span className="size-1.5 rounded-full bg-current" />}
+      {state === 'pending' && <span className="size-[5px] rounded-full bg-current" />}
+    </span>
+  )
+}
+
+function PipelineStep({ label, state, detail, duration }: {
+  label: string
+  state: DeployStepState
+  detail?: string
+  duration?: string
+}) {
+  return (
+    <li className="grid grid-cols-[18px_minmax(0,1fr)] gap-3 px-4 py-3">
+      <div className="flex justify-center pt-px"><StepDot state={state} /></div>
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className={cn(
+          'min-w-[6.5rem] text-[13px]',
+          state === 'pending' ? 'text-muted-foreground' : 'font-medium text-foreground',
+        )}>{label}</span>
+        {detail && (
+          <span className={cn(
+            'min-w-0 flex-1 break-words text-xs',
+            state === 'failed' ? 'text-destructive' : state === 'active' ? 'text-foreground' : 'text-muted-foreground',
+          )}>{detail}</span>
+        )}
+        {duration && (
+          <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">{duration}</span>
+        )}
+      </div>
+    </li>
+  )
+}
+
+function MetaCell({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="border-t px-4 py-3 first:border-t-0 sm:[&:nth-child(-n+2)]:border-t-0 sm:[&:nth-child(2n)]:border-l lg:border-t-0 lg:border-l lg:first:border-l-0">
+      <dt className="mb-1 text-[10px] uppercase tracking-[0.05em] text-muted-foreground">{label}</dt>
+      <dd className="text-[13px] text-foreground">{children}</dd>
+    </div>
+  )
 }
 
 export default function ProjectDeployment() {
@@ -71,6 +159,7 @@ export default function ProjectDeployment() {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [isRetrying, setIsRetrying] = useState(false)
+  const [urlCopied, setUrlCopied] = useState(false)
   const requestSequence = useRef(0)
 
   const fetchProject = useCallback(async (silent = false) => {
@@ -100,23 +189,139 @@ export default function ProjectDeployment() {
   const phase = project ? getProjectCreationPhase(project) : 'deploying'
   usePolling(() => void fetchProject(true), project && phase === 'deploying' ? 2_000 : null)
 
-  const progress = phase === 'ready' ? 100 : clampProgress(project?.deployment_progress)
-  const stepStates = getStepStates(phase)
-  const statusLabels = useMemo<Record<ProjectCreationPhase, string>>(() => ({
-    deploying: t('projectDetail.provisioning.statusDeploying'),
-    ready: t('projectDetail.provisioning.statusReady'),
-    failed: t('projectDetail.provisioning.statusFailed'),
-  }), [t])
+  // Progress only ever climbs within one job. Watchdog recovery re-queues an
+  // in-flight deploy, which moves preparing(10) back to queued(0) and would
+  // otherwise run the bar backwards.
+  const [progressFloor, setProgressFloor] = useState(0)
+  const jobId = project?.deployment_job_id
+  useEffect(() => { setProgressFloor(0) }, [jobId])
+
+  const reported = clampProgress(project?.deployment_progress)
+  const progress = phase === 'ready' ? 100 : Math.max(progressFloor, reported)
+  useEffect(() => {
+    setProgressFloor(current => (reported > current ? reported : current))
+  }, [reported])
+
+  // Heartbeat silence is timed with the local clock: the column holds server
+  // NOW(), so subtracting it from Date.now() would report silence on every
+  // healthy deploy whenever the browser clock is off.
+  //
+  // The first reading has no local baseline, so it borrows the server delta -
+  // otherwise a page opened on an already-dead deploy stays quiet for a full
+  // threshold. A delta that is negative or absurd means the clocks disagree,
+  // and the baseline falls back to now.
+  const heartbeat = project?.deployment_heartbeat_at
+  const heartbeatSeen = useRef<{ value?: string; at: number }>({ at: 0 })
+  if (heartbeat !== heartbeatSeen.current.value) {
+    // The first render happens before the project loads, so "first reading"
+    // means the first defined value rather than the first pass.
+    const isFirstReading = !heartbeatSeen.current.value
+    heartbeatSeen.current = {
+      value: heartbeat,
+      at: Date.now() - (isFirstReading ? serverHeartbeatAge(heartbeat) : 0),
+    }
+  }
+
+  // Elapsed runs from enqueue, which is when the wait starts from the user's
+  // side. deployment_started_at is worker pickup, so using it would hide queue
+  // time entirely. Older rows predate the enqueue column and fall back.
+  const startedAt = project?.deployment_enqueued_at || project?.deployment_started_at
+  const pickedUpAt = project?.deployment_started_at
+  const finishedAt = project?.deployment_finished_at
+  const clockRunning = phase === 'deploying' && Boolean(startedAt || heartbeat)
+  const now = useNow(clockRunning)
+
+  const silentFor = heartbeat && phase === 'deploying' ? now - heartbeatSeen.current.at : 0
+  const stalled = silentFor >= HEARTBEAT_SILENCE_MS
+
+  const elapsed = useMemo(() => {
+    if (!startedAt) return null
+    const start = new Date(startedAt).getTime()
+    if (Number.isNaN(start)) return null
+    const end = phase === 'deploying' ? now : finishedAt ? new Date(finishedAt).getTime() : NaN
+    if (Number.isNaN(end)) return null
+    return formatDuration((end - start) / 1000)
+  }, [startedAt, finishedAt, phase, now])
+
+  // Visible only once it is worth reading: a deploy picked up immediately
+  // should not grow a "waited 0s" line.
+  const queuedFor = useMemo(() => {
+    if (!project?.deployment_enqueued_at || !pickedUpAt) return null
+    const waited = (new Date(pickedUpAt).getTime() - new Date(project.deployment_enqueued_at).getTime()) / 1000
+    if (Number.isNaN(waited) || waited < 5) return null
+    return formatDuration(waited)
+  }, [project?.deployment_enqueued_at, pickedUpAt])
+
+  // Per-step timings come from the event log. Refetched when the stage moves,
+  // which is the only moment a new event can have landed, so this does not ride
+  // along with the 2s project poll.
+  const [events, setEvents] = useState<DeploymentEvent[]>([])
+  const deploymentStatus = project?.deployment_status
+  useEffect(() => {
+    if (!uid || !jobId) return
+    let cancelled = false
+    projectsAPI.getDeploymentEvents(uid)
+      .then(response => { if (!cancelled) setEvents(response.data || []) })
+      // Durations are a nicety; the pipeline reads fine without them.
+      .catch(() => { if (!cancelled) setEvents([]) })
+    return () => { cancelled = true }
+  }, [uid, jobId, deploymentStatus])
+
+  const stepDurations = useMemo(
+    () => deriveStepDurations(events, jobId, finishedAt),
+    [events, jobId, finishedAt],
+  )
+
+  // Inline build output. Polled only while the build is the running step - the
+  // one stretch where progress is pinned (the worker writes no value between
+  // 35 and 50) and deployment_message changes once, so nothing else on the page
+  // moves. Fetched once more on failure, where the last lines are the point.
+  const [buildTail, setBuildTail] = useState<string | null>(null)
+  const isBuilding = deploymentStatus === 'building'
+  const showsBuildTail = isBuilding || phase === 'failed'
+
+  // Responses are sequenced the same way project fetches are: a request issued
+  // while the build was running can resolve after the stage has moved on, and
+  // would otherwise re-populate output the effect below just cleared. The
+  // counter also advances on uid/job change, so a previous project's log cannot
+  // land in the new one.
+  const buildTailSequence = useRef(0)
+  const fetchBuildTail = useCallback(async () => {
+    if (!uid) return
+    const sequence = ++buildTailSequence.current
+    try {
+      const response = await projectsAPI.buildLogs(uid, BUILD_TAIL_LINES)
+      if (sequence !== buildTailSequence.current) return
+      setBuildTail(response.data?.placeholder ? null : response.data?.logs || null)
+    } catch {
+      // The log is supplementary; the pipeline reads fine without it.
+      if (sequence !== buildTailSequence.current) return
+      setBuildTail(null)
+    }
+  }, [uid])
+
+  usePolling(() => void fetchBuildTail(), isBuilding ? 3_000 : null)
+
+  // Keyed on the job as well as the stage: a retry produces a new job whose
+  // output must not inherit the previous one's. fetchBuildTail bumps the
+  // sequence itself, so re-running here invalidates anything still in flight.
+  useEffect(() => {
+    if (showsBuildTail) {
+      void fetchBuildTail()
+      return
+    }
+    buildTailSequence.current++
+    setBuildTail(null)
+  }, [showsBuildTail, fetchBuildTail, jobId])
+
+  const activeStep = getActiveStep(project?.deployment_status, reported)
+  const stepStates = getStepStates(phase, activeStep, stalled)
+
   const title = phase === 'ready'
     ? t('projectDetail.provisioning.readyTitle', { name: project?.name || '' })
     : phase === 'failed'
       ? t('projectDetail.provisioning.failedTitle', { name: project?.name || '' })
       : t('projectDetail.provisioning.deployingTitle', { name: project?.name || '' })
-  const description = phase === 'ready'
-    ? t('projectDetail.provisioning.readyDesc')
-    : phase === 'failed'
-      ? t('projectDetail.provisioning.failedDesc')
-      : t('projectDetail.provisioning.deployingDesc')
 
   const handleRetry = async () => {
     if (!uid || isRetrying) return
@@ -130,6 +335,7 @@ export default function ProjectDeployment() {
         deployment_job_id: response.data.job_id || current.deployment_job_id,
         deployment_message: t('projectDetail.provisioning.retryStarted'),
         deployment_progress: 0,
+        error_log: undefined,
       } : current)
       toast.success(t('projectDetail.provisioning.retryStarted'))
       await fetchProject(true)
@@ -140,26 +346,37 @@ export default function ProjectDeployment() {
     }
   }
 
+  const projectUrl = project?.url || (project?.subdomain ? `https://${project.subdomain}` : null)
+
+  const handleCopyUrl = () => {
+    if (!projectUrl) return
+    navigator.clipboard.writeText(projectUrl)
+    setUrlCopied(true)
+    setTimeout(() => setUrlCopied(false), 1500)
+  }
+
+  // --- Loading ---
   if (isLoading) {
     return (
       <div className="flex min-h-[calc(100dvh-12rem)] items-center justify-center" role="status" aria-live="polite">
         <div className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
-          <Loader2 className="size-5 animate-spin text-foreground" aria-hidden="true" />
+          <Spinner className="size-5" />
           {t('projectDetail.provisioning.loading')}
         </div>
       </div>
     )
   }
 
+  // --- Error ---
   if (loadError || !project) {
     return (
       <div className="mx-auto flex min-h-[calc(100dvh-12rem)] w-full max-w-3xl items-center">
         <Card className="w-full shadow-none">
           <CardContent className="flex flex-col items-start gap-4 p-6 sm:p-8">
-            <AlertTriangle className="size-6 text-destructive" aria-hidden="true" />
+            <AlertTriangle className="size-5 text-destructive" aria-hidden="true" />
             <div>
-              <h1 className="text-xl font-semibold tracking-tight">{t('projectDetail.provisioning.loadFailed')}</h1>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('projectDetail.provisioning.loadFailedDesc')}</p>
+              <h1 className="text-lg font-semibold tracking-tight">{t('projectDetail.provisioning.loadFailed')}</h1>
+              <p className="mt-1.5 text-sm leading-6 text-muted-foreground">{t('projectDetail.provisioning.loadFailedDesc')}</p>
             </div>
             <Button type="button" variant="outline" onClick={() => void fetchProject()}>
               <RefreshCw className="size-4" aria-hidden="true" />
@@ -171,112 +388,269 @@ export default function ProjectDeployment() {
     )
   }
 
-  const startedAt = project.deployment_started_at
-    ? new Date(project.deployment_started_at).toLocaleString(language === 'id' ? 'id-ID' : 'en-US')
+  const shortCommit = project.last_commit_hash?.slice(0, 7)
+  const liveMessage = getLiveMessage(project)
+  const failureMessage = phase === 'failed' ? getFailureMessage(project) : undefined
+  const stageLabel = stalled
+    ? t('projectDetail.provisioning.noSignal')
+    : phase === 'ready'
+      ? t('projectDetail.provisioning.statusLive')
+      : phase === 'failed'
+        ? t('projectDetail.provisioning.statusFailed').toLowerCase()
+        : project.deployment_status || 'queued'
+
+  const badgeTail = stalled ? formatDuration(silentFor / 1000) : elapsed
+
+  const timestampLabel = phase === 'ready'
+    ? t('projectDetail.provisioning.finishedAt')
+    : phase === 'failed'
+      ? t('projectDetail.provisioning.failedAt')
+      : t('projectDetail.provisioning.queuedAt')
+  const timestampValue = (phase === 'deploying' ? startedAt : finishedAt || startedAt)
+  const timestamp = timestampValue
+    ? new Date(timestampValue).toLocaleString(language === 'id' ? 'id-ID' : 'en-US', {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    })
     : null
+
+  const pipelineStatus = phase === 'ready'
+    ? t('projectDetail.provisioning.pipelineCompleted')
+    : phase === 'failed'
+      ? t('projectDetail.provisioning.pipelineFailedAt', { step: activeStep + 1 })
+      : t('projectDetail.provisioning.pipelineStep', { current: Math.min(activeStep + 1, DEPLOY_STEPS.length), total: DEPLOY_STEPS.length })
+
+  const stepDetails: (string | undefined)[] = DEPLOY_STEPS.map(() => undefined)
+  // Source keeps a standing description; every other step only says something
+  // while it is the one running.
+  stepDetails[0] = queuedFor
+    ? t('projectDetail.provisioning.queuedFor', { duration: queuedFor })
+    : shortCommit
+      ? `${t('projectDetail.provisioning.stepSourceDetail')} ${shortCommit}`
+      : project.branch
+        ? `${t('projectDetail.provisioning.stepSourceDetail')} ${project.branch}`
+        : undefined
+  if (liveMessage && activeStep < DEPLOY_STEPS.length) {
+    stepDetails[activeStep] = liveMessage
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl pb-16">
-      <Button variant="ghost" size="sm" render={<Link to="/projects" />} className="mb-6 -ml-2 text-muted-foreground">
+      <Button variant="ghost" size="sm" render={<Link to="/projects" />} className="mb-1 -ml-2 text-muted-foreground">
         <ArrowLeft className="size-4" aria-hidden="true" />
         {t('projectDetail.provisioning.backToProjects')}
       </Button>
 
-      <Card className="overflow-hidden gap-0 py-0 shadow-none">
-        <CardContent className="p-0">
-          <div className="grid lg:grid-cols-[minmax(0,1fr)_20rem]">
-            <section className="p-6 sm:p-8 lg:p-10">
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge variant={phase === 'failed' ? 'destructive' : 'outline'} className={cn(
-                  phase === 'ready' && 'border-emerald-500/30 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400',
-                  phase === 'deploying' && 'border-primary/25 bg-primary/5 text-primary',
-                )}>
-                  {phase === 'deploying' && <Loader2 className="animate-spin" aria-hidden="true" />}
-                  {phase === 'ready' && <CheckCircle2 aria-hidden="true" />}
-                  {phase === 'failed' && <AlertTriangle aria-hidden="true" />}
-                  {statusLabels[phase]}
-                </Badge>
-                <span className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                  {t('projectDetail.provisioning.eyebrow')}
-                </span>
-              </div>
+      {/* Header: title on the left, status and actions on the right */}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <h1 className={cn(
+          'text-2xl font-semibold tracking-tight',
+          phase === 'failed' && 'text-destructive',
+        )}>{title}</h1>
 
-              <h1 className="mt-6 max-w-2xl text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-                {title}
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground text-pretty">
-                {description}
-              </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge
+            variant="outline"
+            aria-live="polite"
+            className={cn(
+              'h-8 gap-1.5 rounded-full px-2.5 text-xs font-medium',
+              phase === 'deploying' && !stalled && 'bg-muted',
+              stalled && 'border-amber-500/40 bg-amber-500/[0.09] text-amber-600 dark:text-amber-400',
+              phase === 'ready' && 'border-emerald-500/30 bg-emerald-500/[0.07] text-emerald-600 dark:text-emerald-400',
+              phase === 'failed' && 'border-destructive/30 bg-destructive/[0.07] text-destructive',
+            )}
+          >
+            <StepMeter states={stepStates} />
+            <span className="font-mono">{stageLabel}</span>
+            {badgeTail && (
+              <>
+                <span className="font-normal opacity-40">·</span>
+                <span className="font-mono font-normal tabular-nums opacity-85">{badgeTail}</span>
+              </>
+            )}
+          </Badge>
 
-              <div className="mt-8 max-w-2xl">
-                <Progress value={progress} aria-label={t('projectDetail.provisioning.progress')}>
-                  <ProgressLabel>{t('projectDetail.provisioning.progress')}</ProgressLabel>
-                  <ProgressValue>{() => `${progress}%`}</ProgressValue>
-                </Progress>
-              </div>
+          {projectUrl && phase === 'ready' && (
+            <Button variant="outline" size="sm" onClick={handleCopyUrl}>
+              <Copy className="size-3.5" aria-hidden="true" />
+              {urlCopied ? t('projectDetail.provisioning.copied') : t('projectDetail.provisioning.copyUrl')}
+            </Button>
+          )}
+          {phase === 'ready' && (
+            <Button size="sm" render={<Link to={`/projects/${uid}`} />}>
+              {t('projectDetail.provisioning.openProject')}
+            </Button>
+          )}
+          {(phase === 'deploying' || phase === 'failed') && (
+            <Button variant="outline" size="sm" render={<Link to={`/projects/${uid}?tab=build`} />}>
+              <FileText className="size-3.5" aria-hidden="true" />
+              {t('projectDetail.provisioning.viewBuildLogs')}
+            </Button>
+          )}
+          {phase === 'failed' && (
+            <Button size="sm" type="button" onClick={() => void handleRetry()} disabled={isRetrying}>
+              {isRetrying ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" aria-hidden="true" />}
+              {t('projectDetail.provisioning.retryDeployment')}
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => void fetchProject(true)}
+            disabled={isRetrying}
+            aria-label={t('projectDetail.provisioning.refresh')}
+            title={t('projectDetail.provisioning.refresh')}
+            className="text-muted-foreground"
+          >
+            <RefreshCw className="size-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
 
-              <div className="mt-7 border-l-2 border-border pl-4" role="status" aria-live="polite">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                  {t('projectDetail.provisioning.currentActivity')}
-                </p>
-                <p className="mt-2 text-sm font-medium leading-6 text-foreground">
-                  {project.deployment_message || t('projectDetail.provisioning.waitingMessage')}
-                </p>
-              </div>
-
-              <div className="mt-8 flex flex-wrap gap-3">
-                {phase === 'ready' && (
-                  <Button render={<Link to={`/projects/${uid}`} />}>
-                    {t('projectDetail.provisioning.openProject')}
-                  </Button>
-                )}
-                {(phase === 'deploying' || phase === 'failed') && (
-                  <Button variant={phase === 'failed' ? 'default' : 'outline'} render={<Link to={`/projects/${uid}?tab=build`} />}>
-                    <FileText className="size-4" aria-hidden="true" />
-                    {t('projectDetail.provisioning.viewBuildLogs')}
-                  </Button>
-                )}
-                {phase === 'failed' && (
-                  <Button type="button" variant="outline" onClick={() => void handleRetry()} disabled={isRetrying}>
-                    <RefreshCw className={cn('size-4', isRetrying && 'animate-spin')} aria-hidden="true" />
-                    {t('projectDetail.provisioning.retryDeployment')}
-                  </Button>
-                )}
-                <Button type="button" variant="ghost" onClick={() => void fetchProject(true)} disabled={isRetrying}>
-                  <RefreshCw className="size-4" aria-hidden="true" />
-                  {t('projectDetail.provisioning.refresh')}
-                </Button>
-              </div>
-            </section>
-
-            <aside className="border-t bg-muted/20 px-6 py-6 lg:border-l lg:border-t-0 lg:px-7 lg:py-9">
-              <div className="divide-y">
-                <ProvisioningStep label={t('projectDetail.provisioning.stepCreated')} state={stepStates[0]} />
-                <ProvisioningStep label={t('projectDetail.provisioning.stepDeployment')} state={stepStates[1]} />
-                <ProvisioningStep label={t('projectDetail.provisioning.stepReady')} state={stepStates[2]} />
-              </div>
-
-              <dl className="mt-8 space-y-5 border-t pt-6 text-sm">
-                <div>
-                  <dt className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                    {t('projectDetail.provisioning.deploymentId')}
-                  </dt>
-                  <dd className="mt-1.5 break-all font-mono text-xs text-foreground">
-                    {project.deployment_job_id || t('projectDetail.provisioning.pendingId')}
-                  </dd>
-                </div>
-                {startedAt && (
-                  <div>
-                    <dt className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                      {t('projectDetail.provisioning.startedAt')}
-                    </dt>
-                    <dd className="mt-1.5 text-sm text-foreground">{startedAt}</dd>
-                  </div>
-                )}
-              </dl>
-            </aside>
+      {/* Build output — only while the build runs, and on failure */}
+      {buildTail && showsBuildTail && (
+        <Card className="mb-3 gap-0 overflow-hidden py-0 shadow-none">
+          <div className="flex items-center justify-between gap-4 border-b px-4 py-2.5">
+            <span className="text-[13px] font-medium">{t('projectDetail.provisioning.buildOutput')}</span>
+            <Link
+              to={`/projects/${uid}?tab=build`}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {t('projectDetail.provisioning.openFullLogs')}
+              <ExternalLink className="size-3" aria-hidden="true" />
+            </Link>
           </div>
-        </CardContent>
+          <pre
+            className="overflow-x-auto bg-muted/30 px-4 py-3 font-mono text-[11px] leading-[1.8] whitespace-pre-wrap break-all text-muted-foreground"
+            aria-live="polite"
+          >{buildTail}</pre>
+        </Card>
+      )}
+
+      {/* Pipeline */}
+      <Card className="mb-3 gap-0 overflow-hidden py-0 shadow-none">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-4 pb-3 pt-3.5">
+          <span className="text-[13px] font-medium">{t('projectDetail.provisioning.pipelineTitle')}</span>
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {pipelineStatus}
+            <span aria-hidden="true">·</span>
+            <span className="tabular-nums">{progress}%</span>
+            {elapsed && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums">{elapsed}</span>
+              </>
+            )}
+          </span>
+        </div>
+
+        <div
+          className="h-0.5 bg-border"
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={t('projectDetail.provisioning.progress')}
+        >
+          <div
+            className={cn(
+              'h-full transition-[width] duration-500 ease-out motion-reduce:transition-none',
+              phase === 'ready' ? 'bg-emerald-500' : phase === 'failed' ? 'bg-destructive' : stalled ? 'bg-amber-500' : 'bg-foreground',
+            )}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+
+        <ul className="divide-y">
+          {DEPLOY_STEPS.map((step, index) => (
+            <PipelineStep
+              key={step}
+              label={t(`projectDetail.provisioning.step_${step}`)}
+              state={stepStates[index]}
+              detail={stepDetails[index]}
+              duration={stepDurations[index] !== null ? formatDuration(stepDurations[index]!) : undefined}
+            />
+          ))}
+        </ul>
+
+        {stalled && (
+          <div className="flex gap-2.5 border-t bg-amber-500/[0.06] px-4 py-3">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            <p className="text-xs leading-relaxed">
+              <span className="text-amber-600 dark:text-amber-400">
+                {t('projectDetail.provisioning.heartbeatLost', { duration: formatDuration(silentFor / 1000) })}
+              </span>
+              <span className="mt-1 block text-muted-foreground">
+                {t('projectDetail.provisioning.heartbeatLostHint')}
+              </span>
+            </p>
+          </div>
+        )}
+
+        {failureMessage && (
+          <div className="flex gap-2.5 border-t bg-destructive/[0.05] px-4 py-3">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+            {/* The worker appends a recommendation block to failure messages,
+                so this is multi-line and must keep its breaks. */}
+            <p className="whitespace-pre-line break-words font-mono text-xs leading-relaxed text-destructive">
+              {failureMessage}
+            </p>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-4 border-t bg-muted/45 px-4 py-2.5">
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {project.deployment_job_id || t('projectDetail.provisioning.pendingId')}
+          </span>
+          {timestamp && (
+            <span className="font-mono text-[11px] text-muted-foreground">{timestampLabel} {timestamp}</span>
+          )}
+        </div>
+      </Card>
+
+      {/* Metadata */}
+      <Card className="gap-0 overflow-hidden py-0 shadow-none">
+        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          <MetaCell label={t('projectDetail.provisioning.metaDomain')}>
+            {projectUrl ? (
+              <a
+                href={projectUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-mono text-xs transition-colors hover:text-primary"
+              >
+                {projectUrl.replace(/^https?:\/\//, '')}
+                <ExternalLink className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+              </a>
+            ) : (
+              <span className="font-mono text-xs text-muted-foreground">{t('projectDetail.provisioning.pending')}</span>
+            )}
+          </MetaCell>
+
+          <MetaCell label={t('projectDetail.provisioning.metaSource')}>
+            <span className="font-mono text-xs">{shortCommit || '—'}</span>
+            <span className="px-1 text-muted-foreground">·</span>
+            <span className="font-mono text-xs text-muted-foreground">{project.branch || 'main'}</span>
+          </MetaCell>
+
+          <MetaCell label={t('projectDetail.provisioning.metaRuntime')}>
+            <span className="font-mono text-xs">
+              {project.php_version ? `PHP ${project.php_version}` : project.framework || '—'}
+              {project.laravel_version && (
+                <>
+                  <span className="px-1 text-muted-foreground">·</span>
+                  Laravel {project.laravel_version}
+                </>
+              )}
+            </span>
+          </MetaCell>
+
+          <MetaCell label={t('projectDetail.provisioning.metaDatabase')}>
+            <span className="font-mono text-xs">
+              {project.db_name || t('projectDetail.provisioning.pending')}
+            </span>
+          </MetaCell>
+        </dl>
       </Card>
     </div>
   )

@@ -7,9 +7,11 @@ package repositories
 
 import (
 	"errors"
+	"strings"
+
+	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"gorm.io/gorm"
-	"strings"
 )
 
 type ProjectRepository interface {
@@ -27,6 +29,7 @@ type ProjectRepository interface {
 	Update(project *models.Project) error
 	UpdateStatus(id uint, status models.ProjectStatus) error
 	UpdateMetadata(id uint, updates map[string]interface{}) error
+	UpdateMetadataForJob(id uint, jobID string, updates map[string]interface{}, expectedRolloutID ...string) error
 	UpdateConfigHash(id uint, newHash string, expectedOldHash string) error
 	Delete(id uint) error
 	CountTotal() (int64, error)
@@ -38,7 +41,7 @@ type ProjectRepository interface {
 	ListAllDeploymentEventsByProjectID(projectID uint) ([]models.DeploymentEvent, error)
 	ListByDeploymentStatuses(statuses []models.DeploymentStatus) ([]models.Project, error)
 	UpdateDeploymentStatus(id uint, status models.DeploymentStatus, message string, progress int, jobID string) error
-	UpdateDeploymentHeartbeat(id uint) error
+	UpdateDeploymentHeartbeat(id uint, jobID ...string) error
 	PromoteRolloutContainer(id uint, newContainerID string) error
 	PromoteRolloutContainerWithWorker(id uint, newContainerID string, workerContainerID *string) error
 	ResolveInstallationID(userID uint, owner string) (int64, error)
@@ -181,6 +184,24 @@ func (r *projectRepository) UpdateStatus(id uint, status models.ProjectStatus) e
 
 func (r *projectRepository) UpdateMetadata(id uint, updates map[string]interface{}) error {
 	return r.db.Model(&models.Project{}).Where("id = ?", id).Updates(updates).Error
+}
+
+func (r *projectRepository) UpdateMetadataForJob(id uint, jobID string, updates map[string]interface{}, expectedRolloutID ...string) error {
+	if jobID == "" {
+		return infrastructure.ErrStaleDeploymentOwner
+	}
+	query := r.db.Model(&models.Project{}).Where("id = ? AND deployment_job_id = ?", id, jobID)
+	if len(expectedRolloutID) > 0 {
+		query = query.Where("rollout_container_id = ?", expectedRolloutID[0])
+	}
+	result := query.Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return infrastructure.ErrStaleDeploymentOwner
+	}
+	return nil
 }
 
 func (r *projectRepository) UpdateConfigHash(id uint, newHash string, expectedOldHash string) error {
@@ -332,6 +353,11 @@ func (r *projectRepository) ListAllDeploymentEventsByProjectID(projectID uint) (
 	return events, err
 }
 
+// UpdateDeploymentStatus is the unvalidated escape hatch used only when the
+// state machine rejects a transition the worker must still record (forced
+// completion, forced failure). Timestamp semantics are kept identical to
+// deployment.TransitionManager so the stored row never depends on which of the
+// two writers ran.
 func (r *projectRepository) UpdateDeploymentStatus(id uint, status models.DeploymentStatus, message string, progress int, jobID string) error {
 	updates := map[string]interface{}{
 		"deployment_status":       status,
@@ -342,13 +368,29 @@ func (r *projectRepository) UpdateDeploymentStatus(id uint, status models.Deploy
 	if jobID != "" {
 		updates["deployment_job_id"] = jobID
 	}
-	if status == models.DepStatusPreparing || status == models.DepStatusQueued {
+	switch {
+	case status == models.DepStatusQueued:
+		updates["deployment_enqueued_at"] = gorm.Expr("NOW()")
+		updates["deployment_started_at"] = nil
+		updates["deployment_finished_at"] = nil
+	case status == models.DepStatusPreparing:
 		updates["deployment_started_at"] = gorm.Expr("NOW()")
-	}
-	if status == models.DepStatusCompleted || status == models.DepStatusFailed || status == models.DepStatusRollback || status == models.DepStatusCancelled {
+		updates["deployment_finished_at"] = nil
+	case models.IsTerminalDeploymentStatus(status):
 		updates["deployment_finished_at"] = gorm.Expr("NOW()")
 	}
-	return r.db.Model(&models.Project{}).Where("id = ?", id).Updates(updates).Error
+	query := r.db.Model(&models.Project{}).Where("id = ?", id)
+	if jobID != "" && status != models.DepStatusQueued {
+		query = query.Where("deployment_job_id = ? OR deployment_job_id IS NULL OR deployment_job_id = ''", jobID)
+	}
+	res := query.Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if jobID != "" && status != models.DepStatusQueued && res.RowsAffected == 0 {
+		return infrastructure.ErrStaleDeploymentOwner
+	}
+	return nil
 }
 
 func (r *projectRepository) PromoteRolloutContainer(id uint, newContainerID string) error {
@@ -375,10 +417,22 @@ func (r *projectRepository) PromoteRolloutContainerWithWorker(id uint, newContai
 	})
 }
 
-// UpdateDeploymentHeartbeat updates the deployment lease timestamp in the database.
+// UpdateDeploymentHeartbeat updates the deployment lease timestamp in the database,
+// optionally conditioned on matching the active deployment_job_id.
 // Executing this query independently isolates the heartbeat loop from concurrent mutations on the project model.
-func (r *projectRepository) UpdateDeploymentHeartbeat(id uint) error {
-	return r.db.Model(&models.Project{}).Where("id = ?", id).Update("deployment_heartbeat_at", gorm.Expr("NOW()")).Error
+func (r *projectRepository) UpdateDeploymentHeartbeat(id uint, jobID ...string) error {
+	query := r.db.Model(&models.Project{}).Where("id = ?", id)
+	if len(jobID) > 0 && jobID[0] != "" {
+		query = query.Where("deployment_job_id = ?", jobID[0])
+	}
+	res := query.Update("deployment_heartbeat_at", gorm.Expr("NOW()"))
+	if res.Error != nil {
+		return res.Error
+	}
+	if len(jobID) > 0 && jobID[0] != "" && res.RowsAffected == 0 {
+		return errors.New("deployment heartbeat update matched no active job")
+	}
+	return nil
 }
 
 func (r *projectRepository) ResolveInstallationID(userID uint, owner string) (int64, error) {

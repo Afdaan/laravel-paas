@@ -530,6 +530,49 @@ func (s *ProjectService) UpdateDeploymentStatus(id uint, status models.Deploymen
 	return err
 }
 
+// FailQueuedDeploymentIfUnchanged conditionally transitions a queued deployment row to failed
+// only if it is still in queued state and still owned by jobID.
+func (s *ProjectService) FailQueuedDeploymentIfUnchanged(ctx context.Context, projectID uint, jobID string, message string, markProjectFailed bool, restoreStatus ...models.ProjectStatus) (bool, error) {
+	if s.transitionManager == nil {
+		return false, fmt.Errorf("transition manager not initialized")
+	}
+	applied, err := s.transitionManager.FailQueuedDeploymentIfUnchanged(ctx, projectID, jobID, message, markProjectFailed, restoreStatus...)
+	if err == nil && applied {
+		project, _ := s.projectRepo.GetByID(projectID)
+		if project != nil {
+			_ = s.InvalidateSubdomainCache(project.Subdomain)
+		}
+	}
+	return applied, err
+}
+
+// RequeueDeployment atomically transitions deployment status and project status to queued
+// with the new job ID in a single database transaction.
+func (s *ProjectService) RequeueDeployment(ctx context.Context, projectID uint, jobID string, message string, initialStatus ...models.ProjectStatus) error {
+	if s.transitionManager == nil {
+		return fmt.Errorf("transition manager not initialized")
+	}
+	_, err := s.transitionManager.RequeueDeployment(ctx, projectID, jobID, message, initialStatus...)
+	if err == nil {
+		project, _ := s.projectRepo.GetByID(projectID)
+		if project != nil {
+			_ = s.InvalidateSubdomainCache(project.Subdomain)
+		}
+	}
+	return err
+}
+
+func (s *ProjectService) RequeueDeploymentIfMatch(ctx context.Context, expected *models.Project, jobID string, message string, initialStatus ...models.ProjectStatus) error {
+	if s.transitionManager == nil {
+		return fmt.Errorf("transition manager not initialized")
+	}
+	project, err := s.transitionManager.RequeueDeploymentIfMatch(ctx, expected, jobID, message, initialStatus...)
+	if err == nil {
+		_ = s.InvalidateSubdomainCache(project.Subdomain)
+	}
+	return err
+}
+
 // PromoteRolloutContainer promotes the in-flight container to active and clears cache
 func (s *ProjectService) PromoteRolloutContainer(id uint, newContainerID string) error {
 	project, err := s.projectRepo.GetByID(id)

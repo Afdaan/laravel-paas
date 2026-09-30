@@ -377,7 +377,6 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 			slog.Error("CRITICAL PANIC during deployment execution", "jobId", job.JobID, "projectId", job.ProjectID, "workerId", workerID, "panic", r)
 			w.recordAuditLog(job.ProjectID, job.JobID, workerID, "deployment_panic", fmt.Sprintf("Worker panic recovered: %v", r))
 			_ = w.redisService.ReleaseDeploymentLease(job.JobID, workerID)
-			_ = w.redisService.ForceReleaseDeploymentLock(job.ProjectID, fmt.Sprintf("Worker panic recovered: %v", r))
 			if project, err := w.projectRepo.GetByID(job.ProjectID); err == nil {
 				w.updateProjectError(project, job.JobID, fmt.Sprintf("Deployment aborted due to worker internal error (panic): %v", r))
 			}
@@ -510,8 +509,10 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 					}
 					w.recordAuditLog(job.ProjectID, job.JobID, workerID, "lease_renewed", fmt.Sprintf("Renewed lease for %s", jobName))
 				}
-				if err := w.projectRepo.UpdateDeploymentHeartbeat(job.ProjectID); err != nil {
-					slog.Warn("Failed to update deployment heartbeat in database", "projectId", job.ProjectID, "error", err)
+				if err := w.projectRepo.UpdateDeploymentHeartbeat(job.ProjectID, job.JobID); err != nil {
+					slog.Warn("Failed to update deployment heartbeat in database; job may have been superseded", "projectId", job.ProjectID, "jobId", job.JobID, "error", err)
+					cancel()
+					return
 				}
 			case <-stopHeartbeat:
 				return
@@ -530,19 +531,37 @@ func (w *DeploymentWorker) processDeployment(job *infrastructure.DeploymentJob) 
 		}
 
 		// After lock is released, check if there is a pending env refresh marker
-		if hasPending, err := w.redisService.HasPendingEnvRefresh(job.ProjectID); err == nil && hasPending {
-			slog.Info("Detected pending env refresh marker after job completion, attempting quiet enqueue", "projectId", job.ProjectID)
+		if pendingGen, err := w.redisService.GetPendingEnvRefresh(job.ProjectID); err == nil && pendingGen > 0 {
+			slog.Info("Detected pending env refresh marker after job completion, attempting quiet enqueue", "projectId", job.ProjectID, "generation", pendingGen)
 			jobID, errQueue := w.redisService.EnqueueEnvUpdateIfQuiet(job.ProjectID, job.UserID)
 			if errQueue != nil {
 				slog.Error("Failed to enqueue pending env update job", "projectId", job.ProjectID, "error", errQueue)
 			} else if jobID != "" {
-				slog.Info("Successfully enqueued pending env update job, clearing marker", "projectId", job.ProjectID, "jobId", jobID)
-				_, _ = w.redisService.ClearPendingEnvRefresh(job.ProjectID)
+				slog.Info("Successfully enqueued pending env update job, clearing marker up to generation", "projectId", job.ProjectID, "jobId", jobID, "generation", pendingGen)
+				_, _ = w.redisService.ClearPendingEnvRefresh(job.ProjectID, pendingGen)
 			} else {
-				slog.Info("Project not quiet, keeping pending env refresh marker", "projectId", job.ProjectID)
+				slog.Info("Project not quiet, keeping pending env refresh marker", "projectId", job.ProjectID, "generation", pendingGen)
 			}
 		}
 	}()
+
+	resourceLock, err := acquireProjectResourceLock(ctx, w.cfg.ProjectsPath, job.ProjectID)
+	if err != nil {
+		if ctx.Err() == nil {
+			slog.Error("Failed to acquire project resource lock", "projectId", job.ProjectID, "jobId", job.JobID, "error", err)
+			if project, repoErr := w.projectRepo.GetByID(job.ProjectID); repoErr == nil {
+				w.updateProjectError(project, job.JobID, "Deployment failed: project resource lock unavailable")
+			}
+		}
+		return
+	}
+	defer resourceLock.Close()
+
+	lockMetadata, err := w.redisService.GetLockMetadata(job.ProjectID)
+	if err != nil || lockMetadata == nil || lockMetadata.Token != lockToken || ctx.Err() != nil {
+		slog.Warn("Deployment superseded while waiting for project resources", "projectId", job.ProjectID, "jobId", job.JobID, "error", err)
+		return
+	}
 
 	// Fetch project from database via repository
 	project, err := w.projectRepo.GetByID(job.ProjectID)
@@ -1185,7 +1204,21 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		return
 	}
 
-	previousCommitHash := project.LastCommitHash
+	// Every job type starts from a clean error state; otherwise a stop/start/restart
+	// leaves a stale failure from a previous deploy attached to the project.
+	if project.ErrorLog != nil || project.HealthNotice != nil {
+		project.ErrorLog = nil
+		project.HealthNotice = nil
+		project.HealthNoticeAt = nil
+		if err := w.projectRepo.UpdateMetadataForJob(project.ID, job.JobID, map[string]interface{}{
+			"error_log":        nil,
+			"health_notice":    nil,
+			"health_notice_at": nil,
+		}); err != nil {
+			slog.Warn("Failed to clear previous deployment error state", "projectId", project.ID, "error", err)
+		}
+	}
+
 	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
 	logsDir := filepath.Join(projectPath, "logs")
 	_ = os.MkdirAll(logsDir, 0755)
@@ -1306,13 +1339,33 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	if job.Type == "rollback" {
-		appendLog(fmt.Sprintf(">> Preparing rollback to commit %s...", project.LastCommitHash))
-		slog.Info("Performing instant rollback", "subdomain", project.Subdomain, "commit", project.LastCommitHash)
-		w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "rollback_started", fmt.Sprintf("Rolling back to %s", project.LastCommitHash))
-		if err := w.redeployExistingImage(project, appendLog); err == nil {
+		targetProject := *project
+		if job.TargetCommitHash != "" {
+			targetProject.LastCommitHash = job.TargetCommitHash
+		}
+		appendLog(fmt.Sprintf(">> Preparing rollback to commit %s...", targetProject.LastCommitHash))
+		slog.Info("Performing instant rollback", "subdomain", project.Subdomain, "commit", targetProject.LastCommitHash)
+		if !w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 20, "rollback_started", fmt.Sprintf("Rolling back to %s", utils.ShortCommitHash(targetProject.LastCommitHash))) {
+			return
+		}
+		imageTag := fmt.Sprintf("paas-%s:%s", project.Subdomain, targetProject.LastCommitHash)
+		_, imageErr := utils.Run(10*time.Second, "docker", "image", "inspect", imageTag)
+		if imageErr == nil {
+			imageErr = w.redeployExistingImage(ctx, &targetProject, job.JobID, appendLog)
+		}
+		if imageErr == nil {
+			project.LastCommitHash = targetProject.LastCommitHash
 			appendLog("")
 			appendLog("✓ Rollback completed successfully.")
-			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "rollback_completed", project.LastCommitHash)
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "rollback_completed", fmt.Sprintf("Rolled back to %s", utils.ShortCommitHash(project.LastCommitHash)))
+			return
+		}
+		if errors.Is(imageErr, infrastructure.ErrStaleDeploymentOwner) || ctx.Err() != nil {
+			slog.Info("Rollback superseded before promotion", "projectId", project.ID, "jobId", job.JobID, "error", imageErr)
+			return
+		}
+		if errors.Is(imageErr, projectServicePkg.ErrRolloutPersistence) {
+			w.updateProjectError(project, job.JobID, "Rollback failed to persist rollout: "+imageErr.Error())
 			return
 		}
 		appendLog("")
@@ -1442,7 +1495,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		w.recordAuditLog(project.ID, job.JobID, "deployment-worker", "restart_started", "Restarting application container(s)")
 		appendLog(">> Restarting application container(s)...")
 
-		if err := w.projectService.RecreateProjectZeroDowntime(project, appendLog); err != nil {
+		if err := w.projectService.RecreateProjectZeroDowntime(ctx, project, appendLog, ""); err != nil {
 			appendLog("")
 			appendLog("✗ Restart failed: " + err.Error())
 			slog.Error("Restart failed", "subdomain", project.Subdomain, "error", err)
@@ -1457,11 +1510,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		return
 	}
 
-	w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 10, "deployment_started", fmt.Sprintf("Triggered by %s", job.Type))
-	project.ErrorLog = nil
-	_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-		"error_log": nil,
-	})
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 10, "deployment_started", fmt.Sprintf("Triggered by %s", job.Type)) {
+		return
+	}
 
 	w.checkDiskSpace()
 
@@ -1496,7 +1547,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 			// Persist the resolved installation ID to prevent future slow resolution runs
 			project.GithubInstallationID = &resolvedID
-			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			_ = w.projectRepo.UpdateMetadataForJob(project.ID, job.JobID, map[string]interface{}{
 				"github_installation_id": resolvedID,
 			})
 		}
@@ -1523,14 +1574,16 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		checkImg, err := exec.Command("docker", "image", "inspect", imageName).Output()
 		if err == nil && len(checkImg) > 0 && strings.TrimSpace(string(checkImg)) != "[]" {
 			slog.Info("Valid image found, skipping build", "subdomain", project.Subdomain)
-			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_skipped_existing_image", latestHash)
-			if err := w.redeployExistingImage(project, appendLog); err == nil {
+			w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_skipped_existing_image", fmt.Sprintf("Reused existing image for commit %s", utils.ShortCommitHash(latestHash)))
+			if err := w.redeployExistingImage(ctx, project, "", appendLog); err == nil {
 				return
 			}
 		}
 	}
 
-	w.transitionDeploymentState(project, job.JobID, models.DepStatusCloning, 20, "cloning_repository", project.GithubURL)
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCloning, 20, "cloning_repository", fmt.Sprintf("Cloning %s (%s)", project.GithubURL, project.Branch)) {
+		return
+	}
 
 	var cloneHash string
 	var cloneErr error
@@ -1557,6 +1610,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 				projectPath, cloneHash, cloneErr = w.gitService.CloneRepository(project.UserID, retryURL, project.Branch, project.Subdomain)
 			}
 		}
+		if cloneErr == nil && job.TargetCommitHash != "" {
+			cloneHash, cloneErr = w.gitService.CheckoutCommit(projectPath, authURL, job.TargetCommitHash)
+		}
 	}()
 
 	go func() {
@@ -1569,7 +1625,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 		if project.DatabasePassword == "" {
 			project.DatabasePassword = utils.GeneratePassword(16)
-			if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			if err := w.projectRepo.UpdateMetadataForJob(project.ID, job.JobID, map[string]interface{}{
 				"database_password": project.DatabasePassword,
 			}); err != nil {
 				slog.Warn("Failed to save database password", "id", project.ID, "error", err)
@@ -1648,20 +1704,12 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	project.LastCommitHash = cloneHash
-	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-		"last_commit_hash": cloneHash,
-	}); err != nil {
-		slog.Warn("Failed to update commit hash", "id", project.ID, "error", err)
-	}
 
-	shortHash := cloneHash
-	if len(shortHash) > 7 {
-		shortHash = shortHash[:7]
-	}
+	shortHash := utils.ShortCommitHash(cloneHash)
 
 	commitMessage := ""
 	if msgRes, err := utils.Run(10*time.Second, "git", "-C", projectPath, "log", "-1", "--format=%s"); err == nil {
-		commitMessage = strings.TrimSpace(msgRes.Stdout)
+		commitMessage = utils.CommitSubject(msgRes.Stdout)
 	}
 
 	commitDetail := fmt.Sprintf("Commit %s", shortHash)
@@ -1669,7 +1717,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		commitDetail = fmt.Sprintf("Commit %s: %s", shortHash, commitMessage)
 	}
 
-	w.transitionDeploymentState(project, job.JobID, models.DepStatusBuilding, 35, "building_image", commitDetail)
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusBuilding, 35, "building_image", commitDetail) {
+		return
+	}
 
 	var logMsg string
 	if commitMessage != "" {
@@ -1744,7 +1794,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		"source", detection.Source,
 	)
 	appendLog(fmt.Sprintf(">> Runtime detected: %s", detection.Framework))
-	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{"detected_framework": detection.Framework}); err != nil {
+	if err := w.projectRepo.UpdateMetadataForJob(project.ID, job.JobID, map[string]interface{}{"detected_framework": detection.Framework}); err != nil {
 		slog.Warn("Failed to persist detected runtime candidate", "id", project.ID, "error", err)
 	}
 
@@ -1794,7 +1844,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		if newContainerID != "" {
 			project.RolloutContainerID = &newContainerID
 			project.RolloutWorkerContainerID = project.WorkerContainerID
-			if checkpointErr := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+			if checkpointErr := w.projectRepo.UpdateMetadataForJob(project.ID, job.JobID, map[string]interface{}{
 				"rollout_container_id":        newContainerID,
 				"rollout_worker_container_id": project.WorkerContainerID,
 			}); checkpointErr != nil {
@@ -1802,16 +1852,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			}
 		}
 		sharedDocker.GetCircuitBreaker().RecordFailure()
-		if previousCommitHash != "" {
-			imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-			_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
-		}
-		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-			"last_commit_hash": previousCommitHash,
-		})
-		if cloneHash != "" {
-			_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
-		}
 
 		if ctx.Err() == context.Canceled {
 			appendLog("ERROR: Deployment cancelled by user request.")
@@ -1837,17 +1877,20 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 	sharedDocker.GetCircuitBreaker().RecordSuccess()
 
-	w.transitionDeploymentState(project, job.JobID, models.DepStatusStarting, 50, "starting_container", "Launching new container instance")
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusStarting, 50, "starting_container", "Launching new container instance") {
+		w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
+		return
+	}
 
 	project.RolloutContainerID = &newContainerID
 	project.RolloutWorkerContainerID = project.WorkerContainerID
-	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+	if err := w.projectRepo.UpdateMetadataForJob(project.ID, job.JobID, map[string]interface{}{
 		"rollout_container_id":        newContainerID,
 		"rollout_worker_container_id": project.WorkerContainerID,
 		"port":                        project.Port,
 	}); err != nil {
-		if !w.cleanupRollout(project, newContainerID, project.WorkerContainerID) {
-			if checkpointErr := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		if !w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID) && !errors.Is(err, infrastructure.ErrStaleDeploymentOwner) {
+			if checkpointErr := w.projectRepo.UpdateMetadataForJob(project.ID, job.JobID, map[string]interface{}{
 				"rollout_container_id":        newContainerID,
 				"rollout_worker_container_id": project.WorkerContainerID,
 			}); checkpointErr != nil {
@@ -1866,23 +1909,18 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			appendLog("ERROR: Deployment cancelled by user request. Rolling back.")
 
 			sharedDocker.GetCircuitBreaker().RecordFailure()
-			if previousCommitHash != "" {
-				imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-				_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
-			}
-			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-				"last_commit_hash": previousCommitHash,
-			})
-			if cloneHash != "" {
-				_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
-			}
 
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Cancelled before migration")
-			w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
+			w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
 			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment cancelled by user before migrations. Old version is still running.")
 			return
 		}
-		w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 55, "running_migrations", "Executing artisan migrate --force (pre-healthcheck for SQLite)")
+		if !w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 55, "running_migrations", "Executing artisan migrate --force (pre-healthcheck for SQLite)") {
+			appendLog("ERROR: Deployment state rejected the migration step. Rolling back.")
+			w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
+			w.updateProjectError(project, job.JobID, "[STATE_TRANSITION_REJECTED] Deployment aborted before migrations: invalid deployment state transition.")
+			return
+		}
 		slog.Info("Running database migrations before healthcheck (SQLite)", "subdomain", project.Subdomain)
 		appendLog(">> Running database migrations (SQLite: before healthcheck)...")
 		if output, err := w.dockerService.RunMigrations(ctx, newContainerID); err != nil {
@@ -1892,19 +1930,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			appendLog(migrationPartialChangesWarning)
 
 			sharedDocker.GetCircuitBreaker().RecordFailure()
-			if previousCommitHash != "" {
-				imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-				_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
-			}
-			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-				"last_commit_hash": previousCommitHash,
-			})
-			if cloneHash != "" {
-				_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
-			}
 
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Migrations failed")
-			w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
+			w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
 			w.updateProjectError(project, job.JobID, fmt.Sprintf("[%s] Migrations failed: %s\n\nOutput:\n%s", migrationErrorCode, err.Error(), output))
 			return
 		} else {
@@ -1917,27 +1945,22 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	appendLog(">> Starting container readiness checks...")
-	w.transitionDeploymentState(project, job.JobID, models.DepStatusHealthchecking, 65, "healthchecking_container", "Executing readiness probe and stabilization monitoring")
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusHealthchecking, 65, "healthchecking_container", "Executing readiness probe and stabilization monitoring") {
+		appendLog("ERROR: Deployment state rejected the healthcheck step. Rolling back.")
+		w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
+		w.updateProjectError(project, job.JobID, "[STATE_TRANSITION_REJECTED] Deployment aborted before health checks: invalid deployment state transition.")
+		return
+	}
 
 	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID, appendLog, project.ResolveRuntimeExposure(0)); err != nil {
 		slog.Error("New container failed advanced healthcheck, initiating rollback", "subdomain", project.Subdomain, "id", newContainerID, "error", err)
 		appendLog("ERROR: Health check failed: " + err.Error() + ". Rolling back.")
 
 		sharedDocker.GetCircuitBreaker().RecordFailure()
-		if previousCommitHash != "" {
-			imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-			_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
-		}
-		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-			"last_commit_hash": previousCommitHash,
-		})
-		if cloneHash != "" {
-			_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
-		}
 
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Healthcheck failed, keeping old version active")
 
-		w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
+		w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
 
 		w.updateProjectError(project, job.JobID, "[RUNTIME_FAILED] Deployment failed healthcheck: "+err.Error()+". Old version is still running.")
 		return
@@ -1952,23 +1975,16 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			appendLog("ERROR: Deployment cancelled by user request. Rolling back.")
 
 			sharedDocker.GetCircuitBreaker().RecordFailure()
-			if previousCommitHash != "" {
-				imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-				_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
-			}
-			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-				"last_commit_hash": previousCommitHash,
-			})
-			if cloneHash != "" {
-				_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
-			}
 
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Cancelled before migration")
-			w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
+			w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
 			w.updateProjectError(project, job.JobID, "[TIMEOUT_EXCEEDED] Deployment cancelled by user before migrations. Old version is still running.")
 			return
 		}
-		w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 75, "running_migrations", "Executing artisan migrate --force")
+		if !w.transitionDeploymentState(project, job.JobID, models.DepStatusMigrating, 75, "running_migrations", "Executing artisan migrate --force") {
+			w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
+			return
+		}
 		slog.Info("Running database migrations", "subdomain", project.Subdomain)
 		appendLog(">> Running database migrations...")
 		if output, err := w.dockerService.RunMigrations(ctx, newContainerID); err != nil {
@@ -1978,19 +1994,9 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			appendLog(migrationPartialChangesWarning)
 
 			sharedDocker.GetCircuitBreaker().RecordFailure()
-			if previousCommitHash != "" {
-				imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-				_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
-			}
-			_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-				"last_commit_hash": previousCommitHash,
-			})
-			if cloneHash != "" {
-				_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
-			}
 
 			w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Migrations failed")
-			w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
+			w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
 			w.updateProjectError(project, job.JobID, fmt.Sprintf("[%s] Migrations failed: %s\n\nOutput:\n%s", migrationErrorCode, err.Error(), output))
 			return
 		} else {
@@ -2002,68 +2008,48 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 	}
 
-	w.transitionDeploymentState(project, job.JobID, models.DepStatusPromoting, 85, "promoting_release", "Syncing routing traffic to new container instance")
-	appendLog(">> Promoting deployment...")
-
-	if err := w.projectService.CacheSubdomainMapping(project); err != nil {
-		slog.Warn("Failed to cache subdomain mapping", "subdomain", project.Subdomain, "error", err)
+	if ctx.Err() != nil || !w.transitionDeploymentState(project, job.JobID, models.DepStatusPromoting, 85, "promoting_release", "Syncing routing traffic to new container instance") {
+		w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
+		return
 	}
+	appendLog(">> Promoting deployment...")
 
 	if _, err := w.projectService.SyncProjectNginxFrom(project, "deployment_promote"); err != nil {
 		slog.Error("Nginx sync failed during promote, rolling back", "subdomain", project.Subdomain, "error", err)
 		appendLog("ERROR: Failed to update public routing: " + err.Error())
 
-		if previousCommitHash != "" {
-			imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-			_, _ = utils.Run(1*time.Minute, "docker", "tag", fmt.Sprintf("%s:%s", imageName, previousCommitHash), imageName+":latest")
-		}
-		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-			"last_commit_hash": previousCommitHash,
-		})
-		if cloneHash != "" {
-			_ = utils.RunSilent(1*time.Minute, "docker", "rmi", fmt.Sprintf("paas-%s:%s", project.Subdomain, cloneHash))
-		}
-
 		w.transitionDeploymentState(project, job.JobID, models.DepStatusRollback, project.DeploymentProgress, "deployment_rollback", "Routing sync failed")
 
-		w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
+		w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
 
 		w.updateProjectError(project, job.JobID, "[ROUTING_FAILED] Failed to update public routing: "+err.Error())
 		return
 	}
 
-	if err := w.projectService.PromoteRolloutContainerWithWorker(project.ID, newContainerID, project.WorkerContainerID); err != nil {
+	if err := w.commitBuiltRollout(project, job.JobID, newContainerID, updates); err != nil {
 		slog.Error("Failed to promote rollout container", "id", project.ID, "error", err)
 		appendLog("ERROR: Failed to promote deployment: " + err.Error())
-		w.cleanupRollout(project, newContainerID, project.WorkerContainerID)
-		w.updateProjectError(project, job.JobID, "[ROLLOUT_PROMOTION_FAILED] Failed to promote release: "+err.Error())
+		w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
+		if !errors.Is(err, infrastructure.ErrStaleDeploymentOwner) {
+			w.updateProjectError(project, job.JobID, "[ROLLOUT_PROMOTION_FAILED] Failed to promote release: "+err.Error())
+		}
 		return
-	}
-	if err := w.projectRepo.UpdateMetadata(project.ID, updates); err != nil {
-		slog.Warn("Failed to promote detected runtime metadata", "id", project.ID, "error", err)
 	}
 	appendLog("✓ Release promoted successfully.")
 	if cloneHash != "" {
 		_ = w.redisService.SetIdempotency(project.ID, cloneHash, project.Subdomain, job.Type)
 	}
-	project.Status = models.StatusRunning
-	project.ContainerID = &newContainerID
-	project.RolloutContainerID = nil
 
 	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
 		slog.Warn("Failed to invalidate cache", "subdomain", project.Subdomain, "error", err)
 	}
 
-	if err := w.projectService.CacheSubdomainMapping(project); err != nil {
-		slog.Warn("Failed to update subdomain cache", "subdomain", project.Subdomain, "error", err)
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCleanup, 95, "cleaning_legacy_instance", "Removing previous container instance") {
+		return
 	}
-
 	if oldContainerID != nil {
-		shortContainerID := *oldContainerID
-		if len(shortContainerID) > 12 {
-			shortContainerID = shortContainerID[:12]
-		}
-		w.transitionDeploymentState(project, job.JobID, models.DepStatusCleanup, 95, "cleaning_legacy_instance", fmt.Sprintf("Removing previous container instance (%s)", shortContainerID))
+		// The container ID is deliberately omitted: deployment_message is returned
+		// verbatim to the project owner and carries no value for the reader.
 		slog.Info("Cleaning up legacy instance", "subdomain", project.Subdomain)
 		// Perform container cleanup silently to hide infrastructure secrets from developer logs
 		if err := w.dockerService.RemoveContainer(*oldContainerID, oldWorkerContainerID); err != nil {
@@ -2086,14 +2072,25 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	appendLog("✓ Deployment completed successfully! Application is live.")
 	appendLog("========================================================================")
 
-	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", project.LastCommitHash) {
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", fmt.Sprintf("Deployed %s", utils.ShortCommitHash(project.LastCommitHash))) {
 		w.forceDeploymentCompleted(project, job.JobID)
+		return
 	}
 
 	go func() {
 		_ = utils.RunSilent(5*time.Minute, "docker", "image", "prune", "-f")
 		_ = utils.RunSilent(5*time.Minute, "docker", "volume", "prune", "-f")
 	}()
+}
+
+func (w *DeploymentWorker) commitBuiltRollout(project *models.Project, jobID, containerID string, runtimeUpdates map[string]interface{}) error {
+	if err := w.projectService.PromoteRolloutForJob(project, jobID, containerID, runtimeUpdates); err != nil {
+		return err
+	}
+	project.Status = models.StatusRunning
+	project.ContainerID = &containerID
+	project.RolloutContainerID = nil
+	return nil
 }
 
 func (w *DeploymentWorker) acknowledgeProjectEnvironmentSync(projectID, generation uint) {
@@ -2433,6 +2430,8 @@ func (w *DeploymentWorker) transitionDeploymentState(project *models.Project, jo
 		project.DeploymentStatus = updatedProject.DeploymentStatus
 		project.DeploymentProgress = updatedProject.DeploymentProgress
 		project.DeploymentMessage = updatedProject.DeploymentMessage
+		project.Status = updatedProject.Status
+		project.ErrorLog = updatedProject.ErrorLog
 		w.updateGitHubCommitStatus(project, nextState, payload)
 	}
 	return true
@@ -2603,15 +2602,15 @@ func (w *DeploymentWorker) recordAuditLog(projectID uint, jobID, workerID, event
 // cleanupRollout clears durable recovery state only after Docker confirms that
 // every rollout container is gone. A failed cleanup remains checkpointed for
 // watchdog reconciliation.
-func (w *DeploymentWorker) cleanupRollout(project *models.Project, containerID string, workerContainerID *string) bool {
+func (w *DeploymentWorker) cleanupRollout(project *models.Project, jobID, containerID string, workerContainerID *string) bool {
 	if err := w.dockerService.RemoveContainer(containerID, workerContainerID); err != nil {
 		slog.Error("Failed to cleanup rollout container", "projectId", project.ID, "containerId", containerID, "error", err)
 		return false
 	}
-	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+	if err := w.projectRepo.UpdateMetadataForJob(project.ID, jobID, map[string]interface{}{
 		"rollout_container_id":        nil,
 		"rollout_worker_container_id": nil,
-	}); err != nil {
+	}, containerID); err != nil && !errors.Is(err, infrastructure.ErrStaleDeploymentOwner) {
 		slog.Error("Failed to clear rollout checkpoint after cleanup", "projectId", project.ID, "containerId", containerID, "error", err)
 		return false
 	}
@@ -2651,13 +2650,12 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 	}
 
 	if !w.transitionDeploymentState(project, jobID, models.DepStatusFailed, project.DeploymentProgress, "deployment_failed", sanitizedMsg) {
-		if err := w.projectRepo.UpdateDeploymentStatus(project.ID, models.DepStatusFailed, sanitizedMsg, project.DeploymentProgress, jobID); err != nil {
-			slog.Error("Failed to force deployment failure status", "projectId", project.ID, "jobId", jobID, "error", err)
+		slog.Warn("Skipping project error update because deployment state transition was rejected or superseded", "projectId", project.ID, "jobId", jobID)
+		if project.RolloutContainerID != nil && *project.RolloutContainerID != "" {
+			w.cleanupRollout(project, jobID, *project.RolloutContainerID, project.RolloutWorkerContainerID)
 		}
+		return
 	}
-	msg := sanitizedMsg
-	project.ErrorLog = &msg
-
 	// Force the error message into the build log stream so the UI terminal displays it immediately
 	terminalErrorMsg := fmt.Sprintf("\n>> [FAILED] DEPLOYMENT ERROR: %s\n", sanitizedMsg)
 	_ = w.redisService.PublishBuildLogForJob(project.ID, jobID, terminalErrorMsg)
@@ -2668,26 +2666,8 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 		_, _ = f.WriteString(terminalErrorMsg)
 		f.Close()
 	}
-
-	// Determine the correct project status after a failure
-	statusUpdate := models.StatusFailed
-	if project.ContainerID != nil && *project.ContainerID != "" {
-		// If an existing container is already running, keep the status as running
-		statusUpdate = models.StatusRunning
-	}
-	project.Status = statusUpdate
-
-	if err := w.projectRepo.UpdateStatus(project.ID, statusUpdate); err != nil {
-		slog.Error("Failed to update project runtime status on error", "id", project.ID, "status", statusUpdate, "error", err)
-	}
-
-	if err := w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-		"error_log": msg,
-	}); err != nil {
-		slog.Error("Failed to update project error log on error", "id", project.ID, "error", err)
-	}
 	if project.RolloutContainerID != nil && *project.RolloutContainerID != "" {
-		w.cleanupRollout(project, *project.RolloutContainerID, project.RolloutWorkerContainerID)
+		w.cleanupRollout(project, jobID, *project.RolloutContainerID, project.RolloutWorkerContainerID)
 	}
 	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
 		slog.Warn("Failed to invalidate cache on error", "subdomain", project.Subdomain, "error", err)
@@ -2753,10 +2733,10 @@ func (w *DeploymentWorker) instantUpdateEnv(project *models.Project, logFunc fun
 	}
 
 	logFunc("")
-	return w.projectService.RecreateProjectZeroDowntime(project, logFunc)
+	return w.projectService.RecreateProjectZeroDowntime(context.Background(), project, logFunc, "")
 }
 
-func (w *DeploymentWorker) redeployExistingImage(project *models.Project, logFunc func(string)) error {
+func (w *DeploymentWorker) redeployExistingImage(ctx context.Context, project *models.Project, jobID string, logFunc func(string)) error {
 	if logFunc == nil {
 		logFunc = func(string) {}
 	}
@@ -2781,7 +2761,7 @@ func (w *DeploymentWorker) redeployExistingImage(project *models.Project, logFun
 	}
 
 	logFunc("")
-	return w.projectService.RecreateProjectZeroDowntime(project, logFunc)
+	return w.projectService.RecreateProjectZeroDowntime(ctx, project, logFunc, jobID)
 }
 
 // getSecretsToRedact compiles a list of decrypted secrets linked to the project.

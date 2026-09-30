@@ -279,6 +279,42 @@ func (h *ProjectHandler) resolveLogPath(project *models.Project, jobID string) s
 }
 
 // BuildLogs returns the railpack build log output
+const (
+	// maxTailLines bounds ?tail=N so a caller cannot ask for the whole file
+	// one line at a time.
+	maxTailLines = 200
+	// bytesPerTailLine is a generous per-line budget (real build log lines run
+	// 60-150 bytes) used to size the read window for a tail request.
+	bytesPerTailLine = 512
+	// tailReadFloor covers the partial leading line plus short files.
+	tailReadFloor = 2048
+)
+
+// tailLines returns the last n lines of s. partialFirst reports whether s starts
+// mid-file, in which case its first line is a fragment and is dropped.
+func tailLines(s string, n int, partialFirst bool) string {
+	if n <= 0 {
+		return s
+	}
+	if partialFirst {
+		// A window that starts mid-file almost certainly starts mid-line. With no
+		// line break at all the window is the tail of one very long line; keep it,
+		// matching how the uncapped response truncates at maxBytes.
+		if cut := strings.IndexByte(s, '\n'); cut >= 0 {
+			s = s[cut+1:]
+		}
+	}
+	trimmed := strings.TrimRight(s, "\n")
+	if trimmed == "" {
+		return ""
+	}
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	project, err := h.getProject(c)
 	if err != nil {
@@ -329,8 +365,25 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 
 	// Cap response size to avoid UI polling turning into a memory/CPU DoS.
 	const maxBytes = 256 * 1024
-	size := st.Size()
+
+	// A tail request wants the last N lines, not the whole buffer, so size the read
+	// window for them instead. Bytes rather than a line-wise reverse scan: a single
+	// log line can be enormous (stack traces, base64 blobs), and a byte window
+	// bounds the read regardless of what is in the file.
+	tail, _ := strconv.Atoi(c.Query("tail", "0"))
+	if tail > maxTailLines {
+		tail = maxTailLines
+	}
+
 	readSize := int64(maxBytes)
+	if tail > 0 {
+		readSize = int64(tail)*bytesPerTailLine + tailReadFloor
+		if readSize > maxBytes {
+			readSize = maxBytes
+		}
+	}
+
+	size := st.Size()
 	if size < readSize {
 		readSize = size
 	}
@@ -342,8 +395,13 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	}
 	_, _ = f.ReadAt(buf, off)
 
+	logs := string(buf)
+	if tail > 0 {
+		logs = tailLines(logs, tail, off > 0)
+	}
+
 	return c.JSON(fiber.Map{
-		"logs":        string(buf),
+		"logs":        logs,
 		"job_id":      jobID,
 		"available":   size > 0,
 		"placeholder": false,
@@ -894,22 +952,127 @@ func (h *ProjectHandler) RequeueJob(c *fiber.Ctx) error {
 	}
 	projectID := project.ID
 
-	// 1. Remove from queue if duplicate
-	_ = h.redisService.RemoveFromQueue(uint(projectID))
-
-	// 2. Release Redis Lock
-	_ = h.redisService.ForceReleaseDeploymentLock(uint(projectID), "Admin manual requeue")
-
-	// 3. Update project status to Queued
-	_ = h.projectService.UpdateProjectStatus(uint(projectID), models.StatusQueued)
-
-	// 4. Re-enqueue
-	jobID, err := h.redisService.EnqueueDeployment(uint(projectID), project.UserID, "redeploy")
+	lockToken, err := h.redisService.ReserveAdminRequeue(projectID)
 	if err != nil {
+		slog.Error("Failed to reserve deployment lock for admin requeue", "project_id", projectID, "error", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to re-enqueue job"})
 	}
 
-	_ = h.projectService.UpdateDeploymentStatus(uint(projectID), models.DepStatusQueued, "Admin manual requeue", 0, jobID)
+	job := &infrastructure.DeploymentJob{
+		ProjectID: projectID, UserID: project.UserID, Type: "redeploy",
+		JobID: utils.GenerateRandomUID(), EnqueuedAt: time.Now(),
+	}
+	if err := h.projectService.RequeueDeployment(c.Context(), projectID, job.JobID, "Admin manual requeue"); err != nil {
+		slog.Error("Failed to transition admin requeue in DB", "project_id", projectID, "job_id", job.JobID, "error", err)
+		_ = h.redisService.ReleaseDeploymentLock(projectID, lockToken)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to re-enqueue job"})
+	}
+	if err := h.redisService.EnqueueReplacingDeploymentJob(job, lockToken); err != nil {
+		if infrastructure.IsStaleOwnerError(err) {
+			slog.Info("Admin requeue stale owner / lock lost", "project_id", projectID, "job_id", job.JobID)
+			current, getErr := h.projectService.GetProjectByID(projectID)
+			if getErr != nil || current == nil {
+				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+					"error": "Failed to verify project state after stale requeue",
+				})
+			}
+
+			// Case 1: Another newer job superseded this one
+			if current.DeploymentJobID != nil && *current.DeploymentJobID != job.JobID {
+				newerJobID := *current.DeploymentJobID
+				hasNewerJob, _ := h.redisService.HasDeploymentJob(newerJobID)
+				isNewerActiveInDB := !models.IsTerminalDeploymentStatus(current.DeploymentStatus)
+
+				if hasNewerJob || isNewerActiveInDB {
+					return c.JSON(fiber.Map{
+						"message":           "Deployment requeue superseded by newer active job",
+						"superseded":        true,
+						"superseded_by":     newerJobID,
+						"deployment_status": current.DeploymentStatus,
+					})
+				}
+
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+					"error":             "Deployment requeue superseded by another job that is no longer active",
+					"superseded_by":     newerJobID,
+					"deployment_status": current.DeploymentStatus,
+				})
+			}
+
+			// Case 2: Cancellation intervened
+			if current.DeploymentStatus == models.DepStatusCancelled {
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+					"error":             "Deployment was cancelled before publication",
+					"deployment_status": current.DeploymentStatus,
+				})
+			}
+
+			// Case 3: Failed status
+			if current.DeploymentStatus == models.DepStatusFailed || current.Status == models.StatusFailed {
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+					"error":             "Deployment failed before publication",
+					"deployment_status": current.DeploymentStatus,
+				})
+			}
+
+			// Case 4: Lock lost or expired (DB was set to queued with job.JobID, but lock disappeared)
+			_, _ = h.projectService.FailQueuedDeploymentIfUnchanged(
+				c.Context(),
+				projectID,
+				job.JobID,
+				"Deployment lock lost or expired before publication",
+				true,
+			)
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "Deployment lock lost or expired before publication",
+			})
+		}
+		slog.Error("Failed to enqueue admin requeue job", "project_id", projectID, "job_id", job.JobID, "error", err)
+
+		// Uncertain publish reconciliation:
+		// An EVAL command may commit in Redis and successfully enqueue the job, but network disruption
+		// or timeout can cause the client to receive an error. Before asserting terminal failure,
+		// inspect whether the predetermined job was actually enqueued or already claimed by a worker.
+		inQueue, checkErr := h.redisService.HasDeploymentJob(job.JobID)
+		if checkErr != nil {
+			// If Redis cannot be inspected, do NOT destroy state by asserting failure.
+			// Preserve the recoverable queued state so watchdog or operators can reconcile.
+			slog.Warn("Cannot verify enqueue status after error; preserving queued state", "project_id", projectID, "job_id", job.JobID, "check_error", checkErr)
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Failed to verify queue status; project remains queued"})
+		}
+
+		if inQueue {
+			// The job exists in Redis (ready, delayed, or processing). The publish succeeded server-side.
+			slog.Info("Admin requeue job was enqueued despite transport error", "project_id", projectID, "job_id", job.JobID)
+			return c.JSON(fiber.Map{"message": "Job re-enqueued successfully"})
+		}
+
+		// Check if a worker already claimed the job and progressed it past queued in the database.
+		if current, getErr := h.projectService.GetProjectByID(projectID); getErr == nil && current != nil {
+			if current.DeploymentJobID != nil && *current.DeploymentJobID == job.JobID && current.DeploymentStatus != models.DepStatusQueued {
+				slog.Info("Admin requeue job was claimed and progressed by worker despite transport error", "project_id", projectID, "job_id", job.JobID, "status", current.DeploymentStatus)
+				return c.JSON(fiber.Map{"message": "Job re-enqueued successfully"})
+			}
+			if current.DeploymentJobID != nil && *current.DeploymentJobID != job.JobID {
+				slog.Info("Admin requeue superseded by newer deployment job", "project_id", projectID, "job_id", job.JobID, "current_job_id", *current.DeploymentJobID)
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+					"error":         "Deployment requeue superseded by newer job",
+					"superseded_by": *current.DeploymentJobID,
+				})
+			}
+		}
+
+		// Confirmed genuine failure: job is NOT in Redis and NOT claimed by any worker.
+		// Failure compensation must be conditional on this job still owning the queued
+		// database row inside the transaction, avoiding overwriting a newer concurrent job.
+		applied, transitionErr := h.projectService.FailQueuedDeploymentIfUnchanged(c.Context(), projectID, job.JobID, "Admin requeue failed: queue unavailable", true)
+		if transitionErr != nil {
+			slog.Error("Failed to record admin requeue failure", "project_id", projectID, "job_id", job.JobID, "error", transitionErr)
+		} else if !applied {
+			slog.Warn("Admin requeue failure compensation skipped: project state owned by newer job or no longer queued", "project_id", projectID, "job_id", job.JobID)
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to re-enqueue job"})
+	}
 
 	return c.JSON(fiber.Map{"message": "Job re-enqueued successfully"})
 }

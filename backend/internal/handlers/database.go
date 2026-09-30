@@ -203,17 +203,9 @@ func (h *DatabaseHandler) RotateCredentials(c *fiber.Ctx) error {
 	if jobID, err = h.redisService.EnqueueDeploymentEnvSync(lockedProject.ID, lockedProject.UserID, envSyncGeneration); err != nil {
 		slog.Error("Queue durable database environment sync failed", "project_id", lockedProject.ID, "generation", envSyncGeneration, "error", err)
 	} else {
-		now := time.Now()
-		msg := "Credentials rotation env update"
-		errUpdate := h.db.Model(&models.Project{}).Where("id = ?", lockedProject.ID).Updates(map[string]interface{}{
-			"deployment_status":       models.DepStatusQueued,
-			"deployment_job_id":       jobID,
-			"deployment_message":      msg,
-			"deployment_started_at":   &now,
-			"deployment_heartbeat_at": &now,
-			"deployment_finished_at":  nil,
-		}).Error
-		if errUpdate != nil {
+		// Route through the transition manager so the state machine, progress reset
+		// and lifecycle timestamps stay consistent with every other enqueue path.
+		if errUpdate := h.projectService.UpdateDeploymentStatus(lockedProject.ID, models.DepStatusQueued, "Credentials rotation env update", 0, jobID); errUpdate != nil {
 			slog.Error("Failed to update project deployment status after successful enqueue", "project_id", lockedProject.ID, "error", errUpdate.Error())
 		}
 	}

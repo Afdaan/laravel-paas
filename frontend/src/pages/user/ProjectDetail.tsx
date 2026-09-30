@@ -512,7 +512,7 @@ function UserProjectDetail() {
     if (!project?.deployment_status || !isDeploying) return null
     const status = project.deployment_status
     if (['queued', 'preparing', 'cloning'].includes(status)) return { label: 'Preparing', phase: 'build' }
-    if (['building', 'provisioning'].includes(status)) return { label: 'Building', phase: 'build' }
+    if (status === 'building') return { label: 'Building', phase: 'build' }
     if (['starting', 'healthchecking', 'migrating'].includes(status)) return { label: 'Starting Container', phase: 'startup' }
     if (['promoting', 'cleanup'].includes(status)) return { label: 'Finalizing', phase: 'finalize' }
     return { label: 'Deploying', phase: 'build' }

@@ -26,6 +26,7 @@ import (
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/repositories"
+	"github.com/laravel-paas/shared/services/deployment"
 	"github.com/laravel-paas/shared/services/setting"
 	"gorm.io/gorm"
 )
@@ -63,6 +64,7 @@ func setupTestAppWithBilling(t *testing.T, dbName string, billingEnabled bool) (
 		&models.SecretStoreItemValue{},
 		&models.SecretStoreBinding{},
 		&models.Setting{},
+		&models.DeploymentEvent{},
 	)
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
@@ -95,6 +97,7 @@ func setupTestAppWithBilling(t *testing.T, dbName string, billingEnabled bool) (
 	settingRepo := repositories.NewSettingRepository(db)
 
 	settingService := setting.NewSettingService(settingRepo, redisService)
+	transitionMgr := deployment.NewTransitionManager(db, redisService)
 	projectService := projectServicePkg.NewProjectService(
 		cfg,
 		projectRepo,
@@ -103,7 +106,7 @@ func setupTestAppWithBilling(t *testing.T, dbName string, billingEnabled bool) (
 		nil, // storageService
 		nil, // mysqlService
 		redisService,
-		nil, // transitionManager
+		transitionMgr,
 	)
 	userService := services.NewUserService(userRepo, projectService)
 	secretStoreService := services.NewSecretStoreService(db, cfg, redisService)
@@ -242,7 +245,19 @@ func TestCreateProject_BillingDeductsCreditsSuccessfully(t *testing.T) {
 	}
 
 	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-	mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:processing_queue",
+		"deployment:lock:.*",
+	}, "1", ".*", "120000").SetVal(int64(1))
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:queued_project_counts",
+		"deployment:stats",
+		"deployment:lock:.*",
+	}, "1", ".*", ".*").SetVal(int64(1))
 	mock.ExpectLLen("deployment:queue").SetVal(1)
 
 	reqPayload := CreateProjectRequest{
@@ -421,10 +436,19 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
 
 	// Mock queue expectations for the single successful enqueue
-	mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
-	mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
-	mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
-	mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:processing_queue",
+		"deployment:lock:.*",
+	}, ".*", ".*", "120000").SetVal(int64(1))
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:queued_project_counts",
+		"deployment:stats",
+		"deployment:lock:.*",
+	}, ".*", ".*", ".*").SetVal(int64(1))
 	mock.ExpectLLen("deployment:queue").SetVal(1)
 
 	// Mock settings expectations checked at the end of successful create (PopulateURL)
@@ -608,10 +632,13 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	t.Run("distinct name and username persistence", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_distinct")
 		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
-		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
-		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
-		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
+		mock.Regexp().ExpectEvalSha(".*", []string{
+			"deployment:queue",
+			"deployment:delayed_queue",
+			"deployment:queued_project_counts",
+			"deployment:stats",
+			"deployment:lock:.*",
+		}, "1", ".*", ".*").SetVal(int64(1))
 		mock.ExpectLLen("deployment:queue").SetVal(1)
 		reqPayload := CreateProjectRequest{
 			Name:             "distinctproj",
@@ -660,10 +687,13 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	t.Run("spaced database username trimming", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_spaced_user")
 		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
-		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
-		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
-		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
+		mock.Regexp().ExpectEvalSha(".*", []string{
+			"deployment:queue",
+			"deployment:delayed_queue",
+			"deployment:queued_project_counts",
+			"deployment:stats",
+			"deployment:lock:.*",
+		}, "1", ".*", ".*").SetVal(int64(1))
 		mock.ExpectLLen("deployment:queue").SetVal(1)
 		reqPayload := CreateProjectRequest{
 			Name:             "spacedproj",
@@ -704,10 +734,13 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	t.Run("long project name username generation", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_long_name")
 		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
-		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
-		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
-		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
+		mock.Regexp().ExpectEvalSha(".*", []string{
+			"deployment:queue",
+			"deployment:delayed_queue",
+			"deployment:queued_project_counts",
+			"deployment:stats",
+			"deployment:lock:.*",
+		}, "1", ".*", ".*").SetVal(int64(1))
 		mock.ExpectLLen("deployment:queue").SetVal(1)
 		reqPayload := CreateProjectRequest{
 			Name:           "this-is-a-very-long-project-name-to-test-generated-defaults-and-suffix-preservation",

@@ -11,11 +11,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	mathrand "math/rand/v2"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/laravel-paas/shared/config"
@@ -76,6 +78,8 @@ type DeploymentJob struct {
 	ProjectID               uint       `json:"project_id"`
 	UserID                  uint       `json:"user_id"`
 	Type                    string     `json:"type"` // "deploy" or "redeploy"
+	TargetCommitHash        string     `json:"target_commit_hash,omitempty"`
+	PreviousCommitHash      string     `json:"previous_commit_hash,omitempty"`
 	BillingSuspension       bool       `json:"billing_suspension,omitempty"`
 	BillingResume           bool       `json:"billing_resume,omitempty"`
 	BillingSuspensionTaskID uint       `json:"billing_suspension_task_id,omitempty"`
@@ -103,6 +107,7 @@ const (
 	deploymentQueueKey           = "deployment:queue"
 	deploymentProcessingQueueKey = "deployment:processing_queue"
 	deploymentDelayedQueueKey    = "deployment:delayed_queue"
+	deploymentQueuedProjectsKey  = "deployment:queued_project_counts"
 	deploymentLockKey            = "deployment:lock"
 	deploymentStatsKey           = "deployment:stats"
 	deploymentLeaseKeyPrefix     = "deployment:lease"
@@ -113,6 +118,9 @@ var (
 local raw = redis.call("lpop", KEYS[1])
 if not raw then return false end
 local job = cjson.decode(raw)
+local projectID = tostring(job.project_id)
+local remaining = redis.call("hincrby", KEYS[3], projectID, -1)
+if remaining <= 0 then redis.call("hdel", KEYS[3], projectID) end
 job.started_at = ARGV[1]
 job.heartbeat_at = ARGV[1]
 local claimed = cjson.encode(job)
@@ -122,9 +130,179 @@ return claimed
 	requeueClaimedDeploymentJobScript = redis.NewScript(`
 if redis.call("lrem", KEYS[1], 1, ARGV[1]) == 1 then
     redis.call("rpush", KEYS[2], ARGV[2])
+    redis.call("hincrby", KEYS[3], ARGV[3], 1)
     return 1
 end
 return 0
+`)
+	enqueueDeploymentJobScript = redis.NewScript(`
+redis.call("rpush", KEYS[1], ARGV[1])
+redis.call("hincrby", KEYS[2], ARGV[2], 1)
+redis.call("hincrby", KEYS[3], "enqueued", 1)
+return 1
+`)
+	enqueueDelayedDeploymentJobScript = redis.NewScript(`
+redis.call("zadd", KEYS[1], ARGV[1], ARGV[2])
+redis.call("hincrby", KEYS[2], ARGV[3], 1)
+redis.call("hincrby", KEYS[3], "delayed", 1)
+return 1
+`)
+	enqueueReplacingDeploymentJobScript = redis.NewScript(`
+local projectID = ARGV[1]
+local expectedToken = ARGV[3]
+
+if #KEYS >= 5 and KEYS[5] then
+    local rawLock = redis.call("get", KEYS[5])
+    if rawLock then
+        if not expectedToken or expectedToken == "" then
+            return redis.error_reply("ERR_STALE_OWNER: deployment lock held by another process")
+        end
+        local ok, meta = pcall(cjson.decode, rawLock)
+        if not ok or not meta or meta.token ~= expectedToken then
+            return redis.error_reply("ERR_STALE_OWNER: deployment lock token mismatch")
+        end
+    else
+        if expectedToken and expectedToken ~= "" then
+            return redis.error_reply("ERR_STALE_OWNER: deployment lock not held")
+        end
+    end
+end
+
+for _, raw in ipairs(redis.call("lrange", KEYS[1], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and tostring(job.project_id) == projectID then
+        redis.call("lrem", KEYS[1], 0, raw)
+    end
+end
+for _, raw in ipairs(redis.call("zrange", KEYS[2], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and tostring(job.project_id) == projectID then
+        redis.call("zrem", KEYS[2], raw)
+    end
+end
+redis.call("hset", KEYS[3], projectID, 1)
+redis.call("rpush", KEYS[1], ARGV[2])
+redis.call("hincrby", KEYS[4], "enqueued", 1)
+
+if #KEYS >= 5 and KEYS[5] and expectedToken and expectedToken ~= "" then
+    redis.call("del", KEYS[5])
+end
+
+return 1
+`)
+	removeProjectDeploymentJobsScript = redis.NewScript(`
+local projectID = ARGV[1]
+for _, raw in ipairs(redis.call("lrange", KEYS[1], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and tostring(job.project_id) == projectID then
+        redis.call("lrem", KEYS[1], 0, raw)
+    end
+end
+for _, raw in ipairs(redis.call("zrange", KEYS[2], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and tostring(job.project_id) == projectID then
+        redis.call("zrem", KEYS[2], raw)
+    end
+end
+redis.call("hdel", KEYS[3], projectID)
+return 1
+`)
+	removeDeploymentJobScript = redis.NewScript(`
+local jobID = ARGV[1]
+for _, raw in ipairs(redis.call("lrange", KEYS[1], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and job.job_id == jobID then
+        redis.call("lrem", KEYS[1], 1, raw)
+        local projectID = tostring(job.project_id)
+        local remaining = redis.call("hincrby", KEYS[3], projectID, -1)
+        if remaining <= 0 then redis.call("hdel", KEYS[3], projectID) end
+        return 1
+    end
+end
+for _, raw in ipairs(redis.call("zrange", KEYS[2], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and job.job_id == jobID then
+        redis.call("zrem", KEYS[2], raw)
+        local projectID = tostring(job.project_id)
+        local remaining = redis.call("hincrby", KEYS[3], projectID, -1)
+        if remaining <= 0 then redis.call("hdel", KEYS[3], projectID) end
+        return 1
+    end
+end
+return 0
+`)
+	isProjectQueuedScript = redis.NewScript(`
+if redis.call("hlen", KEYS[3]) == 0 and (redis.call("llen", KEYS[1]) > 0 or redis.call("zcard", KEYS[2]) > 0) then
+    for _, raw in ipairs(redis.call("lrange", KEYS[1], 0, -1)) do
+        local ok, job = pcall(cjson.decode, raw)
+        if ok and job.project_id then
+            redis.call("hincrby", KEYS[3], tostring(job.project_id), 1)
+        end
+    end
+    for _, raw in ipairs(redis.call("zrange", KEYS[2], 0, -1)) do
+        local ok, job = pcall(cjson.decode, raw)
+        if ok and job.project_id then
+            redis.call("hincrby", KEYS[3], tostring(job.project_id), 1)
+        end
+    end
+end
+return redis.call("hexists", KEYS[3], ARGV[1])
+`)
+	reserveOrphanRecoveryScript = redis.NewScript(`
+if redis.call("exists", KEYS[4]) == 1 then return 0 end
+for _, raw in ipairs(redis.call("lrange", KEYS[1], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and tostring(job.project_id) == ARGV[1] then return 0 end
+end
+for _, raw in ipairs(redis.call("zrange", KEYS[2], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and tostring(job.project_id) == ARGV[1] then return 0 end
+end
+for _, raw in ipairs(redis.call("lrange", KEYS[3], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and tostring(job.project_id) == ARGV[1] then return 0 end
+end
+if redis.call("set", KEYS[4], ARGV[2], "NX", "PX", ARGV[3]) then return 1 end
+return 0
+`)
+	hasDeploymentJobScript = redis.NewScript(`
+local jobID = ARGV[1]
+for _, raw in ipairs(redis.call("lrange", KEYS[1], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and job.job_id == jobID then return 1 end
+end
+for _, raw in ipairs(redis.call("zrange", KEYS[2], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and job.job_id == jobID then return 1 end
+end
+for _, raw in ipairs(redis.call("lrange", KEYS[3], 0, -1)) do
+    local ok, job = pcall(cjson.decode, raw)
+    if ok and job.job_id == jobID then return 1 end
+end
+return 0
+`)
+	setPendingEnvRefreshScript = redis.NewScript(`
+local generation = redis.call('incr', KEYS[2])
+redis.call('set', KEYS[1], generation)
+return generation
+`)
+	clearPendingEnvRefreshScript = redis.NewScript(`
+local current = redis.call('get', KEYS[1])
+if not current then
+    return 0
+end
+local target = tonumber(ARGV[1])
+if not target or target <= 0 then
+    redis.call('del', KEYS[1])
+    return 1
+end
+local currentNum = tonumber(current)
+if not currentNum or currentNum <= target then
+    redis.call('del', KEYS[1])
+    return 1
+else
+    return 0
+end
 `)
 )
 
@@ -138,11 +316,8 @@ return 0
 
 // EnqueueDeployment adds a deployment job to the queue with deduplication
 func (r *RedisService) EnqueueDeployment(projectID, userID uint, deployType string) (string, error) {
-	// Deduplicate: Remove any existing queued jobs for this project ID so latest request wins
-	_ = r.RemoveFromQueue(projectID)
-
 	jobID := utils.GenerateRandomUID()
-	job := DeploymentJob{
+	job := &DeploymentJob{
 		ProjectID:  projectID,
 		UserID:     userID,
 		Type:       deployType,
@@ -151,20 +326,68 @@ func (r *RedisService) EnqueueDeployment(projectID, userID uint, deployType stri
 		RetryCount: 0,
 	}
 
+	if err := r.EnqueueReplacingDeploymentJob(job); err != nil {
+		return "", err
+	}
+	return jobID, nil
+}
+
+// ErrStaleDeploymentOwner indicates that a deployment requeue operation was superseded
+// by a newer operation or that its ownership lock was lost/invalidated.
+var ErrStaleDeploymentOwner = errors.New("deployment requeue owner superseded")
+
+// IsStaleOwnerError reports whether the error is due to stale deployment requeue ownership.
+func IsStaleOwnerError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, ErrStaleDeploymentOwner) || strings.Contains(err.Error(), "ERR_STALE_OWNER")
+}
+
+// EnqueueReplacingDeploymentJob publishes a preidentified job after its DB state is queued.
+// If lockToken is provided, it verifies ownership of the deployment lock before replacing.
+func (r *RedisService) EnqueueReplacingDeploymentJob(job *DeploymentJob, lockToken ...string) error {
+	if job == nil || job.ProjectID == 0 || job.JobID == "" {
+		return fmt.Errorf("deployment job requires project and job ID")
+	}
 	data, err := json.Marshal(job)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal job: %w", err)
+		return fmt.Errorf("failed to marshal job: %w", err)
 	}
 
-	// Add to the queue
-	if err := r.client.RPush(r.ctx, deploymentQueueKey, data).Err(); err != nil {
-		return "", fmt.Errorf("failed to enqueue job: %w", err)
+	token := ""
+	if len(lockToken) > 0 {
+		token = lockToken[0]
 	}
 
-	// Increment enqueued counter
-	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
+	projectKey := strconv.FormatUint(uint64(job.ProjectID), 10)
+	lockKey := fmt.Sprintf("%s:%d", deploymentLockKey, job.ProjectID)
+	keys := []string{deploymentQueueKey, deploymentDelayedQueueKey, deploymentQueuedProjectsKey, deploymentStatsKey, lockKey}
+	args := []interface{}{projectKey, string(data), token}
 
-	return jobID, nil
+	if _, err := enqueueReplacingDeploymentJobScript.Run(
+		r.ctx,
+		r.client,
+		keys,
+		args...,
+	).Result(); err != nil {
+		if strings.Contains(err.Error(), "ERR_STALE_OWNER") {
+			return ErrStaleDeploymentOwner
+		}
+		return fmt.Errorf("failed to enqueue job: %w", err)
+	}
+	return nil
+}
+
+func (r *RedisService) enqueueDeploymentPayload(data []byte, projectID uint) error {
+	_, err := enqueueDeploymentJobScript.Run(
+		r.ctx,
+		r.client,
+		[]string{deploymentQueueKey, deploymentQueuedProjectsKey, deploymentStatsKey},
+		string(data),
+		strconv.FormatUint(uint64(projectID), 10),
+	).Result()
+	return err
 }
 
 func (r *RedisService) EnqueueDeploymentNonDestructive(projectID, userID uint, deployType string) (string, error) {
@@ -174,10 +397,9 @@ func (r *RedisService) EnqueueDeploymentNonDestructive(projectID, userID uint, d
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal job: %w", err)
 	}
-	if err := r.client.RPush(r.ctx, deploymentQueueKey, data).Err(); err != nil {
+	if err := r.enqueueDeploymentPayload(data, projectID); err != nil {
 		return "", fmt.Errorf("failed to enqueue job: %w", err)
 	}
-	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
 	return jobID, nil
 }
 
@@ -192,10 +414,9 @@ func (r *RedisService) EnqueueBillingSuspensionStop(projectID, userID, taskID ui
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal billing suspension job: %w", err)
 	}
-	if err := r.client.RPush(r.ctx, deploymentQueueKey, data).Err(); err != nil {
+	if err := r.enqueueDeploymentPayload(data, projectID); err != nil {
 		return "", fmt.Errorf("failed to enqueue billing suspension job: %w", err)
 	}
-	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
 	return jobID, nil
 }
 
@@ -210,10 +431,9 @@ func (r *RedisService) EnqueueBillingSuspensionResume(projectID, userID, taskID 
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal billing resume job: %w", err)
 	}
-	if err := r.client.RPush(r.ctx, deploymentQueueKey, data).Err(); err != nil {
+	if err := r.enqueueDeploymentPayload(data, projectID); err != nil {
 		return "", fmt.Errorf("failed to enqueue billing resume job: %w", err)
 	}
-	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
 	return jobID, nil
 }
 
@@ -228,10 +448,9 @@ func (r *RedisService) EnqueueDeploymentEnvSync(projectID, userID, generation ui
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal environment sync job: %w", err)
 	}
-	if err := r.client.RPush(r.ctx, deploymentQueueKey, data).Err(); err != nil {
+	if err := r.enqueueDeploymentPayload(data, projectID); err != nil {
 		return "", fmt.Errorf("failed to enqueue environment sync job: %w", err)
 	}
-	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
 	return jobID, nil
 }
 
@@ -248,46 +467,66 @@ func (r *RedisService) EnqueueEnvUpdateIfQuiet(projectID, userID uint) (string, 
 		return "", nil
 	}
 
-	// Check if already in queue
-	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
+	queued, err := r.IsProjectQueued(projectID)
 	if err != nil {
-		return "", fmt.Errorf("failed to read deployment queue: %w", err)
+		return "", fmt.Errorf("failed to check deployment queue: %w", err)
 	}
-	for _, res := range results {
-		var job DeploymentJob
-		if err := json.Unmarshal([]byte(res), &job); err == nil && job.ProjectID == projectID {
-			slog.Info("Project already has a queued job, skipping env update enqueue", "projectId", projectID, "jobType", job.Type)
-			return "", nil
-		}
+	if queued {
+		slog.Info("Project already has a queued job, skipping env update enqueue", "projectId", projectID)
+		return "", nil
 	}
 
 	return r.EnqueueDeploymentNonDestructive(projectID, userID, "update_env")
 }
 
-// SetPendingEnvRefresh sets a marker indicating that the project needs an env refresh
+// SetPendingEnvRefresh sets a marker indicating that the project needs an env refresh,
+// incrementing a monotonic generation number so concurrent updates are never lost.
 func (r *RedisService) SetPendingEnvRefresh(projectID uint) error {
 	key := fmt.Sprintf("project:pending_env_refresh:%d", projectID)
-	return r.client.Set(r.ctx, key, "true", 0).Err()
+	sequenceKey := fmt.Sprintf("project:pending_env_refresh_sequence:%d", projectID)
+	return setPendingEnvRefreshScript.Run(r.ctx, r.client, []string{key, sequenceKey}).Err()
+}
+
+// GetPendingEnvRefresh returns the current pending generation number for the project (0 if none).
+func (r *RedisService) GetPendingEnvRefresh(projectID uint) (int64, error) {
+	key := fmt.Sprintf("project:pending_env_refresh:%d", projectID)
+	val, err := r.client.Get(r.ctx, key).Result()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	gen, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		return 1, nil
+	}
+	return gen, nil
 }
 
 // HasPendingEnvRefresh checks if the project has a pending env refresh marker set
 func (r *RedisService) HasPendingEnvRefresh(projectID uint) (bool, error) {
-	key := fmt.Sprintf("project:pending_env_refresh:%d", projectID)
-	val, err := r.client.Get(r.ctx, key).Result()
-	if err == redis.Nil {
-		return false, nil
-	}
+	gen, err := r.GetPendingEnvRefresh(projectID)
 	if err != nil {
 		return false, err
 	}
-	return val == "true", nil
+	return gen > 0, nil
 }
 
-// ClearPendingEnvRefresh removes the pending env refresh marker for the project
-func (r *RedisService) ClearPendingEnvRefresh(projectID uint) (bool, error) {
+// ClearPendingEnvRefresh removes the pending env refresh marker for the project.
+// If upToGen is provided and > 0, it removes the marker ONLY if the current generation
+// is less than or equal to upToGen, preventing it from clearing newer markers from concurrent updates.
+func (r *RedisService) ClearPendingEnvRefresh(projectID uint, upToGen ...int64) (bool, error) {
 	key := fmt.Sprintf("project:pending_env_refresh:%d", projectID)
-	deleted, err := r.client.Del(r.ctx, key).Result()
-	return deleted > 0, err
+	var target int64 = 0
+	if len(upToGen) > 0 && upToGen[0] > 0 {
+		target = upToGen[0]
+	}
+	res, err := clearPendingEnvRefreshScript.Run(r.ctx, r.client, []string{key}, target).Int64()
+	if err != nil {
+		return false, err
+	}
+	return res > 0, nil
 }
 
 // EnqueueDeploymentJob enqueues an existing DeploymentJob struct (used for retries)
@@ -297,11 +536,9 @@ func (r *RedisService) EnqueueDeploymentJob(job *DeploymentJob) error {
 		return fmt.Errorf("failed to marshal job: %w", err)
 	}
 
-	if err := r.client.RPush(r.ctx, deploymentQueueKey, data).Err(); err != nil {
+	if err := r.enqueueDeploymentPayload(data, job.ProjectID); err != nil {
 		return fmt.Errorf("failed to enqueue job: %w", err)
 	}
-
-	r.client.HIncrBy(r.ctx, deploymentStatsKey, "enqueued", 1)
 	return nil
 }
 
@@ -310,7 +547,7 @@ func (r *RedisService) DequeueDeployment(timeout time.Duration) (*DeploymentJob,
 	deadline := time.Now().Add(timeout)
 	for {
 		now := time.Now().UTC()
-		result, err := claimDeploymentJobScript.Run(r.ctx, r.client, []string{deploymentQueueKey, deploymentProcessingQueueKey}, now.Format(time.RFC3339Nano)).Result()
+		result, err := claimDeploymentJobScript.Run(r.ctx, r.client, []string{deploymentQueueKey, deploymentProcessingQueueKey, deploymentQueuedProjectsKey}, now.Format(time.RFC3339Nano)).Result()
 		if err != nil && err != redis.Nil {
 			return nil, fmt.Errorf("claim deployment job: %w", err)
 		}
@@ -354,7 +591,7 @@ func (r *RedisService) RequeueDeploymentJob(job *DeploymentJob) error {
 	if err != nil {
 		return fmt.Errorf("marshal deployment job for requeue: %w", err)
 	}
-	if _, err := requeueClaimedDeploymentJobScript.Run(r.ctx, r.client, []string{deploymentProcessingQueueKey, deploymentQueueKey}, claimedPayload, payload).Result(); err != nil {
+	if _, err := requeueClaimedDeploymentJobScript.Run(r.ctx, r.client, []string{deploymentProcessingQueueKey, deploymentQueueKey, deploymentQueuedProjectsKey}, claimedPayload, payload, strconv.FormatUint(uint64(job.ProjectID), 10)).Result(); err != nil {
 		return fmt.Errorf("requeue claimed deployment job: %w", err)
 	}
 	return nil
@@ -388,7 +625,7 @@ func (r *RedisService) RequeueExpiredDeploymentJobs(lease time.Duration) error {
 		if err != nil {
 			return fmt.Errorf("marshal expired deployment job: %w", err)
 		}
-		if _, err := requeueClaimedDeploymentJobScript.Run(r.ctx, r.client, []string{deploymentProcessingQueueKey, deploymentQueueKey}, entry, payload).Result(); err != nil {
+		if _, err := requeueClaimedDeploymentJobScript.Run(r.ctx, r.client, []string{deploymentProcessingQueueKey, deploymentQueueKey, deploymentQueuedProjectsKey}, entry, payload, strconv.FormatUint(uint64(job.ProjectID), 10)).Result(); err != nil {
 			return fmt.Errorf("requeue expired deployment job: %w", err)
 		}
 	}
@@ -634,11 +871,10 @@ func (r *RedisService) ForceReleaseDeploymentLock(projectID uint, reason string)
 		reason = "System recovery / manual override"
 	}
 	lockKey := fmt.Sprintf("%s:%d", deploymentLockKey, projectID)
-	val, _ := r.client.Get(r.ctx, lockKey).Result()
 	if err := r.client.Del(r.ctx, lockKey).Err(); err != nil {
 		return fmt.Errorf("failed to force release lock: %w", err)
 	}
-	slog.Warn("Deployment lock forcibly released", "projectID", projectID, "reason", reason, "previousToken", val)
+	slog.Warn("Deployment lock forcibly released", "projectID", projectID, "reason", reason)
 	return nil
 }
 
@@ -679,23 +915,118 @@ func (r *RedisService) ListDeploymentJobs() ([]DeploymentJob, error) {
 	return jobs, nil
 }
 
-// IsProjectQueued checks if a project is already in the deployment queue
+// IsProjectQueued reports whether a project has a pending ready or delayed job.
+// The first call rebuilds the index from legacy queue contents; later calls are
+// one atomic O(1) lookup and cannot race delayed-to-ready migration.
 func (r *RedisService) IsProjectQueued(projectID uint) (bool, error) {
-	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
+	result, err := isProjectQueuedScript.Run(
+		r.ctx,
+		r.client,
+		[]string{deploymentQueueKey, deploymentDelayedQueueKey, deploymentQueuedProjectsKey},
+		strconv.FormatUint(uint64(projectID), 10),
+	).Int()
+	return result == 1, err
+}
+
+// ReserveOrphanRecovery excludes ready, delayed, claimed and lock-owning jobs in one Redis operation.
+func (r *RedisService) ReserveOrphanRecovery(projectID uint) (string, error) {
+	token := generateLockToken()
+	now := time.Now()
+	metadata, err := json.Marshal(LockMetadata{Token: token, WorkerID: "watchdog", Hostname: "watchdog", StartedAt: now, LastHeartbeat: now})
 	if err != nil {
-		return false, err
+		return "", err
 	}
-
-	for _, res := range results {
-		var job DeploymentJob
-		if err := json.Unmarshal([]byte(res), &job); err == nil {
-			if job.ProjectID == projectID {
-				return true, nil
-			}
-		}
+	result, err := reserveOrphanRecoveryScript.Run(r.ctx, r.client,
+		[]string{deploymentQueueKey, deploymentDelayedQueueKey, deploymentProcessingQueueKey, fmt.Sprintf("%s:%d", deploymentLockKey, projectID)},
+		strconv.FormatUint(uint64(projectID), 10), string(metadata), int64((2 * time.Minute).Milliseconds()),
+	).Int()
+	if err != nil {
+		return "", fmt.Errorf("reserve orphan recovery: %w", err)
 	}
+	if result == 0 {
+		return "", nil
+	}
+	return token, nil
+}
 
-	return false, nil
+// ReserveDeployment attempts to reserve the deployment lock for an ordinary deployment (e.g. redeploy).
+// It succeeds only if the project is not currently queued, delayed, processing, or locked.
+func (r *RedisService) ReserveDeployment(projectID uint) (string, error) {
+	token := generateLockToken()
+	now := time.Now()
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "server-node"
+	}
+	metadata, err := json.Marshal(LockMetadata{
+		Token:         token,
+		WorkerID:      "redeploy",
+		DeploymentID:  "",
+		Hostname:      hostname,
+		StartedAt:     now,
+		LastHeartbeat: now,
+	})
+	if err != nil {
+		return "", err
+	}
+	result, err := reserveOrphanRecoveryScript.Run(r.ctx, r.client,
+		[]string{deploymentQueueKey, deploymentDelayedQueueKey, deploymentProcessingQueueKey, fmt.Sprintf("%s:%d", deploymentLockKey, projectID)},
+		strconv.FormatUint(uint64(projectID), 10), string(metadata), int64((2 * time.Minute).Milliseconds()),
+	).Int()
+	if err != nil {
+		return "", fmt.Errorf("reserve deployment admission: %w", err)
+	}
+	if result == 0 {
+		return "", nil // Already queued or locked
+	}
+	return token, nil
+}
+
+// ReserveAdminRequeue acquires the deployment lock for an administrative requeue,
+// superseding any previous lock holder and returning the new fencing token.
+func (r *RedisService) ReserveAdminRequeue(projectID uint) (string, error) {
+	token := generateLockToken()
+	now := time.Now()
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "admin-requeue"
+	}
+	metadata, err := json.Marshal(LockMetadata{
+		Token:         token,
+		WorkerID:      "admin_requeue",
+		DeploymentID:  "",
+		Hostname:      hostname,
+		StartedAt:     now,
+		LastHeartbeat: now,
+	})
+	if err != nil {
+		return "", err
+	}
+	lockKey := fmt.Sprintf("%s:%d", deploymentLockKey, projectID)
+	// Admin requeue overrides any previous lock unconditionally and sets 2-minute lease
+	if err := r.client.Set(r.ctx, lockKey, string(metadata), 2*time.Minute).Err(); err != nil {
+		return "", fmt.Errorf("failed to reserve admin requeue lock: %w", err)
+	}
+	slog.Info("Admin requeue lock reserved", "projectID", projectID)
+	return token, nil
+}
+
+// HasDeploymentJob checks whether a deployment job with the specified jobID
+// is present in the ready queue, delayed queue, or processing queue.
+func (r *RedisService) HasDeploymentJob(jobID string) (bool, error) {
+	if jobID == "" {
+		return false, nil
+	}
+	result, err := hasDeploymentJobScript.Run(
+		r.ctx,
+		r.client,
+		[]string{deploymentQueueKey, deploymentDelayedQueueKey, deploymentProcessingQueueKey},
+		jobID,
+	).Int()
+	if err != nil {
+		return false, fmt.Errorf("check deployment job existence: %w", err)
+	}
+	return result == 1, nil
 }
 
 // SetCache sets a value in cache with expiration
@@ -852,28 +1183,13 @@ func (r *RedisService) ClearHealthFailure(domainID uint) error {
 
 // RemoveFromQueue removes all queued instances of a specific project from the deployment queue and delayed queue
 func (r *RedisService) RemoveFromQueue(projectID uint) error {
-	// 1. Remove from active queue
-	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
-	if err == nil {
-		for _, res := range results {
-			var job DeploymentJob
-			if err := json.Unmarshal([]byte(res), &job); err == nil && job.ProjectID == projectID {
-				_ = r.client.LRem(r.ctx, deploymentQueueKey, 0, res).Err()
-			}
-		}
-	}
-
-	// 2. Remove from delayed queue
-	delayedResults, err := r.client.ZRange(r.ctx, deploymentDelayedQueueKey, 0, -1).Result()
-	if err == nil {
-		for _, res := range delayedResults {
-			var job DeploymentJob
-			if err := json.Unmarshal([]byte(res), &job); err == nil && job.ProjectID == projectID {
-				_ = r.client.ZRem(r.ctx, deploymentDelayedQueueKey, res).Err()
-			}
-		}
-	}
-	return nil
+	_, err := removeProjectDeploymentJobsScript.Run(
+		r.ctx,
+		r.client,
+		[]string{deploymentQueueKey, deploymentDelayedQueueKey, deploymentQueuedProjectsKey},
+		strconv.FormatUint(uint64(projectID), 10),
+	).Result()
+	return err
 }
 
 // RemoveDeploymentJob removes a specific queued deployment job without touching newer jobs for the same project.
@@ -882,35 +1198,13 @@ func (r *RedisService) RemoveDeploymentJob(jobID string) error {
 		return nil
 	}
 
-	results, err := r.client.LRange(r.ctx, deploymentQueueKey, 0, -1).Result()
-	if err != nil {
-		return fmt.Errorf("failed to inspect deployment queue: %w", err)
-	}
-	for _, res := range results {
-		var job DeploymentJob
-		if err := json.Unmarshal([]byte(res), &job); err == nil && job.JobID == jobID {
-			if err := r.client.LRem(r.ctx, deploymentQueueKey, 1, res).Err(); err != nil {
-				return fmt.Errorf("failed to remove queued deployment job: %w", err)
-			}
-			return nil
-		}
-	}
-
-	delayedResults, err := r.client.ZRange(r.ctx, deploymentDelayedQueueKey, 0, -1).Result()
-	if err != nil {
-		return fmt.Errorf("failed to inspect delayed deployment queue: %w", err)
-	}
-	for _, res := range delayedResults {
-		var job DeploymentJob
-		if err := json.Unmarshal([]byte(res), &job); err == nil && job.JobID == jobID {
-			if err := r.client.ZRem(r.ctx, deploymentDelayedQueueKey, res).Err(); err != nil {
-				return fmt.Errorf("failed to remove delayed deployment job: %w", err)
-			}
-			return nil
-		}
-	}
-
-	return nil
+	_, err := removeDeploymentJobScript.Run(
+		r.ctx,
+		r.client,
+		[]string{deploymentQueueKey, deploymentDelayedQueueKey, deploymentQueuedProjectsKey},
+		jobID,
+	).Result()
+	return err
 }
 
 // RenewDeploymentLock resets the TTL of an active deployment lock verifying the unique token and updating heartbeat metadata
@@ -1070,11 +1364,16 @@ func (r *RedisService) EnqueueDelayedDeploymentJob(job *DeploymentJob, delay tim
 	}
 
 	executeAt := time.Now().Add(delay).UnixMilli()
-	if err := r.client.ZAdd(r.ctx, deploymentDelayedQueueKey, redis.Z{Score: float64(executeAt), Member: string(data)}).Err(); err != nil {
+	if _, err := enqueueDelayedDeploymentJobScript.Run(
+		r.ctx,
+		r.client,
+		[]string{deploymentDelayedQueueKey, deploymentQueuedProjectsKey, deploymentStatsKey},
+		executeAt,
+		string(data),
+		strconv.FormatUint(uint64(job.ProjectID), 10),
+	).Result(); err != nil {
 		return fmt.Errorf("failed to enqueue delayed job: %w", err)
 	}
-
-	r.client.HIncrBy(r.ctx, deploymentStatsKey, "delayed", 1)
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package project
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/backend/internal/services/billing"
+	projectservice "github.com/laravel-paas/backend/internal/services/project"
 	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
@@ -306,18 +308,49 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) (handlerErr error) {
 		})
 	}
 
-	// Enqueue deployment job to Redis
-	jobID, err := h.redisService.EnqueueDeployment(project.ID, userID, "deploy")
+	// Reserve deployment admission lock
+	lockToken, err := h.redisService.ReserveDeployment(project.ID)
 	if err != nil {
-		slog.Error("Failed to enqueue deployment", "project_id", project.ID, "error", err.Error())
-		failureMessage := "Initial deployment could not be queued. Retry deployment."
-		if statusErr := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusFailed, failureMessage, 0, ""); statusErr != nil {
-			slog.Error("Failed to persist initial deployment queue failure", "project_id", project.ID, "error", statusErr)
-		} else {
-			project.DeploymentStatus = models.DepStatusFailed
-			project.DeploymentProgress = 0
-			project.DeploymentMessage = &failureMessage
+		slog.Error("Failed to reserve deployment admission lock on create", "id", project.ID, "error", err)
+		failureMessage := "Failed to reserve deployment admission lock. Retry deployment."
+		_ = h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusFailed, failureMessage, 0, "")
+		project.DeploymentStatus = models.DepStatusFailed
+		project.DeploymentMessage = &failureMessage
+		h.projectService.PopulateURL(project)
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"project": project,
+			"warning": failureMessage,
+		})
+	}
+	if lockToken == "" {
+		slog.Info("Initial deploy admission lock already taken", "id", project.ID)
+		h.projectService.PopulateURL(project)
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"project": project,
+		})
+	}
+
+	jobID := utils.GenerateRandomUID()
+	job := &infrastructure.DeploymentJob{
+		ProjectID:  project.ID,
+		UserID:     userID,
+		Type:       "deploy",
+		JobID:      jobID,
+		EnqueuedAt: time.Now(),
+	}
+
+	if statusErr := h.projectService.RequeueDeploymentIfMatch(c.Context(), project, jobID, "Deployment enqueued"); statusErr != nil {
+		slog.Error("Failed to update project deployment status on create", "id", project.ID, "error", statusErr)
+		_ = h.redisService.ReleaseDeploymentLock(project.ID, lockToken)
+		if infrastructure.IsStaleOwnerError(statusErr) {
+			if current, getErr := h.projectService.GetProjectByID(project.ID); getErr == nil {
+				h.projectService.PopulateURL(current)
+				return c.Status(fiber.StatusCreated).JSON(fiber.Map{"project": current})
+			}
 		}
+		failureMessage := "Failed to record deployment status in database. Retry deployment."
+		project.DeploymentStatus = models.DepStatusFailed
+		project.DeploymentMessage = &failureMessage
 		h.projectService.PopulateURL(project)
 		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 			"project": project,
@@ -325,9 +358,66 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) (handlerErr error) {
 		})
 	}
 
-	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Deployment enqueued", 0, jobID); err != nil {
-		slog.Warn("Failed to update project deployment status on create", "id", project.ID, "error", err)
+	// Enqueue deployment job to Redis with lockToken fencing
+	if err := h.redisService.EnqueueReplacingDeploymentJob(job, lockToken); err != nil {
+		if infrastructure.IsStaleOwnerError(err) {
+			slog.Info("Initial deploy superseded or lock lost", "id", project.ID, "job_id", jobID)
+			if current, getErr := h.projectService.GetProjectByID(project.ID); getErr == nil {
+				project = current
+			}
+			h.projectService.PopulateURL(project)
+			return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+				"project": project,
+			})
+		}
+		slog.Error("Failed to enqueue deployment", "project_id", project.ID, "error", err.Error())
+
+		// Verify whether job actually reached Redis despite the transport error
+		inQueue, checkErr := h.redisService.HasDeploymentJob(jobID)
+		if checkErr == nil && inQueue {
+			slog.Info("Initial deploy job was enqueued despite transport error", "project_id", project.ID, "job_id", jobID)
+			project.DeploymentStatus = models.DepStatusQueued
+			project.DeploymentJobID = &jobID
+			queueLength, _ := h.redisService.GetQueueLength()
+			h.projectService.PopulateURL(project)
+			return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+				"project":        project,
+				"queue_position": queueLength,
+			})
+		}
+		current, readErr := h.projectService.GetProjectByID(project.ID)
+		if readErr == nil && current != nil && (current.DeploymentJobID == nil || *current.DeploymentJobID != jobID || current.DeploymentStatus != models.DepStatusQueued) {
+			h.projectService.PopulateURL(current)
+			return c.Status(fiber.StatusCreated).JSON(fiber.Map{"project": current})
+		}
+
+		failureMessage := "Initial deployment could not be queued. Retry deployment."
+		if checkErr == nil && !inQueue && readErr == nil {
+			applied, failErr := h.projectService.FailQueuedDeploymentIfUnchanged(c.Context(), project.ID, jobID, failureMessage, true)
+			if failErr == nil {
+				if fresh, reloadErr := h.projectService.GetProjectByID(project.ID); reloadErr == nil {
+					h.projectService.PopulateURL(fresh)
+					if applied {
+						return c.Status(fiber.StatusCreated).JSON(fiber.Map{"project": fresh, "warning": failureMessage})
+					}
+					return c.Status(fiber.StatusCreated).JSON(fiber.Map{"project": fresh})
+				} else {
+					failErr = reloadErr
+				}
+			}
+			slog.Error("Failed to reconcile initial deployment after enqueue error", "project_id", project.ID, "error", failErr)
+		}
+		project.DeploymentStatus = models.DepStatusQueued
+		project.DeploymentJobID = &jobID
+		h.projectService.PopulateURL(project)
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"project": project,
+			"warning": "Deployment queue result could not be confirmed. Check deployment status before retrying.",
+		})
 	}
+
+	project.DeploymentStatus = models.DepStatusQueued
+	project.DeploymentJobID = &jobID
 
 	// Get queue position
 	queueLength, _ := h.redisService.GetQueueLength()
@@ -364,7 +454,11 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	}
 
 	// Check if already in queue to avoid duplicates
-	isQueued, _ := h.redisService.IsProjectQueued(project.ID)
+	isQueued, err := h.redisService.IsProjectQueued(project.ID)
+	if err != nil {
+		slog.Error("Failed to inspect deployment queue before redeploy", "project_id", project.ID, "error", err)
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Failed to inspect deployment queue"})
+	}
 	if isQueued {
 		queueLength, _ := h.redisService.GetQueueLength()
 		jobID := ""
@@ -379,6 +473,26 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 		})
 	}
 
+	// Reserve deployment admission lock
+	lockToken, err := h.redisService.ReserveDeployment(project.ID)
+	if err != nil {
+		slog.Error("Failed to reserve deployment lock", "project_id", project.ID, "error", err)
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Failed to reserve deployment admission"})
+	}
+	if lockToken == "" {
+		queueLength, _ := h.redisService.GetQueueLength()
+		jobID := ""
+		if project.DeploymentJobID != nil {
+			jobID = *project.DeploymentJobID
+		}
+		return c.JSON(fiber.Map{
+			"message":           "Project is already in queue or deployment in progress",
+			"job_id":            jobID,
+			"deployment_status": project.DeploymentStatus,
+			"queue_position":    queueLength,
+		})
+	}
+
 	clean := c.Query("clean")
 	jobType := "redeploy"
 	statusMsg := "Redeployment requested by user"
@@ -387,13 +501,13 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 		statusMsg = "Clean rebuild requested by user"
 	}
 
-	// Enqueue redeployment job to Redis
-	jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, jobType)
-	if err != nil {
-		slog.Error("Failed to enqueue redeployment", "project_id", project.ID, "error", err.Error())
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to queue redeployment",
-		})
+	jobID := utils.GenerateRandomUID()
+	job := &infrastructure.DeploymentJob{
+		ProjectID:  project.ID,
+		UserID:     project.UserID,
+		Type:       jobType,
+		JobID:      jobID,
+		EnqueuedAt: time.Now(),
 	}
 
 	// Truncate the build log immediately to prevent old logs from displaying
@@ -402,24 +516,73 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	_ = os.MkdirAll(projectPath, 0755)
 	_ = os.WriteFile(buildLogPath, []byte(""), 0644)
 
-	if err := h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, statusMsg, 0, jobID); err != nil {
-		if cleanupErr := h.redisService.RemoveDeploymentJob(jobID); cleanupErr != nil {
-			slog.Error("Failed to remove queued redeployment after state transition failure",
-				"project_id", project.ID,
-				"job_id", jobID,
-				"transition_error", err,
-				"cleanup_error", cleanupErr,
-			)
+	// Update DB state first under transaction/row-lock
+	if err := h.projectService.RequeueDeploymentIfMatch(c.Context(), project, jobID, statusMsg); err != nil {
+		slog.Error("Failed to update project deployment status to queued", "project_id", project.ID, "job_id", jobID, "error", err)
+		_ = h.redisService.ReleaseDeploymentLock(project.ID, lockToken)
+		if infrastructure.IsStaleOwnerError(err) {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Redeployment superseded by newer deployment"})
 		}
-		slog.Error("Failed to update project deployment status to queued",
-			"project_id", project.ID,
-			"job_id", jobID,
-			"error", err,
-		)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to queue redeployment",
 		})
 	}
+
+	// Enqueue replacing deployment job to Redis with lockToken fencing
+	if err := h.redisService.EnqueueReplacingDeploymentJob(job, lockToken); err != nil {
+		if infrastructure.IsStaleOwnerError(err) {
+			slog.Info("Redeploy superseded or lock lost", "project_id", project.ID, "job_id", jobID)
+			current, getErr := h.projectService.GetProjectByID(project.ID)
+			if getErr == nil && current != nil {
+				if current.DeploymentJobID != nil && *current.DeploymentJobID != jobID {
+					newerJobID := *current.DeploymentJobID
+					hasNewer, _ := h.redisService.HasDeploymentJob(newerJobID)
+					isActiveInDB := !models.IsTerminalDeploymentStatus(current.DeploymentStatus)
+					if hasNewer || isActiveInDB {
+						return c.JSON(fiber.Map{
+							"message":           "Redeployment superseded by newer active job",
+							"superseded":        true,
+							"superseded_by":     newerJobID,
+							"deployment_status": current.DeploymentStatus,
+						})
+					}
+				}
+				if current.DeploymentStatus == models.DepStatusCancelled {
+					return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+						"error": "Deployment was cancelled before publication",
+					})
+				}
+			}
+			_, _ = h.projectService.FailQueuedDeploymentIfUnchanged(c.Context(), project.ID, jobID, "Deployment lock lost before publication", true)
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "Deployment lock lost or expired before publication",
+			})
+		}
+		slog.Error("Failed to enqueue redeployment", "project_id", project.ID, "error", err.Error())
+
+		// Uncertain publish reconciliation:
+		inQueue, checkErr := h.redisService.HasDeploymentJob(job.JobID)
+		if checkErr != nil {
+			slog.Warn("Cannot verify enqueue status after error; preserving queued state", "project_id", project.ID, "job_id", job.JobID, "check_error", checkErr)
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Failed to verify queue status; project remains queued"})
+		}
+		if inQueue {
+			slog.Info("Redeploy job was enqueued despite transport error", "project_id", project.ID, "job_id", job.JobID)
+			queueLength, _ := h.redisService.GetQueueLength()
+			return c.JSON(fiber.Map{
+				"message":           "Redeployment queued successfully",
+				"job_id":            jobID,
+				"deployment_status": models.DepStatusQueued,
+				"queue_position":    queueLength,
+			})
+		}
+
+		_, _ = h.projectService.FailQueuedDeploymentIfUnchanged(c.Context(), project.ID, job.JobID, "Failed to enqueue deployment job in Redis", true)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to queue redeployment",
+		})
+	}
+
 	// Get queue position
 	queueLength, _ := h.redisService.GetQueueLength()
 
@@ -583,6 +746,12 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 	if req.CommitSHA == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "commit_sha is required"})
 	}
+	if len(req.CommitSHA) != 40 && len(req.CommitSHA) != 64 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid commit_sha"})
+	}
+	if _, err := hex.DecodeString(req.CommitSHA); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid commit_sha"})
+	}
 
 	imageTag := fmt.Sprintf("paas-%s:%s", project.Subdomain, req.CommitSHA)
 	inspectRes, inspectErr := utils.Run(10*time.Second, "docker", "image", "inspect", imageTag)
@@ -591,43 +760,38 @@ func (h *ProjectHandler) Rollback(c *fiber.Ctx) error {
 	if imageExists {
 		slog.Info("Performing instant rollback using existing local image", "project", project.Subdomain, "commit", req.CommitSHA)
 
-		project.LastCommitHash = req.CommitSHA
-		h.db.Model(project).Update("last_commit_hash", req.CommitSHA)
-
-		jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "rollback")
+		jobID, err := h.projectService.EnqueueGuardedDeploymentForCommit(c.Context(), project.ID, project.UserID, "rollback", "Instant rollback to "+req.CommitSHA, req.CommitSHA)
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to enqueue rollback"})
+			return rollbackAdmissionError(c, project.ID, err)
 		}
-
-		_ = h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Instant rollback to "+req.CommitSHA, 0, jobID)
 
 		return c.JSON(fiber.Map{
 			"message": "Instant rollback initiated successfully",
 			"type":    "instant",
+			"job_id":  jobID,
 		})
 	} else {
 		slog.Info("Image not found locally, performing rebuild/redeploy fallback", "project", project.Subdomain, "commit", req.CommitSHA)
 
-		project.LastCommitHash = req.CommitSHA
-		h.db.Model(project).Update("last_commit_hash", req.CommitSHA)
-
-		jobID, err := h.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy")
+		jobID, err := h.projectService.EnqueueGuardedDeploymentForCommit(c.Context(), project.ID, project.UserID, "redeploy", "Rebuild fallback for rollback to "+req.CommitSHA, req.CommitSHA)
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to enqueue redeploy fallback"})
+			return rollbackAdmissionError(c, project.ID, err)
 		}
-
-		projectPath := project.GetProjectPath(h.cfg.ProjectsPath)
-		buildLogPath := filepath.Join(projectPath, "build.log")
-		_ = os.MkdirAll(projectPath, 0755)
-		_ = os.WriteFile(buildLogPath, []byte(""), 0644)
-
-		_ = h.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Rebuild fallback for rollback to "+req.CommitSHA, 0, jobID)
 
 		return c.JSON(fiber.Map{
 			"message": "Rebuild rollback initiated successfully",
 			"type":    "rebuild",
+			"job_id":  jobID,
 		})
 	}
+}
+
+func rollbackAdmissionError(c *fiber.Ctx, projectID uint, err error) error {
+	slog.Error("Failed to admit rollback", "project_id", projectID, "error", err)
+	if errors.Is(err, projectservice.ErrDeploymentBusy) || infrastructure.IsStaleOwnerError(err) {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "Deployment already in progress or superseded"})
+	}
+	return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Failed to queue rollback. Please retry later."})
 }
 
 func (h *ProjectHandler) requireBillingRuntimeAction(c *fiber.Ctx, project *models.Project) error {

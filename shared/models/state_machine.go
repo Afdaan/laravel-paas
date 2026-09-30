@@ -50,6 +50,11 @@ func IsValidDeploymentTransition(from, to DeploymentStatus) bool {
 		return true
 	}
 
+	// Requeue is a recovery transition used by watchdog and admin repair paths.
+	if to == DepStatusQueued && from != DepStatusQueued {
+		return true
+	}
+
 	// Unconditional terminal or interrupt transitions
 	if to == DepStatusFailed || to == DepStatusCancelled || to == DepStatusRollback {
 		return true
@@ -65,20 +70,30 @@ func IsValidDeploymentTransition(from, to DeploymentStatus) bool {
 	case DepStatusCloning:
 		return to == DepStatusBuilding || to == DepStatusCompleted
 	case DepStatusBuilding:
-		return to == DepStatusProvisioning || to == DepStatusStarting || to == DepStatusHealthchecking
-	case DepStatusProvisioning:
 		return to == DepStatusStarting || to == DepStatusHealthchecking
+	// Laravel projects on SQLite migrate before the readiness probe, so the worker
+	// moves straight from starting to migrating (deployment_worker.go).
 	case DepStatusStarting:
-		return to == DepStatusHealthchecking
+		return to == DepStatusHealthchecking || to == DepStatusMigrating
 	case DepStatusHealthchecking:
 		return to == DepStatusMigrating || to == DepStatusPromoting || to == DepStatusRollback
 	case DepStatusMigrating:
-		return to == DepStatusPromoting || to == DepStatusRollback
+		return to == DepStatusHealthchecking || to == DepStatusPromoting || to == DepStatusRollback
 	case DepStatusPromoting:
 		return to == DepStatusCleanup || to == DepStatusCompleted
 	case DepStatusCleanup:
 		return to == DepStatusCompleted
 	}
 
+	return false
+}
+
+// IsTerminalDeploymentStatus reports whether a deployment status ends the job.
+// Terminal statuses are the only ones that set deployment_finished_at.
+func IsTerminalDeploymentStatus(status DeploymentStatus) bool {
+	switch status {
+	case DepStatusCompleted, DepStatusFailed, DepStatusCancelled, DepStatusRollback:
+		return true
+	}
 	return false
 }

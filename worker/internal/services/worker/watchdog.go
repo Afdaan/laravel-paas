@@ -28,6 +28,19 @@ import (
 	projectServicePkg "github.com/laravel-paas/worker/internal/services/project"
 )
 
+// Staleness thresholds used by StartStaleBuildWatchdog. A deployment holding a
+// Redis lease is governed by leaseHeartbeatStaleAfter; only deployments with no
+// lock metadata at all fall back to the much longer dbHeartbeatStaleAfter.
+const (
+	// leaseHeartbeatStaleAfter bounds the gap between lease heartbeat renewals.
+	// This is the threshold that governs in practice, because every running
+	// deployment holds a lock.
+	leaseHeartbeatStaleAfter = 3 * time.Minute
+	// dbHeartbeatStaleAfter applies only when Redis has no lock metadata for the
+	// project, so the database heartbeat is the sole liveness signal.
+	dbHeartbeatStaleAfter = 15 * time.Minute
+)
+
 // CentralWatchdog oversees system consistency and maintenance tasks
 type CentralWatchdog struct {
 	cfg            *config.Config
@@ -97,7 +110,6 @@ func (w *CentralWatchdog) recoverOrphanedBuilds() {
 		models.DepStatusPreparing,
 		models.DepStatusCloning,
 		models.DepStatusBuilding,
-		models.DepStatusProvisioning,
 		models.DepStatusStarting,
 		models.DepStatusHealthchecking,
 		models.DepStatusMigrating,
@@ -117,37 +129,114 @@ func (w *CentralWatchdog) recoverOrphanedBuilds() {
 	slog.Info("Central watchdog: recovering orphaned projects from previous session", "count", len(projects))
 
 	for i := range projects {
-		project := projects[i]
-
-		isQueued, _ := w.redisService.IsProjectQueued(project.ID)
-		if isQueued {
-			slog.Info("Central watchdog: project is already in queue, skipping recovery", "id", project.ID)
-			continue
-		}
-
-		recoveryLog := "Recovered from unexpected shutdown (re-queued)."
-		jobID := ""
-		if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
-			jobID = *project.DeploymentJobID
-		}
-		if _, err := w.projectService.TransitionDeploymentState(context.Background(), project.ID, jobID, models.DepStatusQueued, 0, "watchdog_recovery", recoveryLog); err != nil {
-			slog.Error("Central watchdog: failed to transition project deployment state during recovery", "id", project.ID, "error", err)
-		}
-		_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-			"error_log": recoveryLog,
-		})
-
-		if err := w.redisService.ForceReleaseDeploymentLock(project.ID, "Watchdog recovering orphaned build from unexpected shutdown"); err != nil {
-			slog.Warn("Central watchdog: failed to force release lock during recovery", "id", project.ID, "error", err)
-		}
-
-		if jobID, err := w.redisService.EnqueueDeployment(project.ID, project.UserID, "redeploy"); err != nil {
-			slog.Error("Central watchdog: failed to re-queue project during recovery", "id", project.ID, "error", err)
-		} else {
-			slog.Info("Central watchdog: project automatically re-queued for reliability", "id", project.ID)
-			_ = w.projectService.UpdateDeploymentStatus(project.ID, models.DepStatusQueued, "Watchdog recovery re-queue", 0, jobID)
-		}
+		w.recoverOrphanedBuild(projects[i])
 	}
+}
+
+func (w *CentralWatchdog) recoverOrphanedBuild(project models.Project) {
+	token, err := w.redisService.ReserveOrphanRecovery(project.ID)
+	if err != nil {
+		slog.Warn("Central watchdog: failed to reserve orphan recovery", "id", project.ID, "error", err)
+		return
+	}
+	if token == "" {
+		return
+	}
+	defer func() {
+		if err := w.redisService.ReleaseDeploymentLock(project.ID, token); err != nil {
+			slog.Error("Central watchdog: failed to release recovery lock", "id", project.ID, "error", err)
+		}
+	}()
+
+	current, err := w.projectRepo.GetByID(project.ID)
+	if err != nil {
+		slog.Error("Central watchdog: failed to reload project during recovery", "id", project.ID, "error", err)
+		return
+	}
+	if current.DeploymentStatus != project.DeploymentStatus || !sameDeploymentJob(current.DeploymentJobID, project.DeploymentJobID) {
+		return
+	}
+
+	job := &infrastructure.DeploymentJob{
+		ProjectID: project.ID, UserID: project.UserID, Type: "redeploy",
+		JobID: utils.GenerateRandomUID(), EnqueuedAt: time.Now(),
+	}
+	_, applied, transitionErr := w.projectService.TransitionStateIfMatch(
+		context.Background(),
+		project.ID,
+		project.DeploymentStatus,
+		project.DeploymentJobID,
+		job.JobID,
+		models.DepStatusQueued,
+		0,
+		"watchdog_recovery",
+		"Recovered from unexpected shutdown (re-queued).",
+	)
+	if transitionErr != nil {
+		slog.Error("Central watchdog: failed to transition project deployment state during recovery", "id", project.ID, "error", transitionErr)
+		return
+	}
+	if !applied {
+		slog.Info("Central watchdog: recovery aborted: project state modified by concurrent operation", "id", project.ID)
+		return
+	}
+
+	if err := w.redisService.EnqueueReplacingDeploymentJob(job, token); err != nil {
+		if infrastructure.IsStaleOwnerError(err) {
+			slog.Info("Central watchdog: recovery superseded by newer operation", "id", project.ID, "job_id", job.JobID)
+			return
+		}
+		slog.Error("Central watchdog: failed to re-queue project during recovery", "id", project.ID, "error", err)
+
+		// Uncertain publish reconciliation:
+		// An EVAL command may commit in Redis and successfully enqueue the job, but network disruption
+		// or timeout can cause the client to receive an error. Before asserting terminal failure,
+		// inspect whether the predetermined job was actually enqueued or already claimed by a worker.
+		inQueue, checkErr := w.redisService.HasDeploymentJob(job.JobID)
+		if checkErr != nil {
+			// If Redis cannot be inspected, do NOT destroy state by asserting failure.
+			// Preserve the recoverable queued state so future watchdog cycles or operators can reconcile.
+			slog.Warn("Central watchdog: cannot verify recovery enqueue status after error; preserving queued state", "id", project.ID, "job_id", job.JobID, "check_error", checkErr)
+			return
+		}
+
+		if inQueue {
+			// The job exists in Redis (ready, delayed, or processing). The publish succeeded server-side.
+			slog.Info("Central watchdog: recovery job was enqueued despite transport error", "id", project.ID, "job_id", job.JobID)
+			return
+		}
+
+		// Check if a worker already claimed the job and progressed it past queued in the database.
+		if current, getErr := w.projectRepo.GetByID(project.ID); getErr == nil && current != nil {
+			if current.DeploymentJobID != nil && *current.DeploymentJobID == job.JobID && current.DeploymentStatus != models.DepStatusQueued {
+				slog.Info("Central watchdog: recovery job was claimed and progressed by worker despite transport error", "id", project.ID, "job_id", job.JobID, "status", current.DeploymentStatus)
+				return
+			}
+			if current.DeploymentJobID != nil && *current.DeploymentJobID != job.JobID {
+				slog.Info("Central watchdog: recovery superseded by newer deployment job", "id", project.ID, "job_id", job.JobID, "current_job_id", *current.DeploymentJobID)
+				return
+			}
+		}
+
+		// Confirmed genuine failure: job is NOT in Redis and NOT claimed by any worker.
+		// Failure compensation must be conditional on this job still owning the queued
+		// database row inside the transaction, avoiding overwriting a newer concurrent job.
+		applied, transitionErr := w.projectService.FailQueuedDeploymentIfUnchanged(context.Background(), project.ID, job.JobID, "Recovery queue unavailable", false)
+		if transitionErr != nil {
+			slog.Error("Central watchdog: failed to record recovery queue failure", "id", project.ID, "job_id", job.JobID, "error", transitionErr)
+		} else if !applied {
+			slog.Warn("Central watchdog: recovery failure compensation skipped: project state owned by newer job or no longer queued", "id", project.ID, "job_id", job.JobID)
+		}
+		return
+	}
+	slog.Info("Central watchdog: project automatically re-queued for reliability", "id", project.ID, "job_id", job.JobID)
+}
+
+func sameDeploymentJob(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func (w *CentralWatchdog) recoverOrphanedDeletions() {
@@ -177,24 +266,28 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 		time.Sleep(2 * time.Minute)
 
 		for w.running {
-			staleThreshold := 15 * time.Minute
+			w.checkStaleBuilds()
+			time.Sleep(1 * time.Minute)
+		}
+	}()
+}
 
-			inProgressStatuses := []models.DeploymentStatus{
-				models.DepStatusPreparing,
-				models.DepStatusCloning,
-				models.DepStatusBuilding,
-				models.DepStatusProvisioning,
-				models.DepStatusStarting,
-				models.DepStatusHealthchecking,
-				models.DepStatusMigrating,
-				models.DepStatusPromoting,
-			}
-			projects, err := w.projectRepo.ListByDeploymentStatuses(inProgressStatuses)
-			if err != nil {
-				slog.Error("Central watchdog: failed to query in-progress projects", "error", err)
-				time.Sleep(5 * time.Minute)
-				continue
-			}
+func (w *CentralWatchdog) checkStaleBuilds() {
+	inProgressStatuses := []models.DeploymentStatus{
+		models.DepStatusQueued,
+		models.DepStatusPreparing,
+		models.DepStatusCloning,
+		models.DepStatusBuilding,
+		models.DepStatusStarting,
+		models.DepStatusHealthchecking,
+		models.DepStatusMigrating,
+		models.DepStatusPromoting,
+	}
+	projects, err := w.projectRepo.ListByDeploymentStatuses(inProgressStatuses)
+	if err != nil {
+		slog.Error("Central watchdog: failed to query in-progress projects", "error", err)
+		return
+	}
 
 			for i := range projects {
 				project := projects[i]
@@ -207,26 +300,59 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 				}
 				var reason string
 
+				// If the project is still in queued state, verify if the job is active in Redis (ready, delayed, or processing).
+				// This prevents reaping jobs waiting in queue or claimed by a worker and waiting for a concurrency slot.
+				if project.DeploymentStatus == models.DepStatusQueued {
+					if jobID != "" && jobID != "unknown" {
+						hasJob, err := w.redisService.HasDeploymentJob(jobID)
+						if err == nil && hasJob {
+							continue
+						}
+					}
+					queued, queueErr := w.redisService.IsProjectQueued(project.ID)
+					if queueErr != nil {
+						slog.Warn("Central watchdog: failed to inspect deployment queue", "projectId", project.ID, "error", queueErr)
+						continue
+					}
+					if queued {
+						continue
+					}
+				}
+
 				lockMeta, err := w.redisService.GetLockMetadata(project.ID)
 				if err != nil {
 					slog.Warn("Central watchdog: failed to fetch lock metadata from Redis", "projectId", project.ID, "error", err)
 					continue
 				}
 				if lockMeta != nil {
+					// Admission or recovery reservations have empty DeploymentID or reservation worker IDs;
+					// they are actively preparing to queue and must not be treated as crashed workers.
+					if lockMeta.DeploymentID == "" || lockMeta.WorkerID == "admin_requeue" || lockMeta.WorkerID == "redeploy" || lockMeta.WorkerID == "watchdog" {
+						continue
+					}
 					jobID = lockMeta.DeploymentID
 					leaseMeta, _ := w.redisService.GetDeploymentLease(jobID)
 					if leaseMeta == nil {
 						reason = "deployment job lease missing (worker terminated abruptly)"
 					} else {
 						lastHeartbeat, err := time.Parse(time.RFC3339, leaseMeta.LastHeartbeat)
-						if err == nil && time.Since(lastHeartbeat) > 3*time.Minute {
+						if err == nil && time.Since(lastHeartbeat) > leaseHeartbeatStaleAfter {
 							reason = fmt.Sprintf("deployment job lease heartbeat expired (last heartbeat %s)", time.Since(lastHeartbeat).Round(time.Second))
 						}
 					}
-				} else if project.DeploymentHeartbeatAt != nil && time.Since(*project.DeploymentHeartbeatAt) > staleThreshold {
+				} else if project.DeploymentHeartbeatAt != nil && time.Since(*project.DeploymentHeartbeatAt) > dbHeartbeatStaleAfter {
 					reason = fmt.Sprintf("stale deployment timeout (heartbeat %s ago)", time.Since(*project.DeploymentHeartbeatAt).Round(time.Second))
-				} else if project.DeploymentHeartbeatAt == nil && time.Since(project.UpdatedAt) > staleThreshold {
+				} else if project.DeploymentHeartbeatAt == nil && time.Since(project.UpdatedAt) > dbHeartbeatStaleAfter {
 					reason = "stale deployment timeout (no active lock or lease)"
+				}
+
+				if reason != "" && project.DeploymentStatus == models.DepStatusQueued {
+					// A worker may have popped the job between the scan and now.
+					// Re-read before failing so a deployment that just started is
+					// never killed by this loop.
+					if fresh, err := w.projectRepo.GetByID(project.ID); err != nil || fresh.DeploymentStatus != models.DepStatusQueued {
+						continue
+					}
 				}
 
 				if reason != "" {
@@ -241,13 +367,12 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 
 					// Use a timeout context instead of context.Background() to prevent indefinite hangs during DB failure
 					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					if _, err := w.projectService.TransitionDeploymentState(ctx, project.ID, jobID, models.DepStatusFailed, project.DeploymentProgress, "orphan_recovered", sanitizedMsg); err != nil {
-						slog.Error("Central watchdog: failed atomic state transition for failed project deployment", "id", project.ID, "error", err)
-					}
+					_, err := w.projectService.TransitionDeploymentState(ctx, project.ID, jobID, models.DepStatusFailed, project.DeploymentProgress, "orphan_recovered", sanitizedMsg)
 					cancel()
-					_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-						"error_log": sanitizedMsg,
-					})
+					if err != nil {
+						slog.Error("Central watchdog: failed atomic state transition for failed project deployment", "id", project.ID, "error", err)
+						continue
+					}
 					w.updateGitHubCommitStatus(&project, models.DepStatusFailed, sanitizedMsg)
 
 					// Force the timeout message into the build log stream so the UI terminal displays it immediately
@@ -290,11 +415,7 @@ func (w *CentralWatchdog) StartStaleBuildWatchdog() {
 					}
 				}
 			}
-
-			time.Sleep(1 * time.Minute)
 		}
-	}()
-}
 
 func (w *CentralWatchdog) updateGitHubCommitStatus(project *models.Project, state models.DeploymentStatus, description string) {
 	if project.GithubInstallationID == nil || *project.GithubInstallationID == 0 || project.GithubRepoOwner == "" || project.GithubRepoName == "" || project.LastCommitHash == "" {
@@ -454,6 +575,18 @@ func (w *CentralWatchdog) inspectContainerState(containerID string) (running boo
 	return running, oomKilled, nil
 }
 
+// recordHealthNotice stores a runtime health notice for a running project.
+// These are not deployment failures, so they never touch error_log.
+func (w *CentralWatchdog) recordHealthNotice(projectID uint, notice string) {
+	now := time.Now()
+	if err := w.projectRepo.UpdateMetadata(projectID, map[string]interface{}{
+		"health_notice":    notice,
+		"health_notice_at": &now,
+	}); err != nil {
+		slog.Warn("Central watchdog: failed to persist health notice", "projectId", projectID, "error", err)
+	}
+}
+
 func (w *CentralWatchdog) recordAutoHealingEvent(projectID uint, eventType string, payload string, deploymentJobID *string) {
 	jobID := "system"
 	if deploymentJobID != nil && *deploymentJobID != "" {
@@ -478,7 +611,11 @@ func (w *CentralWatchdog) recordAutoHealingEvent(projectID uint, eventType strin
 }
 
 func (w *CentralWatchdog) getActiveLogPath(project *models.Project, jobID string) string {
-	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
+	projectsPath := ""
+	if w.cfg != nil {
+		projectsPath = w.cfg.ProjectsPath
+	}
+	projectPath := project.GetProjectPath(projectsPath)
 	if jobID != "" && jobID != "unknown" {
 		buildPath := filepath.Join(projectPath, "logs", fmt.Sprintf("build-%s.log", jobID))
 		if _, err := os.Stat(buildPath); err == nil {
@@ -513,10 +650,7 @@ func (w *CentralWatchdog) autoHealingCheck() {
 				if oomKilled {
 					slog.Warn("Central watchdog: container OOM killed", "projectId", project.ID, "containerId", *project.ContainerID)
 					w.recordAutoHealingEvent(project.ID, "oom_killed", "Container terminated: Out of Memory (OOM Killed)", project.DeploymentJobID)
-					errorMsg := "Your application was terminated by the system because it exceeded its RAM limit. Please optimize your memory consumption or contact the administrator."
-					_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-						"error_log": errorMsg,
-					})
+					w.recordHealthNotice(project.ID, "Your application was terminated by the system because it exceeded its RAM limit. Please optimize your memory consumption or contact the administrator.")
 				} else {
 					slog.Warn("Central watchdog: container is not running", "projectId", project.ID, "containerId", *project.ContainerID)
 					w.recordAutoHealingEvent(project.ID, "container_crashed", "Container is not running", project.DeploymentJobID)
@@ -539,10 +673,7 @@ func (w *CentralWatchdog) autoHealingCheck() {
 				if oomKilled {
 					slog.Warn("Central watchdog: worker container OOM killed", "projectId", project.ID, "containerId", *project.WorkerContainerID)
 					w.recordAutoHealingEvent(project.ID, "worker_oom_killed", "Worker container terminated: Out of Memory (OOM Killed)", project.DeploymentJobID)
-					errorMsg := "Your background worker was terminated by the system because it exceeded its RAM limit."
-					_ = w.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
-						"error_log": errorMsg,
-					})
+					w.recordHealthNotice(project.ID, "Your background worker was terminated by the system because it exceeded its RAM limit.")
 				} else {
 					slog.Warn("Central watchdog: worker container is not running", "projectId", project.ID, "containerId", *project.WorkerContainerID)
 					w.recordAutoHealingEvent(project.ID, "worker_container_crashed", "Worker container is not running", project.DeploymentJobID)

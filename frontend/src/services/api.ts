@@ -345,8 +345,10 @@ export const projectsAPI = {
   updateEnv: (id: number | string, content: string) =>
     api.put(`/projects/${id}/env`, { content }),
 
-  buildLogs: (id: number | string) =>
-    api.get(`/projects/${id}/build-logs`),
+  /** `tail` asks for the last N lines instead of the 256 KB window, so a
+   *  small readout does not pull the whole buffer on every poll. */
+  buildLogs: (id: number | string, tail?: number) =>
+    api.get(`/projects/${id}/build-logs`, { params: tail ? { tail } : undefined }),
 
   getDeploymentEvents: (id: number | string, all = false, options?: AxiosRequestConfig) =>
     api.get(`/projects/${id}/deployment-events`, { params: { all }, ...options }),
