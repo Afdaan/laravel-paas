@@ -4,9 +4,11 @@ import { toast } from 'sonner'
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowUpRight,
   Check,
   Copy,
   ExternalLink,
+  Settings,
   FileText,
   RefreshCw,
   X,
@@ -23,6 +25,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 import { getProjectCreationPhase } from '@/components/project/projectCreationContext'
+import { parseFailure } from '@/components/project/deploymentFailure'
 import {
   clampProgress,
   DEPLOY_STEPS,
@@ -115,28 +118,40 @@ function StepDot({ state }: { state: DeployStepState }) {
   )
 }
 
-function PipelineStep({ label, state, detail, duration }: {
+function PipelineStep({ label, state, detail, description, duration }: {
   label: string
   state: DeployStepState
+  /** What this step is reporting right now, when it has something to say. */
   detail?: string
+  /** What the step does. Shown whenever there is no live detail, so a row is
+   *  never just a label: a queued step explains what is coming, and a finished
+   *  one still says what it did. */
+  description?: string
   duration?: string
 }) {
+  const body = detail || description
+  const isLive = Boolean(detail)
   return (
     <li className="grid grid-cols-[18px_minmax(0,1fr)] gap-3 px-4 py-3">
       <div className="flex justify-center pt-px"><StepDot state={state} /></div>
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+      {/* Narrow screens give the detail its own line under the label rather than
+          squeezing it between the label and the duration, where a two-word
+          message was wrapping into three lines. */}
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:gap-y-1">
         <span className={cn(
-          'min-w-[6.5rem] text-[13px]',
+          'order-1 text-[13px] sm:min-w-[6.5rem]',
           state === 'pending' ? 'text-muted-foreground' : 'font-medium text-foreground',
         )}>{label}</span>
-        {detail && (
-          <span className={cn(
-            'min-w-0 flex-1 break-words text-xs',
-            state === 'failed' ? 'text-destructive' : state === 'active' ? 'text-foreground' : 'text-muted-foreground',
-          )}>{detail}</span>
-        )}
         {duration && (
-          <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">{duration}</span>
+          <span className="order-2 ml-auto font-mono text-[11px] tabular-nums text-muted-foreground sm:order-3">{duration}</span>
+        )}
+        {body && (
+          <span className={cn(
+            'order-3 min-w-0 basis-full break-words text-xs sm:order-2 sm:basis-auto sm:flex-1',
+            state === 'failed' && isLive ? 'text-destructive'
+              : state === 'active' && isLive ? 'text-foreground'
+                : 'text-muted-foreground',
+          )}>{body}</span>
         )}
       </div>
     </li>
@@ -145,11 +160,18 @@ function PipelineStep({ label, state, detail, duration }: {
 
 function MetaCell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="border-t px-4 py-3 first:border-t-0 sm:[&:nth-child(-n+2)]:border-t-0 sm:[&:nth-child(2n)]:border-l lg:border-t-0 lg:border-l lg:first:border-l-0">
-      <dt className="mb-1 text-[10px] uppercase tracking-[0.05em] text-muted-foreground">{label}</dt>
-      <dd className="text-[13px] text-foreground">{children}</dd>
+    <div className="min-w-0 border-t px-4 py-2.5 first:border-t-0 sm:border-t-0 sm:border-l sm:first:border-l-0">
+      <dt className="mb-0.5 text-xs text-muted-foreground">{label}</dt>
+      <dd className="font-mono text-[13px] text-foreground">{children}</dd>
     </div>
   )
+}
+
+// ponytail: GitHub and GitLab both resolve /commit/<sha>; Bitbucket uses
+// /commits/ and lands on a 404 until a host-aware mapping is worth adding.
+function commitUrl(repositoryUrl: string | undefined, hash: string | undefined) {
+  if (!repositoryUrl || !hash || !/^https?:\/\//.test(repositoryUrl)) return null
+  return `${repositoryUrl.replace(/\/+$/, '').replace(/\.git$/, '')}/commit/${hash}`
 }
 
 export default function ProjectDeployment() {
@@ -389,8 +411,12 @@ export default function ProjectDeployment() {
   }
 
   const shortCommit = project.last_commit_hash?.slice(0, 7)
+  const shortCommitUrl = commitUrl(project.repository_url, project.last_commit_hash)
   const liveMessage = getLiveMessage(project)
-  const failureMessage = phase === 'failed' ? getFailureMessage(project) : undefined
+  const failure = phase === 'failed' ? parseFailure(getFailureMessage(project)) : null
+  // A project that has never served traffic has a subdomain but nothing behind
+  // it, so the metadata card names it without inviting a click into a 502.
+  const domainIsLive = phase === 'ready' || Boolean(project.deployment_finished_at && phase !== 'failed')
   const stageLabel = stalled
     ? t('projectDetail.provisioning.noSignal')
     : phase === 'ready'
@@ -412,6 +438,12 @@ export default function ProjectDeployment() {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
     })
     : null
+
+  // "Pending" promises a value that is still on its way. After a failure
+  // nothing more is coming, so the cells say so instead.
+  const unknownValue = phase === 'failed'
+    ? t('projectDetail.provisioning.notDetected')
+    : t('projectDetail.provisioning.pending')
 
   const pipelineStatus = phase === 'ready'
     ? t('projectDetail.provisioning.pipelineCompleted')
@@ -469,6 +501,11 @@ export default function ProjectDeployment() {
             )}
           </Badge>
 
+          {/* The badge reports state rather than offering an action. On a narrow
+              screen this break puts it on its own line so the buttons wrap
+              among themselves, without stretching the pill to fill the row. */}
+          <span className="basis-full sm:hidden" aria-hidden="true" />
+
           {projectUrl && phase === 'ready' && (
             <Button variant="outline" size="sm" onClick={handleCopyUrl}>
               <Copy className="size-3.5" aria-hidden="true" />
@@ -487,9 +524,23 @@ export default function ProjectDeployment() {
             </Button>
           )}
           {phase === 'failed' && (
-            <Button size="sm" type="button" onClick={() => void handleRetry()} disabled={isRetrying}>
+            <Button
+              size="sm"
+              type="button"
+              // Retry leads only when it can plausibly change the outcome. For a
+              // configuration failure it stays available but steps aside.
+              variant={failure?.remedy === 'settings' ? 'outline' : 'default'}
+              onClick={() => void handleRetry()}
+              disabled={isRetrying}
+            >
               {isRetrying ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" aria-hidden="true" />}
               {t('projectDetail.provisioning.retryDeployment')}
+            </Button>
+          )}
+          {phase === 'failed' && failure?.remedy === 'settings' && (
+            <Button size="sm" render={<Link to={`/projects/${uid}?tab=settings`} />}>
+              <Settings className="size-3.5" aria-hidden="true" />
+              {t('projectDetail.provisioning.openSettings')}
             </Button>
           )}
           <Button
@@ -529,23 +580,11 @@ export default function ProjectDeployment() {
 
       {/* Pipeline */}
       <Card className="mb-3 gap-0 overflow-hidden py-0 shadow-none">
-        <div className="flex flex-wrap items-center justify-between gap-4 px-4 pb-3 pt-3.5">
-          <span className="text-[13px] font-medium">{t('projectDetail.provisioning.pipelineTitle')}</span>
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            {pipelineStatus}
-            <span aria-hidden="true">·</span>
-            <span className="tabular-nums">{progress}%</span>
-            {elapsed && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="font-mono tabular-nums">{elapsed}</span>
-              </>
-            )}
-          </span>
-        </div>
-
+        {/* Seated on the card's top edge rather than under the header. Directly
+            below a left-aligned label, a part-width rule reads as a selected-tab
+            indicator no matter how the track is coloured. */}
         <div
-          className="h-0.5 bg-border"
+          className="h-[3px] bg-muted"
           role="progressbar"
           aria-valuenow={progress}
           aria-valuemin={0}
@@ -561,6 +600,21 @@ export default function ProjectDeployment() {
           />
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-4 px-4 pb-3 pt-3.5">
+          <span className="text-[13px] font-medium">{t('projectDetail.provisioning.pipelineTitle')}</span>
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {pipelineStatus}
+            <span aria-hidden="true">·</span>
+            <span className="tabular-nums">{progress}%</span>
+            {elapsed && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums">{elapsed}</span>
+              </>
+            )}
+          </span>
+        </div>
+
         <ul className="divide-y">
           {DEPLOY_STEPS.map((step, index) => (
             <PipelineStep
@@ -568,6 +622,7 @@ export default function ProjectDeployment() {
               label={t(`projectDetail.provisioning.step_${step}`)}
               state={stepStates[index]}
               detail={stepDetails[index]}
+              description={t(`projectDetail.provisioning.desc_${step}`)}
               duration={stepDurations[index] !== null ? formatDuration(stepDurations[index]!) : undefined}
             />
           ))}
@@ -587,20 +642,31 @@ export default function ProjectDeployment() {
           </div>
         )}
 
-        {failureMessage && (
+        {failure && (
           <div className="flex gap-2.5 border-t bg-destructive/[0.05] px-4 py-3">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" aria-hidden="true" />
             {/* The worker appends a recommendation block to failure messages,
-                so this is multi-line and must keep its breaks. */}
-            <p className="whitespace-pre-line break-words font-mono text-xs leading-relaxed text-destructive">
-              {failureMessage}
+                so this is multi-line and must keep its breaks. The machine code
+                is dropped here and shown in the footer, where it stays
+                copyable for support without leading the sentence. */}
+            {/* Prose, so it is set in the body face. The worker's own log lines
+                stay monospaced in the build output card above; mixing the two
+                made a plain sentence read like terminal spill. */}
+            <p className="min-w-0 whitespace-pre-line break-words text-xs leading-relaxed text-destructive">
+              {failure.message}
             </p>
           </div>
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-4 border-t bg-muted/45 px-4 py-2.5">
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
             {project.deployment_job_id || t('projectDetail.provisioning.pendingId')}
+            {failure?.code && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-destructive/80">{failure.code}</span>
+              </>
+            )}
           </span>
           {timestamp && (
             <span className="font-mono text-[11px] text-muted-foreground">{timestampLabel} {timestamp}</span>
@@ -608,34 +674,59 @@ export default function ProjectDeployment() {
         </div>
       </Card>
 
-      {/* Metadata */}
+      {/* Metadata. The domain is what the user came for once a deploy lands, so
+          it gets its own row; the rest is reference and sits in a strip styled
+          like the pipeline card's footer. */}
       <Card className="gap-0 overflow-hidden py-0 shadow-none">
-        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          <MetaCell label={t('projectDetail.provisioning.metaDomain')}>
-            {projectUrl ? (
-              <a
-                href={projectUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-mono text-xs transition-colors hover:text-primary"
-              >
-                {projectUrl.replace(/^https?:\/\//, '')}
-                <ExternalLink className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-              </a>
-            ) : (
-              <span className="font-mono text-xs text-muted-foreground">{t('projectDetail.provisioning.pending')}</span>
-            )}
-          </MetaCell>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5 px-4 py-3.5">
+          <div className="min-w-0">
+            <div className="mb-0.5 text-xs text-muted-foreground">{t('projectDetail.provisioning.metaDomain')}</div>
+            {/* `anywhere` lets a hostname wrap at its own separators rather
+                than mid-label, which `break-all` does. */}
+            <div className={cn(
+              'font-mono text-[15px] [overflow-wrap:anywhere]',
+              projectUrl && domainIsLive ? 'text-foreground' : 'text-muted-foreground',
+            )}>
+              {projectUrl ? projectUrl.replace(/^https?:\/\//, '') : unknownValue}
+            </div>
+          </div>
+          {/* A project that never served traffic gets a reason, not a link
+              into a 502. */}
+          {projectUrl && (domainIsLive ? (
+            <Button
+              variant="outline"
+              size="sm"
+              render={<a href={projectUrl} target="_blank" rel="noopener noreferrer" />}
+            >
+              {t('projectDetail.provisioning.openSite')}
+              <ArrowUpRight className="size-3.5" aria-hidden="true" />
+            </Button>
+          ) : phase === 'deploying' && (
+            <span className="text-xs text-muted-foreground">{t('projectDetail.provisioning.domainPendingHint')}</span>
+          ))}
+        </div>
 
+        <dl className="grid grid-cols-1 border-t bg-muted/45 sm:grid-cols-3">
           <MetaCell label={t('projectDetail.provisioning.metaSource')}>
-            <span className="font-mono text-xs">{shortCommit || '—'}</span>
-            <span className="px-1 text-muted-foreground">·</span>
-            <span className="font-mono text-xs text-muted-foreground">{project.branch || 'main'}</span>
+            {shortCommit && (
+              <>
+                {shortCommitUrl ? (
+                  <a
+                    href={shortCommitUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline-offset-[3px] hover:underline"
+                  >{shortCommit}</a>
+                ) : shortCommit}
+                <span className="px-1 text-muted-foreground">·</span>
+              </>
+            )}
+            <span className="text-muted-foreground">{project.branch || 'main'}</span>
           </MetaCell>
 
           <MetaCell label={t('projectDetail.provisioning.metaRuntime')}>
-            <span className="font-mono text-xs">
-              {project.php_version ? `PHP ${project.php_version}` : project.framework || '—'}
+            <span className={project.php_version || project.framework ? undefined : 'text-muted-foreground'}>
+              {project.php_version ? `PHP ${project.php_version}` : project.framework || unknownValue}
               {project.laravel_version && (
                 <>
                   <span className="px-1 text-muted-foreground">·</span>
@@ -646,8 +737,8 @@ export default function ProjectDeployment() {
           </MetaCell>
 
           <MetaCell label={t('projectDetail.provisioning.metaDatabase')}>
-            <span className="font-mono text-xs">
-              {project.db_name || t('projectDetail.provisioning.pending')}
+            <span className={project.db_name ? undefined : 'text-muted-foreground'}>
+              {project.db_name || unknownValue}
             </span>
           </MetaCell>
         </dl>

@@ -65,6 +65,11 @@ const messages: Record<string, string> = {
   'projectDetail.provisioning.deploymentId': 'Deployment ID',
   'projectDetail.provisioning.pendingId': 'Pending assignment',
   'projectDetail.provisioning.startedAt': 'Started',
+  'projectDetail.provisioning.openSettings': 'Open settings',
+  'projectDetail.provisioning.notDetected': 'Not detected',
+  'projectDetail.provisioning.pending': 'Pending',
+  'projectDetail.provisioning.buildOutput': 'Build output',
+  'projectDetail.provisioning.openSite': 'Open site',
 }
 
 vi.mock('@/lib/useTranslation', () => ({
@@ -229,5 +234,130 @@ describe('ProjectDeployment build output', () => {
     await waitFor(() => {
       expect(screen.queryByText('stale build output')).not.toBeInTheDocument()
     })
+  })
+})
+
+describe('ProjectDeployment failure remedies', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function failWith(error: string) {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({
+        status: 'failed',
+        deployment_status: 'failed',
+        subdomain: 'billing.runara.app',
+        error_log: error,
+      }),
+    })
+  }
+
+  it('offers the settings tab when retrying cannot change the outcome', async () => {
+    failWith('[INVALID_BASE_DIRECTORY] Configured base directory does not exist.')
+
+    renderPage()
+    await screen.findByText('billing-service failed')
+
+    expect(screen.getByRole('link', { name: /Open settings/i }))
+      .toHaveAttribute('href', '/projects/proj-123?tab=settings')
+    // Retry stays reachable; it just stops being the loudest thing on screen.
+    expect(screen.getByRole('button', { name: /Retry deployment/i })).toBeInTheDocument()
+  })
+
+  it('leaves retry alone for a failure it cannot route', async () => {
+    failWith('Initial deployment could not be queued.')
+
+    renderPage()
+    await screen.findByText('billing-service failed')
+
+    expect(screen.queryByRole('link', { name: /Open settings/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Retry deployment/i })).toBeInTheDocument()
+  })
+
+  it('reads the sentence without the machine code, and keeps the code for support', async () => {
+    failWith('[INVALID_BASE_DIRECTORY] Configured base directory does not exist.')
+
+    renderPage()
+    await screen.findByText('billing-service failed')
+
+    expect(screen.getByText('Configured base directory does not exist.')).toBeInTheDocument()
+    expect(screen.queryByText(/\[INVALID_BASE_DIRECTORY\]/)).not.toBeInTheDocument()
+    // Still on the page, demoted to the footer beside the job id.
+    expect(screen.getByText('INVALID_BASE_DIRECTORY')).toBeInTheDocument()
+  })
+
+  it('names the domain without linking to it when nothing ever served', async () => {
+    failWith('[BUILD_FAILED] build broke')
+
+    renderPage()
+    await screen.findByText('billing-service failed')
+
+    expect(screen.getByText('billing.runara.app')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Open site' })).not.toBeInTheDocument()
+  })
+
+  it('links the domain once the deployment succeeded', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({
+        status: 'running',
+        deployment_status: 'completed',
+        deployment_progress: 100,
+        subdomain: 'billing.runara.app',
+      }),
+    })
+
+    renderPage()
+    await screen.findByText('billing-service is live')
+
+    expect(screen.getByText('billing.runara.app')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open site' }))
+      .toHaveAttribute('href', 'https://billing.runara.app')
+  })
+
+  it('links the commit to the repository', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({
+        repository_url: 'https://github.com/example/billing-service.git',
+        last_commit_hash: 'a1b2c3d4e5f6',
+      }),
+    })
+
+    renderPage()
+
+    expect(await screen.findByRole('link', { name: 'a1b2c3d' }))
+      .toHaveAttribute('href', 'https://github.com/example/billing-service/commit/a1b2c3d4e5f6')
+  })
+
+  it('does not promise pending metadata after a failure', async () => {
+    // Failing this early means runtime detection and the database never ran.
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({
+        status: 'failed',
+        deployment_status: 'failed',
+        php_version: '',
+        db_name: '',
+        error_log: '[INVALID_BASE_DIRECTORY] Configured base directory does not exist.',
+      }),
+    })
+
+    renderPage()
+    await screen.findByText('billing-service failed')
+
+    // "Pending" would promise a value that is never arriving.
+    expect(screen.getAllByText('Not detected').length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('Pending')).not.toBeInTheDocument()
+  })
+
+  it('still says pending while the deployment is running', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({ php_version: '', db_name: '' }),
+    })
+
+    renderPage()
+    await screen.findByText('Deploying billing-service')
+
+    expect(screen.getAllByText('Pending').length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('Not detected')).not.toBeInTheDocument()
   })
 })
