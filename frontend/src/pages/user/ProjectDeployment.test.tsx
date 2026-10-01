@@ -121,6 +121,22 @@ describe('ProjectDeployment', () => {
     vi.clearAllMocks()
   })
 
+  it('renders the GitHub icon and commit link from the backend repository field', async () => {
+    const project = createProject({
+      github_url: 'https://github.com/example/billing-service.git',
+      last_commit_hash: 'cd63ee8abcdef',
+    })
+    Reflect.deleteProperty(project, 'repository_url')
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: project })
+
+    renderPage()
+
+    expect(await screen.findByRole('img', { name: 'GitHub' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'cd63ee8' })).toHaveAttribute(
+      'href', 'https://github.com/example/billing-service/commit/cd63ee8abcdef',
+    )
+  })
+
   it('reconstructs active provisioning from backend state without navigation state', async () => {
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
 

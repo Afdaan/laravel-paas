@@ -448,7 +448,8 @@ export default function ProjectDeployment() {
   }
 
   const shortCommit = project.last_commit_hash?.slice(0, 7)
-  const shortCommitUrl = commitUrl(project.repository_url, project.last_commit_hash)
+  const repositoryUrl = project.github_url || project.repository_url
+  const shortCommitUrl = commitUrl(repositoryUrl, project.last_commit_hash)
   const liveMessage = getLiveMessage(project)
   const failure = phase === 'failed' ? parseFailure(getFailureMessage(project)) : null
   // A project that has never served traffic has a subdomain but nothing behind
@@ -795,7 +796,7 @@ export default function ProjectDeployment() {
         <dl className="grid grid-cols-1 border-t bg-muted/45 sm:grid-cols-3">
           <MetaCell
             label={t('projectDetail.provisioning.metaSource')}
-            icon={<RepoHostIcon url={project.repository_url} />}
+            icon={<RepoHostIcon url={repositoryUrl} />}
             secondary={(
               <>
                 <GitBranch className="mr-1 inline size-3 align-[-2px]" aria-hidden="true" />
