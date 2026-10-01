@@ -65,7 +65,6 @@ export interface Project {
   branch: string;
   php_version: string;
   port: number | null;
-  db_name: string;
   status: 'running' | 'stopped' | 'error' | 'deploying' | 'building' | 'failed' | 'pending' | 'queued' | 'restarting';
   subdomain?: string;
   url?: string;
@@ -84,6 +83,7 @@ export interface Project {
   is_manual_version?: boolean;
   container_id?: string;
   database_name?: string;
+  database_option?: 'none' | 'sqlite' | 'new' | 'existing' | 'external';
   base_directory?: string;
   worker_command?: string;
   worker_container_id?: string;

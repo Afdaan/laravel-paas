@@ -10,6 +10,7 @@ import {
   ExternalLink,
   Settings,
   FileText,
+  GitBranch,
   RefreshCw,
   X,
 } from 'lucide-react'
@@ -158,14 +159,24 @@ function PipelineStep({ label, state, detail, description, duration }: {
   )
 }
 
-function MetaCell({ label, children }: { label: string; children: React.ReactNode }) {
+function MetaCell({ label, children, secondary }: {
+  label: string
+  children: React.ReactNode
+  /** Supporting detail under the value, set smaller and muted. */
+  secondary?: React.ReactNode
+}) {
   return (
     <div className="min-w-0 border-t px-4 py-2.5 first:border-t-0 sm:border-t-0 sm:border-l sm:first:border-l-0">
       <dt className="mb-0.5 text-xs text-muted-foreground">{label}</dt>
-      <dd className="font-mono text-[13px] text-foreground">{children}</dd>
+      <dd className="min-w-0 text-[13px] text-foreground">
+        <div className="truncate">{children}</div>
+        {secondary && <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{secondary}</div>}
+      </dd>
     </div>
   )
 }
+
+const DATABASE_ENGINE_LABEL: Record<string, string> = { mysql: 'MySQL', postgresql: 'PostgreSQL' }
 
 // ponytail: GitHub and GitLab both resolve /commit/<sha>; Bitbucket uses
 // /commits/ and lands on a 404 until a host-aware mapping is worth adding.
@@ -288,6 +299,13 @@ export default function ProjectDeployment() {
       .catch(() => { if (!cancelled) setEvents([]) })
     return () => { cancelled = true }
   }, [uid, jobId, deploymentStatus])
+
+  // The worker records the commit subject only on the build event, as
+  // "Commit <hash>: <subject>"; the project row keeps just the hash.
+  const commitSubject = useMemo(() => {
+    const build = [...events].reverse().find(event => event.job_id === jobId && event.event_type === 'building_image')
+    return build?.payload?.match(/^Commit [0-9a-f]+: (.+)$/s)?.[1]
+  }, [events, jobId])
 
   const stepDurations = useMemo(
     () => deriveStepDurations(events, jobId, finishedAt),
@@ -444,6 +462,51 @@ export default function ProjectDeployment() {
   const unknownValue = phase === 'failed'
     ? t('projectDetail.provisioning.notDetected')
     : t('projectDetail.provisioning.pending')
+
+  const commitLink = shortCommit && (shortCommitUrl ? (
+    <a
+      href={shortCommitUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="underline-offset-[3px] hover:text-foreground hover:underline"
+    >{shortCommit}</a>
+  ) : shortCommit)
+
+  // The framework leads; the language runtime and port are detail. Node
+  // frameworks are recognized by node_version, which the worker only fills
+  // for them, so this needs no copy of the worker's framework list.
+  const phpVersion = project.php_version?.replace('.dynamic', '')
+  const framework = project.framework || project.detected_framework
+  const runtimeLabel = framework === 'Laravel'
+    ? `Laravel${project.laravel_version ? ` ${project.laravel_version}` : ''}`
+    : !framework
+      ? phpVersion && `PHP ${phpVersion}`
+      : !project.node_version && project.language_version
+        ? `${framework} ${project.language_version}`
+        : framework
+  const runtimeDetail = [
+    framework && phpVersion && `PHP ${phpVersion}`,
+    project.node_version && `Node.js ${project.node_version}`,
+    project.internal_port && t('projectDetail.provisioning.runtimePort', { port: project.internal_port }),
+  ].filter(Boolean).join(' · ') || undefined
+
+  // A project created without a database has nothing coming, so it says so
+  // rather than sitting on "Pending" forever.
+  const database = project.database_instance
+  const databaseOption = project.database_option
+  const databaseName = database?.name || project.database_name
+  const databaseIsName = Boolean(databaseName) && databaseOption !== 'sqlite' && databaseOption !== 'external'
+  const databaseLabel = databaseOption === 'none'
+    ? t('projectDetail.provisioning.noDatabase')
+    : databaseOption === 'sqlite'
+      ? 'SQLite'
+      : databaseOption === 'external'
+        ? t('projectDetail.provisioning.externalDatabase')
+        : databaseName || unknownValue
+  const databaseHasValue = databaseOption === 'sqlite' || databaseOption === 'external' || Boolean(databaseIsName)
+  const databaseDetail = databaseIsName && database
+    ? [DATABASE_ENGINE_LABEL[database.engine] || database.engine, database.version].filter(Boolean).join(' ')
+    : undefined
 
   const pipelineStatus = phase === 'ready'
     ? t('projectDetail.provisioning.pipelineCompleted')
@@ -707,38 +770,35 @@ export default function ProjectDeployment() {
         </div>
 
         <dl className="grid grid-cols-1 border-t bg-muted/45 sm:grid-cols-3">
-          <MetaCell label={t('projectDetail.provisioning.metaSource')}>
-            {shortCommit && (
+          <MetaCell
+            label={t('projectDetail.provisioning.metaSource')}
+            secondary={(
               <>
-                {shortCommitUrl ? (
-                  <a
-                    href={shortCommitUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline-offset-[3px] hover:underline"
-                  >{shortCommit}</a>
-                ) : shortCommit}
-                <span className="px-1 text-muted-foreground">·</span>
+                <GitBranch className="mr-1 inline size-3 align-[-2px]" aria-hidden="true" />
+                {project.branch || 'main'}
+                {commitSubject && commitLink && (
+                  <>
+                    <span className="px-1">·</span>
+                    {commitLink}
+                  </>
+                )}
               </>
             )}
-            <span className="text-muted-foreground">{project.branch || 'main'}</span>
+          >
+            {commitSubject
+              ? <span title={commitSubject}>{commitSubject}</span>
+              : commitLink
+                ? <span className="font-mono">{commitLink}</span>
+                : <span className="text-muted-foreground">{unknownValue}</span>}
           </MetaCell>
 
-          <MetaCell label={t('projectDetail.provisioning.metaRuntime')}>
-            <span className={project.php_version || project.framework ? undefined : 'text-muted-foreground'}>
-              {project.php_version ? `PHP ${project.php_version}` : project.framework || unknownValue}
-              {project.laravel_version && (
-                <>
-                  <span className="px-1 text-muted-foreground">·</span>
-                  Laravel {project.laravel_version}
-                </>
-              )}
-            </span>
+          <MetaCell label={t('projectDetail.provisioning.metaRuntime')} secondary={runtimeDetail}>
+            <span className={runtimeLabel ? undefined : 'text-muted-foreground'}>{runtimeLabel || unknownValue}</span>
           </MetaCell>
 
-          <MetaCell label={t('projectDetail.provisioning.metaDatabase')}>
-            <span className={project.db_name ? undefined : 'text-muted-foreground'}>
-              {project.db_name || unknownValue}
+          <MetaCell label={t('projectDetail.provisioning.metaDatabase')} secondary={databaseDetail}>
+            <span className={cn(databaseIsName && 'font-mono', !databaseHasValue && 'text-muted-foreground')}>
+              {databaseLabel}
             </span>
           </MetaCell>
         </dl>

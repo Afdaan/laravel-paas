@@ -37,7 +37,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
     branch: 'main',
     php_version: '8.2',
     port: null,
-    db_name: 'billing_db',
+    database_name: 'billing_db',
     status: 'running',
     deployment_status: 'completed',
     created_at: '2026-09-20T10:00:00Z',

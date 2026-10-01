@@ -95,7 +95,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
     branch: 'main',
     php_version: '8.2',
     port: null,
-    db_name: 'billing_db',
+    database_name: 'billing_db',
     status: 'building',
     deployment_status: 'building',
     deployment_job_id: 'job-123',
@@ -329,6 +329,41 @@ describe('ProjectDeployment failure remedies', () => {
       .toHaveAttribute('href', 'https://github.com/example/billing-service/commit/a1b2c3d4e5f6')
   })
 
+  it('fills the source, runtime, and database cells from what the worker detected', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({
+        framework: 'Laravel',
+        laravel_version: '11',
+        php_version: '8.3',
+        internal_port: '8000',
+        last_commit_hash: 'cd63ee8aa',
+        database_option: 'new',
+        database_instance: { engine: 'postgresql', version: '16', name: 'billing_db' } as Project['database_instance'],
+      }),
+    })
+    ;(projectsAPI.getDeploymentEvents as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [{ id: 1, project_id: 1, job_id: 'job-123', sequence_number: 1, event_type: 'building_image', payload: 'Commit cd63ee8: feat: add heart reaction', created_at: '' }],
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('feat: add heart reaction')).toBeInTheDocument()
+    expect(screen.getByText('Laravel 11')).toBeInTheDocument()
+    expect(screen.getByText('PHP 8.3 · projectDetail.provisioning.runtimePort')).toBeInTheDocument()
+    expect(screen.getByText('billing_db')).toBeInTheDocument()
+    expect(screen.getByText('PostgreSQL 16')).toBeInTheDocument()
+  })
+
+  it('says a project has no database instead of waiting for one', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({ database_option: 'none', database_name: '' }),
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('projectDetail.provisioning.noDatabase')).toBeInTheDocument()
+  })
+
   it('does not promise pending metadata after a failure', async () => {
     // Failing this early means runtime detection and the database never ran.
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -336,7 +371,7 @@ describe('ProjectDeployment failure remedies', () => {
         status: 'failed',
         deployment_status: 'failed',
         php_version: '',
-        db_name: '',
+        database_name: '',
         error_log: '[INVALID_BASE_DIRECTORY] Configured base directory does not exist.',
       }),
     })
@@ -351,7 +386,7 @@ describe('ProjectDeployment failure remedies', () => {
 
   it('still says pending while the deployment is running', async () => {
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: createProject({ php_version: '', db_name: '' }),
+      data: createProject({ php_version: '', database_name: '' }),
     })
 
     renderPage()
