@@ -85,8 +85,8 @@ function StepMeter({ states }: { states: DeployStepState[] }) {
 }
 
 // --- Step rail indicator ---
-function StepDot({ state }: { state: DeployStepState }) {
-  const running = state === 'active' || state === 'stalled'
+function StepDot({ state, animatePending }: { state: DeployStepState; animatePending: boolean }) {
+  const running = state === 'active' || state === 'stalled' || (state === 'pending' && animatePending)
 
   return (
     <span
@@ -110,19 +110,19 @@ function StepDot({ state }: { state: DeployStepState }) {
             stroke="currentColor"
             strokeWidth="1.5"
             strokeLinecap="round"
-            className={cn('deploy-arc', state === 'stalled' && 'deploy-arc-stalled')}
+            className={cn('deploy-arc', state === 'stalled' && 'deploy-arc-stalled', state === 'pending' && 'deploy-arc-pending')}
           />
         </svg>
       )}
       {state === 'complete' && <Check className="size-2.5" strokeWidth={3} aria-hidden="true" />}
       {state === 'failed' && <X className="size-2.5" strokeWidth={2.5} aria-hidden="true" />}
       {running && <span className="size-1.5 rounded-full bg-current" />}
-      {state === 'pending' && <span className="size-[5px] rounded-full bg-current" />}
+      {state === 'pending' && !running && <span className="size-[5px] rounded-full bg-current" />}
     </span>
   )
 }
 
-function PipelineStep({ label, state, detail, description, duration }: {
+function PipelineStep({ label, state, detail, description, duration, animatePending }: {
   label: string
   state: DeployStepState
   /** What this step is reporting right now, when it has something to say. */
@@ -132,12 +132,13 @@ function PipelineStep({ label, state, detail, description, duration }: {
    *  one still says what it did. */
   description?: string
   duration?: string
+  animatePending: boolean
 }) {
   const body = detail || description
   const isLive = Boolean(detail)
   return (
     <li className="grid grid-cols-[18px_minmax(0,1fr)] gap-3 px-4 py-3">
-      <div className="flex justify-center pt-px"><StepDot state={state} /></div>
+      <div className="flex justify-center pt-px"><StepDot state={state} animatePending={animatePending} /></div>
       {/* Narrow screens give the detail its own line under the label rather than
           squeezing it between the label and the duration, where a two-word
           message was wrapping into three lines. */}
@@ -263,27 +264,26 @@ export default function ProjectDeployment() {
   // threshold. A delta that is negative or absurd means the clocks disagree,
   // and the baseline falls back to now.
   const heartbeat = project?.deployment_heartbeat_at
-  const heartbeatSeen = useRef<{ value?: string; at: number }>({ at: 0 })
-  if (heartbeat !== heartbeatSeen.current.value) {
+  const heartbeatSeen = useRef<{ jobId?: string; value?: string; at: number }>({ at: 0 })
+  if (jobId !== heartbeatSeen.current.jobId || heartbeat !== heartbeatSeen.current.value) {
     // The first render happens before the project loads, so "first reading"
     // means the first defined value rather than the first pass.
-    const isFirstReading = !heartbeatSeen.current.value
+    const isFirstReading = jobId !== heartbeatSeen.current.jobId || !heartbeatSeen.current.value
     heartbeatSeen.current = {
+      jobId,
       value: heartbeat,
       at: Date.now() - (isFirstReading ? serverHeartbeatAge(heartbeat) : 0),
     }
   }
 
-  // Elapsed runs from enqueue, which is when the wait starts from the user's
-  // side. deployment_started_at is worker pickup, so using it would hide queue
-  // time entirely. Older rows predate the enqueue column and fall back.
-  const startedAt = project?.deployment_enqueued_at || project?.deployment_started_at
-  const pickedUpAt = project?.deployment_started_at
+  const waitingForPickup = project?.deployment_status === 'queued'
+  const pickedUpAt = waitingForPickup ? undefined : project?.deployment_started_at
+  const startedAt = pickedUpAt || project?.deployment_enqueued_at
   const finishedAt = project?.deployment_finished_at
   const clockRunning = phase === 'deploying' && Boolean(startedAt || heartbeat)
   const now = useNow(clockRunning)
 
-  const silentFor = heartbeat && phase === 'deploying' ? now - heartbeatSeen.current.at : 0
+  const silentFor = heartbeat && phase === 'deploying' && !waitingForPickup ? Math.max(0, now - heartbeatSeen.current.at) : 0
   const stalled = silentFor >= HEARTBEAT_SILENCE_MS
 
   const elapsed = useMemo(() => {
@@ -394,6 +394,10 @@ export default function ProjectDeployment() {
         deployment_job_id: response.data.job_id || current.deployment_job_id,
         deployment_message: t('projectDetail.provisioning.retryStarted'),
         deployment_progress: 0,
+        deployment_enqueued_at: undefined,
+        deployment_started_at: undefined,
+        deployment_finished_at: undefined,
+        deployment_heartbeat_at: undefined,
         error_log: undefined,
       } : current)
       toast.success(t('projectDetail.provisioning.retryStarted'))
@@ -463,14 +467,14 @@ export default function ProjectDeployment() {
         ? t('projectDetail.provisioning.statusFailed').toLowerCase()
         : project.deployment_status || 'queued'
 
-  const badgeTail = stalled ? formatDuration(silentFor / 1000) : elapsed
+  const badgeTail = elapsed
 
   const timestampLabel = phase === 'ready'
     ? t('projectDetail.provisioning.finishedAt')
     : phase === 'failed'
       ? t('projectDetail.provisioning.failedAt')
       : t('projectDetail.provisioning.queuedAt')
-  const timestampValue = (phase === 'deploying' ? startedAt : finishedAt || startedAt)
+  const timestampValue = phase === 'deploying' ? project.deployment_enqueued_at || pickedUpAt : finishedAt || startedAt
   const timestamp = timestampValue
     ? new Date(timestampValue).toLocaleString(language === 'id' ? 'id-ID' : 'en-US', {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -711,6 +715,7 @@ export default function ProjectDeployment() {
               detail={stepDetails[index]}
               description={t(`projectDetail.provisioning.desc_${step}`)}
               duration={stepDurations[index] !== null ? formatDuration(stepDurations[index]!) : undefined}
+              animatePending={phase === 'deploying'}
             />
           ))}
         </ul>

@@ -211,18 +211,13 @@
   animation: deploy-segment 1.6s cubic-bezier(0.5, 0, 0.5, 1) infinite;
 }
 
-/* A stalled worker freezes the stroke mid-sweep instead of hiding it: the step
-   is still the active one, it just stopped reporting. */
-.deploy-arc-stalled {
-  animation: none;
-  stroke-dasharray: 44 58;
-  stroke-dashoffset: 0;
+.deploy-arc-stalled,
+.deploy-arc-pending {
+  animation-duration: 3.2s;
 }
 
 .deploy-segment-stalled::after {
-  animation: none;
-  left: 0;
-  right: 0;
+  animation-duration: 3.2s;
 }
 
 /* This page sits outside .runara-landing / .runara-surface, so the broad

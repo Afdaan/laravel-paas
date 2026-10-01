@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Project } from '@/types'
 import { projectsAPI } from '@/services/api'
@@ -119,6 +119,113 @@ function renderPage() {
 describe('ProjectDeployment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it.each([
+    ['queued', 'building', '5m 00s'],
+    ['preparing', 'building', '1m 00s'],
+    ['cleanup', 'building', '1m 00s'],
+    ['completed', 'running', '30s'],
+  ] as const)('times %s from its lifecycle boundary', async (deploymentStatus, status, duration) => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:05:00Z'))
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({
+        status,
+        deployment_status: deploymentStatus,
+        deployment_enqueued_at: '2026-10-01T10:00:00Z',
+        deployment_started_at: '2026-10-01T10:04:00Z',
+        deployment_finished_at: deploymentStatus === 'completed' ? '2026-10-01T10:04:30Z' : undefined,
+      }),
+    })
+
+    renderPage()
+
+    expect((await screen.findAllByText(duration)).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('keeps queued jobs out of worker heartbeat warnings and animates pending steps', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:05:00Z'))
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({
+        deployment_status: 'queued',
+        deployment_progress: 0,
+        deployment_enqueued_at: '2026-10-01T10:00:00Z',
+        deployment_heartbeat_at: '2026-10-01T10:00:00Z',
+      }),
+    })
+
+    const { container } = renderPage()
+
+    await screen.findByText('queued')
+    expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.deploy-arc-pending')).toHaveLength(3)
+  })
+
+  it('keeps job elapsed time when a worker stalls', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:05:00Z'))
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({
+        deployment_started_at: '2026-10-01T10:00:00Z',
+        deployment_heartbeat_at: '2026-10-01T10:02:00Z',
+      }),
+    })
+
+    const { container } = renderPage()
+
+    await screen.findByText('projectDetail.provisioning.noSignal')
+    expect(container.querySelector('[data-slot="badge"]')).toHaveTextContent('5m 00s')
+    expect(container.querySelector('.deploy-arc-stalled')).toBeInTheDocument()
+  })
+
+  it('stops pending animations after failure', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({ status: 'failed', deployment_status: 'failed' }),
+    })
+
+    const { container } = renderPage()
+
+    await screen.findByText('billing-service failed')
+    expect(container.querySelector('.deploy-arc-pending')).not.toBeInTheDocument()
+  })
+
+  it('clears old job timing while retry metadata is loading', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:05:00Z'))
+    let resolveProject: (response: { data: Project }) => void = () => {}
+    const freshResponse = new Promise<{ data: Project }>(resolve => { resolveProject = resolve })
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        data: createProject({
+          status: 'failed',
+          deployment_status: 'failed',
+          deployment_enqueued_at: '2026-10-01T09:00:00Z',
+          deployment_started_at: '2026-10-01T09:01:00Z',
+          deployment_finished_at: '2026-10-01T09:02:00Z',
+          deployment_heartbeat_at: '2026-10-01T09:02:00Z',
+        }),
+      })
+      .mockReturnValueOnce(freshResponse)
+    ;(projectsAPI.redeploy as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { job_id: 'job-retry' } })
+
+    const { container } = renderPage()
+
+    await screen.findByText('billing-service failed')
+    fireEvent.click(screen.getByRole('button', { name: /Retry deployment/i }))
+    await screen.findByText('queued')
+    expect(container.querySelector('[data-slot="badge"]')).not.toHaveTextContent('1m 00s')
+    expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
+
+    resolveProject({ data: createProject({
+      deployment_job_id: 'job-retry',
+      deployment_status: 'preparing',
+      deployment_enqueued_at: '2026-10-01T10:04:30Z',
+      deployment_started_at: '2026-10-01T10:04:50Z',
+      deployment_heartbeat_at: '2026-10-01T10:05:00Z',
+    }) })
+    expect((await screen.findAllByText('10s')).length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders the GitHub icon and commit link from the backend repository field', async () => {
