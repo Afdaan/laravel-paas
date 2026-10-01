@@ -133,6 +133,7 @@ describe('ProjectDeployment', () => {
   ] as const)('times %s from its lifecycle boundary', async (deploymentStatus, status, duration) => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:05:00Z'))
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      headers: { date: 'Thu, 01 Oct 2026 10:05:00 GMT' },
       data: createProject({
         status,
         deployment_status: deploymentStatus,
@@ -147,7 +148,7 @@ describe('ProjectDeployment', () => {
     expect((await screen.findAllByText(duration)).length).toBeGreaterThanOrEqual(1)
   })
 
-  it('keeps queued jobs out of worker heartbeat warnings and animates pending steps', async () => {
+  it('keeps queued jobs out of worker heartbeat warnings and animates only the current step', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:05:00Z'))
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: createProject({
@@ -162,12 +163,13 @@ describe('ProjectDeployment', () => {
 
     await screen.findByText('queued')
     expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
-    expect(container.querySelectorAll('.deploy-arc-pending')).toHaveLength(3)
+    expect(container.querySelectorAll('.deploy-arc')).toHaveLength(1)
   })
 
   it('keeps job elapsed time when a worker stalls', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:05:00Z'))
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      headers: { date: 'Thu, 01 Oct 2026 10:05:00 GMT' },
       data: createProject({
         deployment_started_at: '2026-10-01T10:00:00Z',
         deployment_heartbeat_at: '2026-10-01T10:02:00Z',
@@ -181,7 +183,7 @@ describe('ProjectDeployment', () => {
     expect(container.querySelector('.deploy-arc-stalled')).toBeInTheDocument()
   })
 
-  it('stops pending animations after failure', async () => {
+  it('stops animations after failure', async () => {
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: createProject({ status: 'failed', deployment_status: 'failed' }),
     })
@@ -189,7 +191,7 @@ describe('ProjectDeployment', () => {
     const { container } = renderPage()
 
     await screen.findByText('billing-service failed')
-    expect(container.querySelector('.deploy-arc-pending')).not.toBeInTheDocument()
+    expect(container.querySelector('.deploy-arc')).not.toBeInTheDocument()
   })
 
   it('clears old job timing while retry metadata is loading', async () => {
@@ -198,6 +200,7 @@ describe('ProjectDeployment', () => {
     const freshResponse = new Promise<{ data: Project }>(resolve => { resolveProject = resolve })
     ;(projectsAPI.get as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({
+        headers: { date: 'Thu, 01 Oct 2026 10:05:00 GMT' },
         data: createProject({
           status: 'failed',
           deployment_status: 'failed',
@@ -226,6 +229,41 @@ describe('ProjectDeployment', () => {
       deployment_heartbeat_at: '2026-10-01T10:05:00Z',
     }) })
     expect((await screen.findAllByText('10s')).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it.each([-240_000, 0, 240_000])('ignores browser clock skew of %s milliseconds', async browserOffset => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:00:10Z') + browserOffset)
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      headers: { date: 'Thu, 01 Oct 2026 10:00:10 GMT' },
+      data: createProject({
+        deployment_started_at: '2026-10-01T10:00:05Z',
+        deployment_heartbeat_at: '2026-10-01T10:00:05Z',
+      }),
+    })
+
+    const { container } = renderPage()
+
+    await screen.findByText('Deploying billing-service')
+    expect(container.querySelector('[data-slot="badge"]')).toHaveTextContent('building')
+    expect(container.querySelector('[data-slot="badge"]')).toHaveTextContent('5s')
+    expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.deploy-arc')).toHaveLength(1)
+  })
+
+  it('does not guess elapsed time or an initial outage without a server clock', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:04:10Z'))
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({
+        deployment_started_at: '2026-10-01T10:00:05Z',
+        deployment_heartbeat_at: '2026-10-01T10:00:05Z',
+      }),
+    })
+
+    const { container } = renderPage()
+
+    await screen.findByText('Deploying billing-service')
+    expect(container.querySelector('[data-slot="badge"]')).not.toHaveTextContent('4m')
+    expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
   })
 
   it('renders the GitHub icon and commit link from the backend repository field', async () => {

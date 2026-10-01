@@ -51,13 +51,10 @@ const HEARTBEAT_SILENCE_MS = 150_000
  *  only has to answer "what is it doing right now". */
 const BUILD_TAIL_LINES = 6
 
-/** Age of a server-issued timestamp as the client sees it, used only to seed
- *  the first heartbeat reading. Returns 0 when the two clocks disagree badly
- *  enough that the delta is meaningless. */
-function serverHeartbeatAge(timestamp?: string): number {
+function serverHeartbeatAge(timestamp: string | undefined, serverNow: number): number {
   if (!timestamp) return 0
-  const age = Date.now() - new Date(timestamp).getTime()
-  if (Number.isNaN(age) || age < 0 || age > 3_600_000) return 0
+  const age = serverNow - new Date(timestamp).getTime()
+  if (Number.isNaN(age) || age < 0) return 0
   return age
 }
 
@@ -85,8 +82,8 @@ function StepMeter({ states }: { states: DeployStepState[] }) {
 }
 
 // --- Step rail indicator ---
-function StepDot({ state, animatePending }: { state: DeployStepState; animatePending: boolean }) {
-  const running = state === 'active' || state === 'stalled' || (state === 'pending' && animatePending)
+function StepDot({ state }: { state: DeployStepState }) {
+  const running = state === 'active' || state === 'stalled'
 
   return (
     <span
@@ -110,19 +107,19 @@ function StepDot({ state, animatePending }: { state: DeployStepState; animatePen
             stroke="currentColor"
             strokeWidth="1.5"
             strokeLinecap="round"
-            className={cn('deploy-arc', state === 'stalled' && 'deploy-arc-stalled', state === 'pending' && 'deploy-arc-pending')}
+            className={cn('deploy-arc', state === 'stalled' && 'deploy-arc-stalled')}
           />
         </svg>
       )}
       {state === 'complete' && <Check className="size-2.5" strokeWidth={3} aria-hidden="true" />}
       {state === 'failed' && <X className="size-2.5" strokeWidth={2.5} aria-hidden="true" />}
       {running && <span className="size-1.5 rounded-full bg-current" />}
-      {state === 'pending' && !running && <span className="size-[5px] rounded-full bg-current" />}
+      {state === 'pending' && <span className="size-[5px] rounded-full bg-current" />}
     </span>
   )
 }
 
-function PipelineStep({ label, state, detail, description, duration, animatePending }: {
+function PipelineStep({ label, state, detail, description, duration }: {
   label: string
   state: DeployStepState
   /** What this step is reporting right now, when it has something to say. */
@@ -132,13 +129,12 @@ function PipelineStep({ label, state, detail, description, duration, animatePend
    *  one still says what it did. */
   description?: string
   duration?: string
-  animatePending: boolean
 }) {
   const body = detail || description
   const isLive = Boolean(detail)
   return (
     <li className="grid grid-cols-[18px_minmax(0,1fr)] gap-3 px-4 py-3">
-      <div className="flex justify-center pt-px"><StepDot state={state} animatePending={animatePending} /></div>
+      <div className="flex justify-center pt-px"><StepDot state={state} /></div>
       {/* Narrow screens give the detail its own line under the label rather than
           squeezing it between the label and the duration, where a two-word
           message was wrapping into three lines. */}
@@ -213,6 +209,7 @@ export default function ProjectDeployment() {
   const [loadError, setLoadError] = useState(false)
   const [isRetrying, setIsRetrying] = useState(false)
   const [urlCopied, setUrlCopied] = useState(false)
+  const [serverClock, setServerClock] = useState<{ time: number; receivedAt: number } | null>(null)
   const requestSequence = useRef(0)
 
   const fetchProject = useCallback(async (silent = false) => {
@@ -221,8 +218,14 @@ export default function ProjectDeployment() {
     if (!silent) setIsLoading(true)
 
     try {
+      const requestedAt = performance.now()
       const response = await projectsAPI.get(uid)
       if (sequence !== requestSequence.current) return
+      const receivedAt = performance.now()
+      const serverTime = Date.parse(response.headers?.date || '')
+      if (Number.isFinite(serverTime)) {
+        setServerClock({ time: serverTime + (receivedAt - requestedAt) / 2, receivedAt })
+      }
       setProject(response.data)
       setLoadError(false)
     } catch {
@@ -255,35 +258,28 @@ export default function ProjectDeployment() {
     setProgressFloor(current => (reported > current ? reported : current))
   }, [reported])
 
-  // Heartbeat silence is timed with the local clock: the column holds server
-  // NOW(), so subtracting it from Date.now() would report silence on every
-  // healthy deploy whenever the browser clock is off.
-  //
-  // The first reading has no local baseline, so it borrows the server delta -
-  // otherwise a page opened on an already-dead deploy stays quiet for a full
-  // threshold. A delta that is negative or absurd means the clocks disagree,
-  // and the baseline falls back to now.
   const heartbeat = project?.deployment_heartbeat_at
-  const heartbeatSeen = useRef<{ jobId?: string; value?: string; at: number }>({ at: 0 })
-  if (jobId !== heartbeatSeen.current.jobId || heartbeat !== heartbeatSeen.current.value) {
-    // The first render happens before the project loads, so "first reading"
-    // means the first defined value rather than the first pass.
-    const isFirstReading = jobId !== heartbeatSeen.current.jobId || !heartbeatSeen.current.value
-    heartbeatSeen.current = {
-      jobId,
-      value: heartbeat,
-      at: Date.now() - (isFirstReading ? serverHeartbeatAge(heartbeat) : 0),
-    }
-  }
-
   const waitingForPickup = project?.deployment_status === 'queued'
   const pickedUpAt = waitingForPickup ? undefined : project?.deployment_started_at
   const startedAt = pickedUpAt || project?.deployment_enqueued_at
   const finishedAt = project?.deployment_finished_at
   const clockRunning = phase === 'deploying' && Boolean(startedAt || heartbeat)
-  const now = useNow(clockRunning)
+  useNow(clockRunning)
+  const observedAt = performance.now()
+  const now = serverClock ? serverClock.time + observedAt - serverClock.receivedAt : NaN
 
-  const silentFor = heartbeat && phase === 'deploying' && !waitingForPickup ? Math.max(0, now - heartbeatSeen.current.at) : 0
+  const heartbeatSeen = useRef<{ jobId?: string; value?: string; status?: string; at: number }>({ at: 0 })
+  if (jobId !== heartbeatSeen.current.jobId || heartbeat !== heartbeatSeen.current.value || project?.deployment_status !== heartbeatSeen.current.status) {
+    const isFirstReading = jobId !== heartbeatSeen.current.jobId || !heartbeatSeen.current.value
+    heartbeatSeen.current = {
+      jobId,
+      value: heartbeat,
+      status: project?.deployment_status,
+      at: observedAt - (isFirstReading && serverClock ? serverHeartbeatAge(heartbeat, now) : 0),
+    }
+  }
+
+  const silentFor = heartbeat && phase === 'deploying' && !waitingForPickup ? Math.max(0, observedAt - heartbeatSeen.current.at) : 0
   const stalled = silentFor >= HEARTBEAT_SILENCE_MS
 
   const elapsed = useMemo(() => {
@@ -715,7 +711,6 @@ export default function ProjectDeployment() {
               detail={stepDetails[index]}
               description={t(`projectDetail.provisioning.desc_${step}`)}
               duration={stepDurations[index] !== null ? formatDuration(stepDurations[index]!) : undefined}
-              animatePending={phase === 'deploying'}
             />
           ))}
         </ul>

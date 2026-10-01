@@ -211,8 +211,7 @@
   animation: deploy-segment 1.6s cubic-bezier(0.5, 0, 0.5, 1) infinite;
 }
 
-.deploy-arc-stalled,
-.deploy-arc-pending {
+.deploy-arc-stalled {
   animation-duration: 3.2s;
 }
 
