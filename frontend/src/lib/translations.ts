@@ -799,6 +799,7 @@ export const translations = {
         metaDatabase: "Database",
         openSite: "Open site",
         noDatabase: "No database",
+        attachDatabase: "Attach database",
         externalDatabase: "External database",
         runtimePort: "Port {{port}}",
         domainPendingHint: "Live once the deploy finishes",

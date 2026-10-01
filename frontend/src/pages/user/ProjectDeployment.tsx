@@ -24,7 +24,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
+import { siGithub, siGitlab } from 'simple-icons'
 import { cn } from '@/lib/utils'
+import { FrameworkIcon } from '@/components/FrameworkIcon'
+import { DatabaseEngineIcon } from '@/components/database-studio/utils'
 import { getProjectCreationPhase } from '@/components/project/projectCreationContext'
 import { parseFailure } from '@/components/project/deploymentFailure'
 import {
@@ -159,9 +162,11 @@ function PipelineStep({ label, state, detail, description, duration }: {
   )
 }
 
-function MetaCell({ label, children, secondary }: {
+function MetaCell({ label, children, icon, secondary }: {
   label: string
   children: React.ReactNode
+  /** A small mark before the value, only where it identifies something. */
+  icon?: React.ReactNode
   /** Supporting detail under the value, set smaller and muted. */
   secondary?: React.ReactNode
 }) {
@@ -169,10 +174,24 @@ function MetaCell({ label, children, secondary }: {
     <div className="min-w-0 border-t px-4 py-2.5 first:border-t-0 sm:border-t-0 sm:border-l sm:first:border-l-0">
       <dt className="mb-0.5 text-xs text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-[13px] text-foreground">
-        <div className="truncate">{children}</div>
+        <div className="flex min-w-0 items-center gap-1.5">
+          {icon && <span className="flex size-3.5 shrink-0 items-center justify-center">{icon}</span>}
+          <div className="min-w-0 truncate">{children}</div>
+        </div>
         {secondary && <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{secondary}</div>}
       </dd>
     </div>
+  )
+}
+
+/** Monochrome on purpose: beside a commit subject the host is context, not a logo. */
+function RepoHostIcon({ url }: { url?: string }) {
+  const icon = url?.includes('github.com') ? siGithub : url?.includes('gitlab') ? siGitlab : null
+  if (!icon) return null
+  return (
+    <svg viewBox="0 0 24 24" aria-label={icon.title} role="img" className="size-3.5 text-muted-foreground">
+      <path fill="currentColor" d={icon.path} />
+    </svg>
   )
 }
 
@@ -488,7 +507,11 @@ export default function ProjectDeployment() {
     framework && phpVersion && `PHP ${phpVersion}`,
     project.node_version && `Node.js ${project.node_version}`,
     project.internal_port && t('projectDetail.provisioning.runtimePort', { port: project.internal_port }),
+    project.cpu_limit && `${project.cpu_limit} vCPU`,
+    project.memory_limit,
   ].filter(Boolean).join(' · ') || undefined
+  // No runtime detected yet means no mark, rather than FrameworkIcon's globe.
+  const runtimeIcon = framework || (phpVersion ? 'php' : undefined)
 
   // A project created without a database has nothing coming, so it says so
   // rather than sitting on "Pending" forever.
@@ -772,6 +795,7 @@ export default function ProjectDeployment() {
         <dl className="grid grid-cols-1 border-t bg-muted/45 sm:grid-cols-3">
           <MetaCell
             label={t('projectDetail.provisioning.metaSource')}
+            icon={<RepoHostIcon url={project.repository_url} />}
             secondary={(
               <>
                 <GitBranch className="mr-1 inline size-3 align-[-2px]" aria-hidden="true" />
@@ -792,11 +816,26 @@ export default function ProjectDeployment() {
                 : <span className="text-muted-foreground">{unknownValue}</span>}
           </MetaCell>
 
-          <MetaCell label={t('projectDetail.provisioning.metaRuntime')} secondary={runtimeDetail}>
+          <MetaCell
+            label={t('projectDetail.provisioning.metaRuntime')}
+            icon={runtimeIcon && <FrameworkIcon framework={runtimeIcon} variant="plain" className="size-3.5" />}
+            secondary={runtimeDetail}
+          >
             <span className={runtimeLabel ? undefined : 'text-muted-foreground'}>{runtimeLabel || unknownValue}</span>
           </MetaCell>
 
-          <MetaCell label={t('projectDetail.provisioning.metaDatabase')} secondary={databaseDetail}>
+          <MetaCell
+            label={t('projectDetail.provisioning.metaDatabase')}
+            icon={databaseDetail && database && <DatabaseEngineIcon engine={database.engine} className="size-3.5" />}
+            secondary={databaseOption === 'none' ? (
+              <Link
+                to={`/projects/${uid}?tab=settings`}
+                className="font-sans text-xs text-foreground/80 underline-offset-[3px] transition-colors hover:text-foreground hover:underline"
+              >
+                {t('projectDetail.provisioning.attachDatabase')} →
+              </Link>
+            ) : databaseDetail}
+          >
             <span className={cn(databaseIsName && 'font-mono', !databaseHasValue && 'text-muted-foreground')}>
               {databaseLabel}
             </span>
