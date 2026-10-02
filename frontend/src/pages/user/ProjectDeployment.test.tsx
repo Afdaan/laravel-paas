@@ -143,6 +143,7 @@ describe('ProjectDeployment', () => {
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       headers: { date: 'Thu, 01 Oct 2026 10:05:00 GMT' },
       data: createProject({
+        server_time: '2026-10-01T10:05:00Z',
         status,
         deployment_status: deploymentStatus,
         deployment_enqueued_at: '2026-10-01T10:00:00Z',
@@ -156,29 +157,30 @@ describe('ProjectDeployment', () => {
     expect((await screen.findByText('Total elapsed')).parentElement).toHaveTextContent(`Total elapsed ${duration}`)
   })
 
-  it('keeps total elapsed continuous through pickup and freezes at completion', async () => {
+  it('keeps total elapsed continuous despite a four-minute Date header offset', async () => {
     const project = createProject({ deployment_enqueued_at: '2026-10-01T10:00:00Z' })
     ;(projectsAPI.get as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({
-        headers: { date: 'Thu, 01 Oct 2026 10:00:05 GMT' },
-        data: { ...project, deployment_status: 'queued' },
+        headers: { date: 'Thu, 01 Oct 2026 10:04:05 GMT' },
+        data: { ...project, server_time: '2026-10-01T10:00:05Z', deployment_status: 'queued' },
       })
       .mockResolvedValueOnce({
-        headers: { date: 'Thu, 01 Oct 2026 10:00:10 GMT' },
-        data: { ...project, deployment_started_at: '2026-10-01T10:00:08Z' },
+        headers: { date: 'Thu, 01 Oct 2026 10:04:36 GMT' },
+        data: { ...project, server_time: '2026-10-01T10:00:36Z', deployment_started_at: '2026-10-01T10:00:08Z' },
       })
       .mockResolvedValueOnce({
-        headers: { date: 'Thu, 01 Oct 2026 10:00:40 GMT' },
-        data: { ...project, status: 'running', deployment_status: 'completed', deployment_finished_at: '2026-10-01T10:00:12Z' },
+        headers: { date: 'Thu, 01 Oct 2026 10:05:40 GMT' },
+        data: { ...project, server_time: '2026-10-01T10:01:40Z', status: 'running', deployment_status: 'completed', deployment_finished_at: '2026-10-01T10:01:08Z' },
       })
 
     renderPage()
 
     expect(await screen.findByText('5s')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    expect(await screen.findByText('10s')).toBeInTheDocument()
+    expect(await screen.findByText('36s')).toBeInTheDocument()
+    expect(screen.queryByText('4m 36s')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    expect(await screen.findByText('12s')).toBeInTheDocument()
+    expect(await screen.findByText('1m 08s')).toBeInTheDocument()
     expect(screen.getByText('billing-service is live')).toBeInTheDocument()
   })
 
@@ -206,6 +208,7 @@ describe('ProjectDeployment', () => {
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       headers: { date: 'Thu, 01 Oct 2026 10:05:00 GMT' },
       data: createProject({
+        server_time: '2026-10-01T10:05:00Z',
         deployment_enqueued_at: '2026-10-01T10:00:00Z',
         deployment_started_at: '2026-10-01T10:00:00Z',
         deployment_heartbeat_at: '2026-10-01T10:02:00Z',
@@ -270,6 +273,7 @@ describe('ProjectDeployment', () => {
     expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
 
     resolveProject({ data: createProject({
+      server_time: '2026-10-01T10:05:00Z',
       deployment_job_id: 'job-retry',
       deployment_status: 'preparing',
       deployment_enqueued_at: '2026-10-01T10:04:30Z',
@@ -282,8 +286,9 @@ describe('ProjectDeployment', () => {
   it.each([-240_000, 0, 240_000])('ignores browser clock skew of %s milliseconds', async browserOffset => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:00:10Z') + browserOffset)
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      headers: { date: 'Thu, 01 Oct 2026 10:00:10 GMT' },
+      headers: { date: 'Thu, 01 Oct 2026 10:04:10 GMT' },
       data: createProject({
+        server_time: '2026-10-01T10:00:10Z',
         deployment_enqueued_at: '2026-10-01T10:00:05Z',
         deployment_started_at: '2026-10-01T10:00:05Z',
         deployment_heartbeat_at: '2026-10-01T10:00:05Z',
@@ -300,10 +305,12 @@ describe('ProjectDeployment', () => {
     expect(container.querySelectorAll('.deploy-arc')).toHaveLength(1)
   })
 
-  it('does not guess elapsed time or an initial outage without a server clock', async () => {
+  it.each([undefined, 'invalid'])('does not trust Date when server_time is %s', async serverTime => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:04:10Z'))
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      headers: { date: 'Thu, 01 Oct 2026 10:04:10 GMT' },
       data: createProject({
+        server_time: serverTime,
         deployment_enqueued_at: '2026-10-01T10:00:05Z',
         deployment_started_at: '2026-10-01T10:00:05Z',
         deployment_heartbeat_at: '2026-10-01T10:00:05Z',
@@ -318,10 +325,39 @@ describe('ProjectDeployment', () => {
     expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
   })
 
+  it('clears a previous clock when the API stops providing valid server_time', async () => {
+    const project = createProject({ deployment_enqueued_at: '2026-10-01T10:00:00Z' })
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ data: { ...project, server_time: '2026-10-01T10:00:36Z' } })
+      .mockResolvedValueOnce({
+        headers: { date: 'Thu, 01 Oct 2026 10:04:36 GMT' },
+        data: { ...project, server_time: 'invalid' },
+      })
+
+    renderPage()
+
+    expect(await screen.findByText('36s')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(screen.getByText('Total elapsed').parentElement).toHaveTextContent('Total elapsed —'))
+  })
+
+  it('does not add request processing time to the response clock', async () => {
+    let observedAt = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => observedAt)
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      observedAt = 240_000
+      return { data: createProject({ server_time: '2026-10-01T10:00:36Z', deployment_enqueued_at: '2026-10-01T10:00:00Z' }) }
+    })
+
+    renderPage()
+
+    expect((await screen.findByText('Total elapsed')).parentElement).toHaveTextContent('Total elapsed 36s')
+  })
+
   it('does not substitute worker start time for a missing enqueue timestamp', async () => {
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       headers: { date: 'Thu, 01 Oct 2026 10:05:00 GMT' },
-      data: createProject({ deployment_started_at: '2026-10-01T10:04:00Z' }),
+      data: createProject({ server_time: '2026-10-01T10:05:00Z', deployment_started_at: '2026-10-01T10:04:00Z' }),
     })
 
     renderPage()

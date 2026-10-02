@@ -220,14 +220,13 @@ export default function ProjectDeployment() {
     if (!silent) setIsLoading(true)
 
     try {
-      const requestedAt = performance.now()
       const response = await projectsAPI.get(uid)
       if (sequence !== requestSequence.current) return
       const receivedAt = performance.now()
-      const serverTime = Date.parse(response.headers?.date || '')
-      if (Number.isFinite(serverTime)) {
-        setServerClock({ time: serverTime + (receivedAt - requestedAt) / 2, receivedAt })
-      }
+      const serverTime = Date.parse(response.data.server_time || '')
+      setServerClock(Number.isFinite(serverTime)
+        ? { time: serverTime, receivedAt }
+        : null)
       setProject(response.data)
       setLoadError(false)
     } catch {

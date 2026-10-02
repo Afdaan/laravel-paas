@@ -104,6 +104,7 @@ export interface Project {
   /** Set when the job is enqueued. deployment_started_at is worker pickup,
    *  so the gap between the two is queue wait. */
   deployment_enqueued_at?: string;
+  server_time?: string;
   deployment_started_at?: string;
   deployment_finished_at?: string;
   deployment_heartbeat_at?: string;

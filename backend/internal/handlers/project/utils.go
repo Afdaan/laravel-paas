@@ -98,7 +98,11 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 
 	h.projectService.PopulateURL(project)
 
-	return c.JSON(project)
+	c.Set("Cache-Control", "no-store")
+	return c.JSON(struct {
+		*models.Project
+		ServerTime time.Time `json:"server_time"`
+	}{Project: project, ServerTime: time.Now().UTC()})
 }
 
 // UpdateRequest represents project update payload
