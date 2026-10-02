@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -70,6 +70,10 @@ const messages: Record<string, string> = {
   'projectDetail.provisioning.pending': 'Pending',
   'projectDetail.provisioning.buildOutput': 'Build output',
   'projectDetail.provisioning.openSite': 'Open site',
+  'projectDetail.provisioning.totalElapsed': 'Total elapsed',
+  'projectDetail.provisioning.noSignal': 'Awaiting deployment',
+  'projectDetail.provisioning.updateDelayed': 'Deployment updates delayed',
+  'projectDetail.provisioning.heartbeatLost': 'Last worker update {{duration}} ago. Deployment may still be running.',
 }
 
 vi.mock('@/lib/useTranslation', () => ({
@@ -127,10 +131,14 @@ describe('ProjectDeployment', () => {
 
   it.each([
     ['queued', 'building', '5m 00s'],
-    ['preparing', 'building', '1m 00s'],
-    ['cleanup', 'building', '1m 00s'],
-    ['completed', 'running', '30s'],
-  ] as const)('times %s from its lifecycle boundary', async (deploymentStatus, status, duration) => {
+    ['preparing', 'building', '5m 00s'],
+    ['building', 'building', '5m 00s'],
+    ['cleanup', 'building', '5m 00s'],
+    ['completed', 'running', '4m 30s'],
+    ['failed', 'failed', '4m 30s'],
+    ['cancelled', 'failed', '4m 30s'],
+    ['rollback', 'failed', '4m 30s'],
+  ] as const)('includes queue time in total elapsed for %s', async (deploymentStatus, status, duration) => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:05:00Z'))
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       headers: { date: 'Thu, 01 Oct 2026 10:05:00 GMT' },
@@ -139,13 +147,39 @@ describe('ProjectDeployment', () => {
         deployment_status: deploymentStatus,
         deployment_enqueued_at: '2026-10-01T10:00:00Z',
         deployment_started_at: '2026-10-01T10:04:00Z',
-        deployment_finished_at: deploymentStatus === 'completed' ? '2026-10-01T10:04:30Z' : undefined,
+        deployment_finished_at: status !== 'building' ? '2026-10-01T10:04:30Z' : undefined,
       }),
     })
 
     renderPage()
 
-    expect((await screen.findAllByText(duration)).length).toBeGreaterThanOrEqual(1)
+    expect((await screen.findByText('Total elapsed')).parentElement).toHaveTextContent(`Total elapsed ${duration}`)
+  })
+
+  it('keeps total elapsed continuous through pickup and freezes at completion', async () => {
+    const project = createProject({ deployment_enqueued_at: '2026-10-01T10:00:00Z' })
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        headers: { date: 'Thu, 01 Oct 2026 10:00:05 GMT' },
+        data: { ...project, deployment_status: 'queued' },
+      })
+      .mockResolvedValueOnce({
+        headers: { date: 'Thu, 01 Oct 2026 10:00:10 GMT' },
+        data: { ...project, deployment_started_at: '2026-10-01T10:00:08Z' },
+      })
+      .mockResolvedValueOnce({
+        headers: { date: 'Thu, 01 Oct 2026 10:00:40 GMT' },
+        data: { ...project, status: 'running', deployment_status: 'completed', deployment_finished_at: '2026-10-01T10:00:12Z' },
+      })
+
+    renderPage()
+
+    expect(await screen.findByText('5s')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(await screen.findByText('10s')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(await screen.findByText('12s')).toBeInTheDocument()
+    expect(screen.getByText('billing-service is live')).toBeInTheDocument()
   })
 
   it('keeps queued jobs out of worker heartbeat warnings and animates only the current step', async () => {
@@ -161,9 +195,10 @@ describe('ProjectDeployment', () => {
 
     const { container } = renderPage()
 
-    await screen.findByText('queued')
+    await screen.findByText('Awaiting deployment')
     expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
     expect(container.querySelectorAll('.deploy-arc')).toHaveLength(1)
+    expect(screen.queryByText('Deployment updates delayed')).not.toBeInTheDocument()
   })
 
   it('keeps job elapsed time when a worker stalls', async () => {
@@ -171,6 +206,7 @@ describe('ProjectDeployment', () => {
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       headers: { date: 'Thu, 01 Oct 2026 10:05:00 GMT' },
       data: createProject({
+        deployment_enqueued_at: '2026-10-01T10:00:00Z',
         deployment_started_at: '2026-10-01T10:00:00Z',
         deployment_heartbeat_at: '2026-10-01T10:02:00Z',
       }),
@@ -178,9 +214,20 @@ describe('ProjectDeployment', () => {
 
     const { container } = renderPage()
 
-    await screen.findByText('projectDetail.provisioning.noSignal')
-    expect(container.querySelector('[data-slot="badge"]')).toHaveTextContent('5m 00s')
-    expect(container.querySelector('.deploy-arc-stalled')).toBeInTheDocument()
+    const warning = await screen.findByRole('button', { name: 'Deployment updates delayed' })
+    expect(screen.getByText('Total elapsed').parentElement).toHaveTextContent('Total elapsed 5m 00s')
+    expect(container.querySelector('[data-slot="badge"]')).toHaveTextContent('building')
+    expect(container.querySelector('[data-slot="badge"]')).not.toHaveTextContent('5m 00s')
+    expect(container.querySelector('[data-slot="badge"]')).not.toHaveClass('text-amber-600')
+    expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.deploy-arc')).toHaveLength(1)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    act(() => warning.focus())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Last worker update 3m 00s ago. Deployment may still be running.')
+    expect(warning).toHaveAccessibleDescription('Last worker update 3m 00s ago. Deployment may still be running.')
+    fireEvent.keyDown(warning, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
   })
 
   it('stops animations after failure', async () => {
@@ -192,6 +239,7 @@ describe('ProjectDeployment', () => {
 
     await screen.findByText('billing-service failed')
     expect(container.querySelector('.deploy-arc')).not.toBeInTheDocument()
+    expect(screen.queryByText('Deployment updates delayed')).not.toBeInTheDocument()
   })
 
   it('clears old job timing while retry metadata is loading', async () => {
@@ -217,8 +265,8 @@ describe('ProjectDeployment', () => {
 
     await screen.findByText('billing-service failed')
     fireEvent.click(screen.getByRole('button', { name: /Retry deployment/i }))
-    await screen.findByText('queued')
-    expect(container.querySelector('[data-slot="badge"]')).not.toHaveTextContent('1m 00s')
+    await screen.findByText('Awaiting deployment')
+    expect(screen.getByText('Total elapsed').parentElement).toHaveTextContent('Total elapsed —')
     expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
 
     resolveProject({ data: createProject({
@@ -228,7 +276,7 @@ describe('ProjectDeployment', () => {
       deployment_started_at: '2026-10-01T10:04:50Z',
       deployment_heartbeat_at: '2026-10-01T10:05:00Z',
     }) })
-    expect((await screen.findAllByText('10s')).length).toBeGreaterThanOrEqual(1)
+    expect(await screen.findByText('30s')).toBeInTheDocument()
   })
 
   it.each([-240_000, 0, 240_000])('ignores browser clock skew of %s milliseconds', async browserOffset => {
@@ -236,6 +284,7 @@ describe('ProjectDeployment', () => {
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       headers: { date: 'Thu, 01 Oct 2026 10:00:10 GMT' },
       data: createProject({
+        deployment_enqueued_at: '2026-10-01T10:00:05Z',
         deployment_started_at: '2026-10-01T10:00:05Z',
         deployment_heartbeat_at: '2026-10-01T10:00:05Z',
       }),
@@ -245,7 +294,8 @@ describe('ProjectDeployment', () => {
 
     await screen.findByText('Deploying billing-service')
     expect(container.querySelector('[data-slot="badge"]')).toHaveTextContent('building')
-    expect(container.querySelector('[data-slot="badge"]')).toHaveTextContent('5s')
+    expect(screen.getByText('Total elapsed').parentElement).toHaveTextContent('Total elapsed 5s')
+    expect(container.querySelector('[data-slot="badge"]')).not.toHaveTextContent('5s')
     expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
     expect(container.querySelectorAll('.deploy-arc')).toHaveLength(1)
   })
@@ -254,6 +304,7 @@ describe('ProjectDeployment', () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T10:04:10Z'))
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: createProject({
+        deployment_enqueued_at: '2026-10-01T10:00:05Z',
         deployment_started_at: '2026-10-01T10:00:05Z',
         deployment_heartbeat_at: '2026-10-01T10:00:05Z',
       }),
@@ -263,7 +314,19 @@ describe('ProjectDeployment', () => {
 
     await screen.findByText('Deploying billing-service')
     expect(container.querySelector('[data-slot="badge"]')).not.toHaveTextContent('4m')
+    expect(screen.getByText('Total elapsed').parentElement).toHaveTextContent('Total elapsed —')
     expect(container.querySelector('.deploy-arc-stalled')).not.toBeInTheDocument()
+  })
+
+  it('does not substitute worker start time for a missing enqueue timestamp', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      headers: { date: 'Thu, 01 Oct 2026 10:05:00 GMT' },
+      data: createProject({ deployment_started_at: '2026-10-01T10:04:00Z' }),
+    })
+
+    renderPage()
+
+    expect((await screen.findByText('Total elapsed')).parentElement).toHaveTextContent('Total elapsed —')
   })
 
   it('renders the GitHub icon and commit link from the backend repository field', async () => {

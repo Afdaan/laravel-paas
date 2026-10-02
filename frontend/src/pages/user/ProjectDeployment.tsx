@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { siGithub, siGitlab } from 'simple-icons'
+import { Tooltip } from '@base-ui/react/tooltip'
 import { cn } from '@/lib/utils'
 import { FrameworkIcon } from '@/components/FrameworkIcon'
 import { DatabaseEngineIcon } from '@/components/database-studio/utils'
@@ -202,6 +203,7 @@ function commitUrl(repositoryUrl: string | undefined, hash: string | undefined) 
 }
 
 export default function ProjectDeployment() {
+  const warningTooltipId = useId()
   const { uid } = useParams<{ uid: string }>()
   const { language, t } = useTranslation()
   const [project, setProject] = useState<Project | null>(null)
@@ -261,9 +263,9 @@ export default function ProjectDeployment() {
   const heartbeat = project?.deployment_heartbeat_at
   const waitingForPickup = project?.deployment_status === 'queued'
   const pickedUpAt = waitingForPickup ? undefined : project?.deployment_started_at
-  const startedAt = pickedUpAt || project?.deployment_enqueued_at
+  const enqueuedAt = project?.deployment_enqueued_at
   const finishedAt = project?.deployment_finished_at
-  const clockRunning = phase === 'deploying' && Boolean(startedAt || heartbeat)
+  const clockRunning = phase === 'deploying' && Boolean(enqueuedAt || heartbeat)
   useNow(clockRunning)
   const observedAt = performance.now()
   const now = serverClock ? serverClock.time + observedAt - serverClock.receivedAt : NaN
@@ -283,13 +285,13 @@ export default function ProjectDeployment() {
   const stalled = silentFor >= HEARTBEAT_SILENCE_MS
 
   const elapsed = useMemo(() => {
-    if (!startedAt) return null
-    const start = new Date(startedAt).getTime()
+    if (!enqueuedAt) return null
+    const start = new Date(enqueuedAt).getTime()
     if (Number.isNaN(start)) return null
     const end = phase === 'deploying' ? now : finishedAt ? new Date(finishedAt).getTime() : NaN
     if (Number.isNaN(end)) return null
     return formatDuration((end - start) / 1000)
-  }, [startedAt, finishedAt, phase, now])
+  }, [enqueuedAt, finishedAt, phase, now])
 
   // Visible only once it is worth reading: a deploy picked up immediately
   // should not grow a "waited 0s" line.
@@ -370,7 +372,7 @@ export default function ProjectDeployment() {
   }, [showsBuildTail, fetchBuildTail, jobId])
 
   const activeStep = getActiveStep(project?.deployment_status, reported)
-  const stepStates = getStepStates(phase, activeStep, stalled)
+  const stepStates = getStepStates(phase, activeStep)
 
   const title = phase === 'ready'
     ? t('projectDetail.provisioning.readyTitle', { name: project?.name || '' })
@@ -455,22 +457,20 @@ export default function ProjectDeployment() {
   // A project that has never served traffic has a subdomain but nothing behind
   // it, so the metadata card names it without inviting a click into a 502.
   const domainIsLive = phase === 'ready' || Boolean(project.deployment_finished_at && phase !== 'failed')
-  const stageLabel = stalled
-    ? t('projectDetail.provisioning.noSignal')
-    : phase === 'ready'
-      ? t('projectDetail.provisioning.statusLive')
-      : phase === 'failed'
-        ? t('projectDetail.provisioning.statusFailed').toLowerCase()
-        : project.deployment_status || 'queued'
-
-  const badgeTail = elapsed
+  const stageLabel = phase === 'ready'
+    ? t('projectDetail.provisioning.statusLive')
+    : phase === 'failed'
+      ? t('projectDetail.provisioning.statusFailed').toLowerCase()
+      : !project.deployment_status || project.deployment_status === 'queued'
+        ? t('projectDetail.provisioning.noSignal')
+        : project.deployment_status
 
   const timestampLabel = phase === 'ready'
     ? t('projectDetail.provisioning.finishedAt')
     : phase === 'failed'
       ? t('projectDetail.provisioning.failedAt')
       : t('projectDetail.provisioning.queuedAt')
-  const timestampValue = phase === 'deploying' ? project.deployment_enqueued_at || pickedUpAt : finishedAt || startedAt
+  const timestampValue = phase === 'deploying' ? enqueuedAt || pickedUpAt : finishedAt || pickedUpAt || enqueuedAt
   const timestamp = timestampValue
     ? new Date(timestampValue).toLocaleString(language === 'id' ? 'id-ID' : 'en-US', {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -572,20 +572,13 @@ export default function ProjectDeployment() {
             aria-live="polite"
             className={cn(
               'h-8 gap-1.5 rounded-full px-2.5 text-xs font-medium',
-              phase === 'deploying' && !stalled && 'bg-muted',
-              stalled && 'border-amber-500/40 bg-amber-500/[0.09] text-amber-600 dark:text-amber-400',
+              phase === 'deploying' && 'bg-muted',
               phase === 'ready' && 'border-emerald-500/30 bg-emerald-500/[0.07] text-emerald-600 dark:text-emerald-400',
               phase === 'failed' && 'border-destructive/30 bg-destructive/[0.07] text-destructive',
             )}
           >
             <StepMeter states={stepStates} />
             <span className="font-mono">{stageLabel}</span>
-            {badgeTail && (
-              <>
-                <span className="font-normal opacity-40">·</span>
-                <span className="font-mono font-normal tabular-nums opacity-85">{badgeTail}</span>
-              </>
-            )}
           </Badge>
 
           {/* The badge reports state rather than offering an action. On a narrow
@@ -681,7 +674,7 @@ export default function ProjectDeployment() {
           <div
             className={cn(
               'h-full transition-[width] duration-500 ease-out motion-reduce:transition-none',
-              phase === 'ready' ? 'bg-emerald-500' : phase === 'failed' ? 'bg-destructive' : stalled ? 'bg-amber-500' : 'bg-foreground',
+              phase === 'ready' ? 'bg-emerald-500' : phase === 'failed' ? 'bg-destructive' : 'bg-foreground',
             )}
             style={{ width: `${progress}%` }}
           />
@@ -689,16 +682,15 @@ export default function ProjectDeployment() {
 
         <div className="flex flex-wrap items-center justify-between gap-4 px-4 pb-3 pt-3.5">
           <span className="text-[13px] font-medium">{t('projectDetail.provisioning.pipelineTitle')}</span>
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             {pipelineStatus}
             <span aria-hidden="true">·</span>
             <span className="tabular-nums">{progress}%</span>
-            {elapsed && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="font-mono tabular-nums">{elapsed}</span>
-              </>
-            )}
+            <span aria-hidden="true">·</span>
+            <span>
+              {t('projectDetail.provisioning.totalElapsed')}{' '}
+              <span className="font-mono tabular-nums">{elapsed ?? '—'}</span>
+            </span>
           </span>
         </div>
 
@@ -716,16 +708,20 @@ export default function ProjectDeployment() {
         </ul>
 
         {stalled && (
-          <div className="flex gap-2.5 border-t bg-amber-500/[0.06] px-4 py-3">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-            <p className="text-xs leading-relaxed">
-              <span className="text-amber-600 dark:text-amber-400">
-                {t('projectDetail.provisioning.heartbeatLost', { duration: formatDuration(silentFor / 1000) })}
-              </span>
-              <span className="mt-1 block text-muted-foreground">
-                {t('projectDetail.provisioning.heartbeatLostHint')}
-              </span>
-            </p>
+          <div className="border-t px-4 py-2">
+            <Tooltip.Root>
+              <Tooltip.Trigger aria-describedby={warningTooltipId} className="inline-flex items-center gap-1.5 rounded-sm text-xs text-amber-600 outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-400">
+                <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+                {t('projectDetail.provisioning.updateDelayed')}
+              </Tooltip.Trigger>
+              <Tooltip.Portal>
+                <Tooltip.Positioner sideOffset={6} className="z-50">
+                  <Tooltip.Popup id={warningTooltipId} role="tooltip" className="max-w-xs rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-sm">
+                    {t('projectDetail.provisioning.heartbeatLost', { duration: formatDuration(silentFor / 1000) })}
+                  </Tooltip.Popup>
+                </Tooltip.Positioner>
+              </Tooltip.Portal>
+            </Tooltip.Root>
           </div>
         )}
 
