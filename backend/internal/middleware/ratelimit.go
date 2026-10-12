@@ -111,6 +111,7 @@ var (
 	publicCatalogLimiter      = NewRateLimiter(120, 1*time.Minute) // 120 req/min per IP
 	proxyLimiter              = NewRateLimiter(120, 1*time.Minute) // 120 req/min per IP
 	consoleLimiter            = NewRateLimiter(30, 1*time.Minute)  // 30 req/min per project/user
+	buildLogsLimiter          = NewRateLimiter(60, 1*time.Minute)  // 60 req/min per project/user
 	importLimiter             = NewRateLimiter(10, 5*time.Minute)  // 10 req/5min per user
 	autoRenewLimiter          = NewRateLimiter(30, 1*time.Minute)  // 30 req/min per user
 	topupCreateUserLimiter    = NewRateLimiter(10, 1*time.Minute)  // 10 req/min per user
@@ -425,6 +426,47 @@ func RateLimitConsole(redis ...distributedRateLimiter) fiber.Handler {
 		if !allowed {
 			c.Set("Retry-After", strconv.Itoa(sec))
 			return apperr.NewRateLimited(formatRateLimitMsg("Too many command executions", sec), sec)
+		}
+		return c.Next()
+	}
+}
+
+// RateLimitBuildLogs limits build logs polling to protect against denial of service and file I/O churn.
+func RateLimitBuildLogs(redis ...distributedRateLimiter) fiber.Handler {
+	var r distributedRateLimiter
+	if len(redis) > 0 {
+		r = redis[0]
+	}
+	return func(c *fiber.Ctx) error {
+		projectID := c.Params("id")
+		uidVal := c.Locals("user_id")
+		var key string
+		if uidVal != nil {
+			key = fmt.Sprintf("buildlogs:user:%v:proj:%s", uidVal, projectID)
+		} else {
+			key = fmt.Sprintf("buildlogs:ip:%s:proj:%s", c.IP(), projectID)
+		}
+
+		if r != nil {
+			allowed, ttl, err := r.RateLimit(key, 60, time.Minute)
+			if err == nil {
+				if !allowed {
+					sec := int(math.Ceil(ttl.Seconds()))
+					if sec < 1 {
+						sec = 1
+					}
+					c.Set("Retry-After", strconv.Itoa(sec))
+					return apperr.NewRateLimited(formatRateLimitMsg("Too many build log requests", sec), sec)
+				}
+				return c.Next()
+			}
+			slog.Warn("Redis build logs rate limit failed; falling back to local limiter", "error", err)
+		}
+
+		allowed, sec := buildLogsLimiter.Allow(key)
+		if !allowed {
+			c.Set("Retry-After", strconv.Itoa(sec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many build log requests", sec), sec)
 		}
 		return c.Next()
 	}

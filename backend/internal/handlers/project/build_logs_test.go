@@ -1,9 +1,16 @@
 package project
 
 import (
+	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/laravel-paas/shared/models"
 )
 
 func TestTailLines(t *testing.T) {
@@ -96,5 +103,90 @@ func TestGetActiveOrLatestLogPathFallbackToBuildLog(t *testing.T) {
 	got := getActiveOrLatestLogPath(dir, "job-missing")
 	if got != legacyFile {
 		t.Fatalf("getActiveOrLatestLogPath() = %q, want %q", got, legacyFile)
+	}
+}
+
+func TestBuildLogsRejectsStaleFallbackLog(t *testing.T) {
+	handler, project, user, db, _, _ := setupRequeueTest(t, nil)
+	handler.cfg.ProjectsPath = t.TempDir()
+
+	projectPath := project.GetProjectPath(handler.cfg.ProjectsPath)
+	if err := os.MkdirAll(projectPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	buildLogPath := filepath.Join(projectPath, "build.log")
+	if err := os.WriteFile(buildLogPath, []byte("stale output from old run\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set file ModTime to 1 hour ago
+	pastTime := time.Now().Add(-1 * time.Hour)
+	if err := os.Chtimes(buildLogPath, pastTime, pastTime); err != nil {
+		t.Fatal(err)
+	}
+
+	// Active job enqueued 10 seconds ago
+	enqueuedAt := time.Now().Add(-10 * time.Second)
+	jobID := "job-active-123"
+	if err := db.Model(&project).Updates(map[string]any{
+		"deployment_job_id":      jobID,
+		"deployment_status":      models.DepStatusBuilding,
+		"deployment_enqueued_at": enqueuedAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	app := fiber.New()
+	app.Get("/projects/:id/build-logs", func(ctx *fiber.Ctx) error {
+		ctx.Locals("user_id", user.ID)
+		ctx.Locals("role", string(user.Role))
+		return handler.BuildLogs(ctx)
+	})
+
+	req := httptest.NewRequest("GET", "/projects/"+project.UID+"/build-logs", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	var payload struct {
+		Logs        string `json:"logs"`
+		Available   bool   `json:"available"`
+		Placeholder bool   `json:"placeholder"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+
+	if payload.Available || !payload.Placeholder || payload.Logs != "Initializing build environment..." {
+		t.Fatalf("expected placeholder for stale fallback, got: %+v", payload)
+	}
+
+	// Now touch file so it is newer than enqueuedAt
+	freshTime := time.Now()
+	if err := os.Chtimes(buildLogPath, freshTime, freshTime); err != nil {
+		t.Fatal(err)
+	}
+
+	req2 := httptest.NewRequest("GET", "/projects/"+project.UID+"/build-logs", nil)
+	resp2, err := app.Test(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+
+	var payload2 struct {
+		Logs        string `json:"logs"`
+		Available   bool   `json:"available"`
+		Placeholder bool   `json:"placeholder"`
+	}
+	if err := json.NewDecoder(resp2.Body).Decode(&payload2); err != nil {
+		t.Fatal(err)
+	}
+
+	if !payload2.Available || payload2.Placeholder || !strings.Contains(payload2.Logs, "stale output") {
+		t.Fatalf("expected logs for fresh fallback, got: %+v", payload2)
 	}
 }

@@ -374,6 +374,24 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 		})
 	}
 
+	// SRE Guard: If falling back to a non-job-specific log file (e.g. build.log),
+	// ensure its modified time is not older than the active job's enqueued time
+	// to prevent leaking stale logs from prior deployments.
+	if jobID != "" && !strings.Contains(filepath.Base(logPath), jobID) {
+		jobTime := project.DeploymentEnqueuedAt
+		if jobTime == nil {
+			jobTime = project.DeploymentStartedAt
+		}
+		if jobTime != nil && st.ModTime().Before(jobTime.Add(-5*time.Second)) {
+			return c.JSON(fiber.Map{
+				"logs":        "Initializing build environment...",
+				"job_id":      jobID,
+				"available":   false,
+				"placeholder": true,
+			})
+		}
+	}
+
 	// Cap response size to avoid UI polling turning into a memory/CPU DoS.
 	const maxBytes = 256 * 1024
 

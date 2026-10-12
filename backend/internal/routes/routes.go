@@ -352,7 +352,7 @@ func Setup(
 	projects.Post("/:id/restart", projectHandler.Restart)
 	projects.Delete("/:id", middleware.RequireNoBillingImpersonation(), projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)
-	projects.Get("/:id/build-logs", projectHandler.BuildLogs)
+	projects.Get("/:id/build-logs", middleware.RateLimitBuildLogs(redisService), projectHandler.BuildLogs)
 	projects.Get("/:id/deployment-events", projectHandler.GetDeploymentEvents)
 	projects.Get("/:id/stats", projectHandler.Stats)
 	projects.Post("/:id/console", middleware.RateLimitConsole(redisService), projectHandler.RunConsoleCommand)

@@ -843,3 +843,45 @@ func TestProxySpoofingDefenseFromTenantContainer(t *testing.T) {
 	assert.NotEqual(t, "198.51.100.99", observedIPUntrusted, "Untrusted direct client must NOT be allowed to spoof X-Forwarded-For")
 	assert.Equal(t, "0.0.0.0", observedIPUntrusted, "Fiber must use raw connection IP for untrusted origins")
 }
+
+func TestRateLimitBuildLogsDistributedAndFallback(t *testing.T) {
+	appAllowed := fiber.New(fiber.Config{
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			if ae, ok := err.(*apperr.AppError); ok {
+				return c.Status(ae.HTTPStatus).JSON(fiber.Map{"error": ae.Message})
+			}
+			return c.SendStatus(500)
+		},
+	})
+	appAllowed.Get("/projects/:id/build-logs", func(c *fiber.Ctx) error {
+		c.Locals("user_id", uint(789))
+		return c.Next()
+	}, RateLimitBuildLogs(&mockLimiter{allowed: true}), func(c *fiber.Ctx) error {
+		return c.SendString("ok")
+	})
+
+	req := httptest.NewRequest("GET", "/projects/10/build-logs", nil)
+	resp, err := appAllowed.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	appBlocked := fiber.New(fiber.Config{
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			if ae, ok := err.(*apperr.AppError); ok {
+				return c.Status(ae.HTTPStatus).JSON(fiber.Map{"error": ae.Message})
+			}
+			return c.SendStatus(500)
+		},
+	})
+	appBlocked.Get("/projects/:id/build-logs", func(c *fiber.Ctx) error {
+		c.Locals("user_id", uint(789))
+		return c.Next()
+	}, RateLimitBuildLogs(&mockLimiter{allowed: false, ttl: 30 * time.Second}), func(c *fiber.Ctx) error {
+		return c.SendString("ok")
+	})
+
+	req2 := httptest.NewRequest("GET", "/projects/10/build-logs", nil)
+	resp2, err2 := appBlocked.Test(req2)
+	assert.NoError(t, err2)
+	assert.Equal(t, 429, resp2.StatusCode)
+}
