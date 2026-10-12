@@ -190,3 +190,26 @@ func TestBuildLogsRejectsStaleFallbackLog(t *testing.T) {
 		t.Fatalf("expected logs for fresh fallback, got: %+v", payload2)
 	}
 }
+
+func TestResolveLogPathWithUserDirMismatch(t *testing.T) {
+	handler, project, _, _, _, _ := setupRequeueTest(t, nil)
+	tmpDir := t.TempDir()
+	handler.cfg.ProjectsPath = tmpDir
+
+	// Real folder created with admin-1 layout
+	actualDir := filepath.Join(tmpDir, "admin-1", project.Subdomain, "logs")
+	if err := os.MkdirAll(actualDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	expectedLog := filepath.Join(actualDir, "build-job-xyz.log")
+	if err := os.WriteFile(expectedLog, []byte("build content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Project has UserSlug as user-unknown (fallback would be user-1)
+	project.UserSlug = "user-unknown"
+	resolved := handler.resolveLogPath(&project, "job-xyz")
+	if resolved != expectedLog {
+		t.Fatalf("resolveLogPath() = %q, want %q", resolved, expectedLog)
+	}
+}

@@ -200,15 +200,18 @@ func getActiveOrLatestLogPath(projectPath string, jobID string) string {
 				return infraPath
 			}
 		}
-		// ponytail: fallback to project root build.log when job-specific log is absent on disk
+		logsBuildPath := filepath.Join(logsDir, "build.log")
+		if utils.IsPathWithinRoot(projectPath, logsBuildPath) {
+			if _, err := os.Stat(logsBuildPath); err == nil {
+				return logsBuildPath
+			}
+		}
 		legacyBuildPath := filepath.Join(projectPath, "build.log")
 		if utils.IsPathWithinRoot(projectPath, legacyBuildPath) {
 			if _, err := os.Stat(legacyBuildPath); err == nil {
 				return legacyBuildPath
 			}
 		}
-		// SRE Guard: Prevent fallback to stale log files when the requested job log does not exist yet.
-		return buildPath
 	}
 
 	// Fallback to most recent file in logsDir
@@ -239,54 +242,84 @@ func getActiveOrLatestLogPath(projectPath string, jobID string) string {
 	}
 
 	// Final fallback to legacy build.log
+	if _, err := os.Stat(filepath.Join(projectPath, "build.log")); err == nil {
+		return filepath.Join(projectPath, "build.log")
+	}
+	if jobID != "" {
+		return filepath.Join(logsDir, fmt.Sprintf("build-%s.log", jobID))
+	}
 	return filepath.Join(projectPath, "build.log")
 }
 
 // resolveLogPath searches multiple path options (with/without user folder, host/container configurations)
 // to resolve the authoritative build log location.
 func (h *ProjectHandler) resolveLogPath(project *models.Project, jobID string) string {
-	// 1. Primary path: using configured ProjectsPath with user folder (multi-tenant layout)
-	primaryPath := project.GetProjectPath(h.cfg.ProjectsPath)
-	logPath := getActiveOrLatestLogPath(primaryPath, jobID)
-	if utils.IsPathWithinRoot(h.cfg.ProjectsPath, primaryPath) {
-		if _, err := os.Stat(logPath); err == nil {
-			return logPath
-		}
-	}
-
-	// 2. Fallback: try without user folder (legacy direct layout)
-	legacyPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain)
-	if utils.IsPathWithinRoot(h.cfg.ProjectsPath, legacyPath) {
-		logPathFallback := getActiveOrLatestLogPath(legacyPath, jobID)
-		if _, err := os.Stat(logPathFallback); err == nil {
-			return logPathFallback
-		}
-	}
-
-	// 3. Fallback: if PROJECTS_PATH is set to host path in .env, try standard container mount /app/storage/projects
+	candidateRoots := []string{h.cfg.ProjectsPath}
 	const defaultContainerPath = "/app/storage/projects"
 	if h.cfg.ProjectsPath != defaultContainerPath {
-		// With user folder
-		containerPath := project.GetProjectPath(defaultContainerPath)
-		if utils.IsPathWithinRoot(defaultContainerPath, containerPath) {
-			logPathFallback := getActiveOrLatestLogPath(containerPath, jobID)
-			if _, err := os.Stat(logPathFallback); err == nil {
-				return logPathFallback
+		candidateRoots = append(candidateRoots, defaultContainerPath)
+	}
+
+	for _, root := range candidateRoots {
+		if root == "" {
+			continue
+		}
+		var candidates []string
+
+		// 1. Multi-tenant path via GetUserDirName from database (matches git and storage)
+		if h.db != nil {
+			userDir := models.GetUserDirName(h.db, project.UserID)
+			if userDir != "" {
+				candidates = append(candidates, filepath.Join(root, userDir, project.Subdomain))
 			}
 		}
 
-		// Without user folder
-		containerLegacyPath := filepath.Join(defaultContainerPath, project.Subdomain)
-		if utils.IsPathWithinRoot(defaultContainerPath, containerLegacyPath) {
-			logPathFallback := getActiveOrLatestLogPath(containerLegacyPath, jobID)
-			if _, err := os.Stat(logPathFallback); err == nil {
-				return logPathFallback
+		// 2. Multi-tenant path via project.GetProjectPath
+		primaryPath := project.GetProjectPath(root)
+		candidates = append(candidates, primaryPath)
+
+		// 3. Simple user folder candidates
+		candidates = append(candidates, filepath.Join(root, fmt.Sprintf("user-%d", project.UserID), project.Subdomain))
+
+		// 4. Legacy path without user folder
+		candidates = append(candidates, filepath.Join(root, project.Subdomain))
+
+		// 5. Glob matching any tenant directory containing the subdomain
+		if matches, err := filepath.Glob(filepath.Join(root, "*", project.Subdomain)); err == nil {
+			candidates = append(candidates, matches...)
+		}
+
+		// Pass 1: If jobID specified, check for exact job log across candidates first
+		if jobID != "" {
+			for _, cand := range candidates {
+				if !utils.IsPathWithinRoot(root, cand) {
+					continue
+				}
+				jobLog := filepath.Join(cand, "logs", fmt.Sprintf("build-%s.log", jobID))
+				if _, err := os.Stat(jobLog); err == nil {
+					return jobLog
+				}
+				infraJobLog := filepath.Join(cand, "infra", fmt.Sprintf("build-%s.log", jobID))
+				if _, err := os.Stat(infraJobLog); err == nil {
+					return infraJobLog
+				}
+			}
+		}
+
+		// Pass 2: Active or latest log path fallback
+		for _, cand := range candidates {
+			if !utils.IsPathWithinRoot(root, cand) {
+				continue
+			}
+			logCandidate := getActiveOrLatestLogPath(cand, jobID)
+			if _, err := os.Stat(logCandidate); err == nil {
+				return logCandidate
 			}
 		}
 	}
 
-	// 4. Default: return primary path (so standard file-open handling propagates any errors naturally)
-	return logPath
+	// Default fallback to primary path
+	return filepath.Join(project.GetProjectPath(h.cfg.ProjectsPath), "logs", fmt.Sprintf("build-%s.log", jobID))
 }
 
 // BuildLogs returns the railpack build log output

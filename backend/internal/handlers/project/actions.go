@@ -515,6 +515,14 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 	buildLogPath := filepath.Join(projectPath, "build.log")
 	_ = os.MkdirAll(projectPath, 0755)
 	_ = os.WriteFile(buildLogPath, []byte(""), 0644)
+	if h.db != nil {
+		userDir := models.GetUserDirName(h.db, project.UserID)
+		if userDir != "" {
+			userLog := filepath.Join(h.cfg.ProjectsPath, userDir, project.Subdomain, "build.log")
+			_ = os.MkdirAll(filepath.Dir(userLog), 0755)
+			_ = os.WriteFile(userLog, []byte(""), 0644)
+		}
+	}
 
 	// Update DB state first under transaction/row-lock
 	if err := h.projectService.RequeueDeploymentIfMatch(c.Context(), project, jobID, statusMsg); err != nil {
