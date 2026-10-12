@@ -200,6 +200,13 @@ func getActiveOrLatestLogPath(projectPath string, jobID string) string {
 				return infraPath
 			}
 		}
+		// ponytail: fallback to project root build.log when job-specific log is absent on disk
+		legacyBuildPath := filepath.Join(projectPath, "build.log")
+		if utils.IsPathWithinRoot(projectPath, legacyBuildPath) {
+			if _, err := os.Stat(legacyBuildPath); err == nil {
+				return legacyBuildPath
+			}
+		}
 		// SRE Guard: Prevent fallback to stale log files when the requested job log does not exist yet.
 		return buildPath
 	}

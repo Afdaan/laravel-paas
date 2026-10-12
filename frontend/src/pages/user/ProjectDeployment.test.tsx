@@ -396,7 +396,7 @@ describe('ProjectDeployment', () => {
     expect(screen.getAllByText('Building application image').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('42%')).toBeInTheDocument()
     expect(screen.getByText('Build').closest('summary')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /Build Logs/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Build Logs/i })).toBeInTheDocument()
   })
 
   it('keeps successful terminal state visible until user opens project', async () => {

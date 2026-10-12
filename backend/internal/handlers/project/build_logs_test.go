@@ -1,6 +1,10 @@
 package project
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestTailLines(t *testing.T) {
 	cases := []struct {
@@ -79,5 +83,18 @@ func TestTailReadWindowStaysUnderResponseCap(t *testing.T) {
 	if maxTailLines*bytesPerTailLine+tailReadFloor > maxBytes {
 		t.Fatalf("a clamped tail request may read %d bytes, above the %d cap",
 			maxTailLines*bytesPerTailLine+tailReadFloor, maxBytes)
+	}
+}
+
+func TestGetActiveOrLatestLogPathFallbackToBuildLog(t *testing.T) {
+	dir := t.TempDir()
+	legacyFile := filepath.Join(dir, "build.log")
+	if err := os.WriteFile(legacyFile, []byte("legacy output"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := getActiveOrLatestLogPath(dir, "job-missing")
+	if got != legacyFile {
+		t.Fatalf("getActiveOrLatestLogPath() = %q, want %q", got, legacyFile)
 	}
 }

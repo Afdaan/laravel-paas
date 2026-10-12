@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
+  FileText,
   Settings,
   GitBranch,
   RefreshCw,
@@ -29,7 +30,7 @@ import { Tooltip } from '@base-ui/react/tooltip'
 import { cn } from '@/lib/utils'
 import { FrameworkIcon } from '@/components/FrameworkIcon'
 import { DatabaseEngineIcon } from '@/components/database-studio/utils'
-import { getProjectCreationPhase } from '@/components/project/projectCreationContext'
+import { getProjectCreationPhase, isTerminalDeploymentStatus } from '@/components/project/projectCreationContext'
 import { parseFailure } from '@/components/project/deploymentFailure'
 import {
   clampProgress,
@@ -188,6 +189,8 @@ function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
   const [logs, setLogs] = useState<string | null>(null)
   const [hasError, setHasError] = useState(false)
   const requestSequence = useRef(0)
+  const isDeploying = Boolean(deploymentStatus && !isTerminalDeploymentStatus(deploymentStatus))
+
   const fetchLogs = useCallback(async () => {
     const sequence = ++requestSequence.current
     try {
@@ -197,9 +200,9 @@ function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
         setHasError(true)
         return
       }
-      setLogs(response.data?.placeholder || response.data?.available === false
-        ? ''
-        : typeof response.data?.logs === 'string' ? response.data.logs : '')
+      const raw = typeof response.data?.logs === 'string' ? response.data.logs : ''
+      // ponytail: placeholder signals initializing/queued; keep empty until real logs arrive
+      setLogs(response.data?.placeholder ? '' : raw)
       setHasError(false)
     } catch {
       if (sequence === requestSequence.current) setHasError(true)
@@ -210,7 +213,7 @@ function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
     void fetchLogs()
     return () => { requestSequence.current += 1 }
   }, [fetchLogs, deploymentStatus])
-  usePolling(() => void fetchLogs(), deploymentStatus === 'building' ? 3_000 : null)
+  usePolling(() => void fetchLogs(), isDeploying ? 3_000 : null)
 
   return (
     <section className="border-t bg-muted/30" aria-label={t('projectDetail.provisioning.buildOutput')}>
@@ -631,6 +634,12 @@ export default function ProjectDeployment() {
           {phase === 'ready' && (
             <Button size="sm" render={<Link to={`/projects/${uid}`} />}>
               {t('projectDetail.provisioning.openProject')}
+            </Button>
+          )}
+          {(phase === 'deploying' || phase === 'failed') && (
+            <Button variant="outline" size="sm" render={<Link to={`/projects/${uid}?tab=build`} />}>
+              <FileText className="size-3.5" aria-hidden="true" />
+              {t('projectDetail.provisioning.viewBuildLogs')}
             </Button>
           )}
           {phase === 'failed' && (
