@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Project } from '@/types'
 import { projectsAPI } from '@/services/api'
+import { usePolling } from '@/lib/usePolling'
 import ProjectDeployment from './ProjectDeployment'
 
 vi.mock('@/lib/usePolling', () => ({ usePolling: vi.fn() }))
@@ -69,6 +70,11 @@ const messages: Record<string, string> = {
   'projectDetail.provisioning.notDetected': 'Not detected',
   'projectDetail.provisioning.pending': 'Pending',
   'projectDetail.provisioning.buildOutput': 'Build output',
+  'projectDetail.provisioning.openFullLogs': 'Open full log',
+  'projectDetail.provisioning.buildLogsLoading': 'Loading build logs...',
+  'projectDetail.provisioning.buildLogsUnavailable': 'Unable to load build logs.',
+  'projectDetail.provisioning.buildLogsEmpty': 'No build logs available yet.',
+  'projectDetail.provisioning.step_build': 'Build',
   'projectDetail.provisioning.openSite': 'Open site',
   'projectDetail.provisioning.totalElapsed': 'Total elapsed',
   'projectDetail.provisioning.noSignal': 'Awaiting deployment',
@@ -389,7 +395,8 @@ describe('ProjectDeployment', () => {
     expect(await screen.findByText('Deploying billing-service')).toBeInTheDocument()
     expect(screen.getAllByText('Building application image').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('42%')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Build Logs/i })).toHaveAttribute('href', '/projects/proj-123?tab=build')
+    expect(screen.getByText('Build').closest('summary')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Build Logs/i })).not.toBeInTheDocument()
   })
 
   it('keeps successful terminal state visible until user opens project', async () => {
@@ -397,9 +404,10 @@ describe('ProjectDeployment', () => {
       data: createProject({ status: 'running', deployment_status: 'completed', deployment_progress: 100 }),
     })
 
-    renderPage()
+    const { container } = renderPage()
 
     expect(await screen.findByText('billing-service is live')).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="badge"]')).not.toBeInTheDocument()
     expect(screen.getByText('100%')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open project' })).toHaveAttribute('href', '/projects/proj-123')
   })
@@ -442,9 +450,19 @@ describe('ProjectDeployment', () => {
 describe('ProjectDeployment build output', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockReset().mockResolvedValue({
+      data: { logs: '', placeholder: true },
+    })
   })
 
-  it('shows build output while the build is the running stage', async () => {
+  async function openBuildLogs() {
+    const summary = (await screen.findByText('Build')).closest('summary')!
+    fireEvent.click(summary)
+    await screen.findByRole('region', { name: 'Build output' })
+    return summary
+  }
+
+  it('loads logs inside the Build step only while expanded', async () => {
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
     ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: { logs: '#12 3.004 Writing lock file', placeholder: false },
@@ -452,10 +470,22 @@ describe('ProjectDeployment build output', () => {
 
     renderPage()
 
+    await screen.findByText('Deploying billing-service')
+    expect(projectsAPI.buildLogs).not.toHaveBeenCalled()
+    const summary = await openBuildLogs()
     expect(await screen.findByText('#12 3.004 Writing lock file')).toBeInTheDocument()
+    expect(projectsAPI.buildLogs).toHaveBeenCalledWith('proj-123', 200)
+    expect(within(summary.closest('li')!).getByRole('region', { name: 'Build output' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open full log' })).toHaveAttribute('href', '/projects/proj-123?tab=build')
+    expect(vi.mocked(usePolling).mock.calls.some(([, delay]) => delay === 3_000)).toBe(true)
+
+    fireEvent.click(summary)
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Build output' })).not.toBeInTheDocument())
+    await openBuildLogs()
+    await waitFor(() => expect(projectsAPI.buildLogs).toHaveBeenCalledTimes(2))
   })
 
-  it('renders nothing for a placeholder response', async () => {
+  it('shows an empty state instead of API placeholder text', async () => {
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
     ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: { logs: 'Initializing build environment...', placeholder: true },
@@ -463,12 +493,37 @@ describe('ProjectDeployment build output', () => {
 
     renderPage()
 
-    await screen.findByText('Deploying billing-service')
+    await openBuildLogs()
+    expect(await screen.findByText('No build logs available yet.')).toBeInTheDocument()
     expect(screen.queryByText('Initializing build environment...')).not.toBeInTheDocument()
   })
 
-  it('discards a build-tail response that arrives after the stage advanced', async () => {
-    // Held open so it can resolve after the deployment has moved past building.
+  it('shows loading until the first log response arrives', async () => {
+    let releaseBuildLogs: (value: unknown) => void = () => {}
+    const pending = new Promise(resolve => { releaseBuildLogs = resolve })
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockReturnValue(pending)
+
+    renderPage()
+    await openBuildLogs()
+    expect(screen.getByText('Loading build logs...')).toBeInTheDocument()
+    await act(async () => { releaseBuildLogs({ data: { logs: 'Build finished' } }) })
+    expect(await screen.findByText('Build finished')).toBeInTheDocument()
+  })
+
+  it('can load completed deployment logs without polling', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({ status: 'running', deployment_status: 'completed' }),
+    })
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { logs: 'Completed build output' } })
+
+    renderPage()
+    await openBuildLogs()
+    expect(await screen.findByText('Completed build output')).toBeInTheDocument()
+    expect(vi.mocked(usePolling).mock.calls.some(([, delay]) => delay === 3_000)).toBe(false)
+  })
+
+  it('refreshes the final snapshot and rejects a late response from the previous stage', async () => {
     let releaseBuildLogs: (value: unknown) => void = () => {}
     const pending = new Promise(resolve => { releaseBuildLogs = resolve })
 
@@ -477,23 +532,74 @@ describe('ProjectDeployment build output', () => {
       .mockResolvedValueOnce({
         data: createProject({ deployment_status: 'healthchecking', deployment_progress: 65 }),
       })
-    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockReturnValue(pending)
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(pending)
+      .mockResolvedValueOnce({ data: { logs: 'Final build output', job_id: 'job-123' } })
 
     renderPage()
 
-    await screen.findByText('Deploying billing-service')
+    await openBuildLogs()
 
-    // Refresh pulls the project forward to a stage where build output no longer applies.
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    await waitFor(() => {
-      expect(projectsAPI.get).toHaveBeenCalledTimes(2)
+    expect(await screen.findByText('Final build output')).toBeInTheDocument()
+    await act(async () => { releaseBuildLogs({ data: { logs: 'stale build output', placeholder: false } }) })
+    expect(screen.queryByText('stale build output')).not.toBeInTheDocument()
+    expect(screen.getByText('Final build output')).toBeInTheDocument()
+  })
+
+  it('rejects logs from a different deployment job', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { logs: 'Another job output', job_id: 'job-other' },
     })
 
-    releaseBuildLogs({ data: { logs: 'stale build output', placeholder: false } })
+    renderPage()
+    await openBuildLogs()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load build logs.')
+    expect(screen.queryByText('Another job output')).not.toBeInTheDocument()
+  })
 
-    await waitFor(() => {
-      expect(screen.queryByText('stale build output')).not.toBeInTheDocument()
-    })
+  it('resets logs and ignores pending output when a new job replaces the current one', async () => {
+    let releaseBuildLogs: (value: unknown) => void = () => {}
+    const pending = new Promise(resolve => { releaseBuildLogs = resolve })
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ data: createProject() })
+      .mockResolvedValueOnce({ data: createProject({ deployment_job_id: 'job-new' }) })
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(pending)
+      .mockResolvedValueOnce({ data: { logs: 'New job output', job_id: 'job-new' } })
+
+    renderPage()
+    await openBuildLogs()
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(await screen.findByText('New job output')).toBeInTheDocument()
+    await act(async () => { releaseBuildLogs({ data: { logs: 'Old job output', job_id: 'job-123' } }) })
+    expect(screen.queryByText('Old job output')).not.toBeInTheDocument()
+    expect(screen.getByText('New job output')).toBeInTheDocument()
+  })
+
+  it('shows a retry action after a failed log request', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('network failure'))
+      .mockResolvedValueOnce({ data: { logs: 'Recovered build output' } })
+
+    renderPage()
+    await openBuildLogs()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load build logs.')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('Recovered build output')).toBeInTheDocument()
+  })
+
+  it('renders log markup as plain text', async () => {
+    const output = '<img src=x onerror=alert(1)>'
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { logs: output } })
+
+    renderPage()
+    await openBuildLogs()
+    expect(await screen.findByText(output)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Build output' }).querySelector('img')).toBeNull()
   })
 })
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
@@ -6,10 +6,10 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Check,
+  ChevronRight,
   Copy,
   ExternalLink,
   Settings,
-  FileText,
   GitBranch,
   RefreshCw,
   X,
@@ -48,9 +48,7 @@ import {
  *  early enough to land before the server's own 3-minute lease reaper. */
 const HEARTBEAT_SILENCE_MS = 150_000
 
-/** Lines of build output shown inline. The full log is one click away, so this
- *  only has to answer "what is it doing right now". */
-const BUILD_TAIL_LINES = 6
+const BUILD_LOG_LINES = 200
 
 function serverHeartbeatAge(timestamp: string | undefined, serverNow: number): number {
   if (!timestamp) return 0
@@ -120,7 +118,7 @@ function StepDot({ state }: { state: DeployStepState }) {
   )
 }
 
-function PipelineStep({ label, state, detail, description, duration }: {
+function PipelineStep({ label, state, detail, description, duration, children }: {
   label: string
   state: DeployStepState
   /** What this step is reporting right now, when it has something to say. */
@@ -130,20 +128,26 @@ function PipelineStep({ label, state, detail, description, duration }: {
    *  one still says what it did. */
   description?: string
   duration?: string
+  children?: ReactNode
 }) {
+  const [expanded, setExpanded] = useState(false)
   const body = detail || description
   const isLive = Boolean(detail)
-  return (
-    <li className="grid grid-cols-[18px_minmax(0,1fr)] gap-3 px-4 py-3">
-      <div className="flex justify-center pt-px"><StepDot state={state} /></div>
+  const rowClassName = 'grid grid-cols-[18px_minmax(0,1fr)] gap-3 px-4 py-3'
+  const row = (
+    <>
+      <span className="flex justify-center pt-px"><StepDot state={state} /></span>
       {/* Narrow screens give the detail its own line under the label rather than
           squeezing it between the label and the duration, where a two-word
           message was wrapping into three lines. */}
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:gap-y-1">
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:gap-y-1">
         <span className={cn(
-          'order-1 text-[13px] sm:min-w-[6.5rem]',
+          'order-1 inline-flex items-center gap-1.5 text-[13px] sm:min-w-[6.5rem]',
           state === 'pending' ? 'text-muted-foreground' : 'font-medium text-foreground',
-        )}>{label}</span>
+        )}>
+          {children && <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden="true" />}
+          {label}
+        </span>
         {duration && (
           <span className="order-2 ml-auto font-mono text-[11px] tabular-nums text-muted-foreground sm:order-3">{duration}</span>
         )}
@@ -155,8 +159,84 @@ function PipelineStep({ label, state, detail, description, duration }: {
                 : 'text-muted-foreground',
           )}>{body}</span>
         )}
-      </div>
+      </span>
+    </>
+  )
+  return (
+    <li>
+      {children ? (
+        <details className="group" onToggle={event => setExpanded(event.currentTarget.open)}>
+          <summary
+            aria-label={label}
+            className={cn(rowClassName, 'cursor-pointer list-none hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden')}
+          >
+            {row}
+          </summary>
+          {expanded && children}
+        </details>
+      ) : <div className={rowClassName}>{row}</div>}
     </li>
+  )
+}
+
+function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
+  projectId: string
+  jobId?: string
+  deploymentStatus?: string
+}) {
+  const { t } = useTranslation()
+  const [logs, setLogs] = useState<string | null>(null)
+  const [hasError, setHasError] = useState(false)
+  const requestSequence = useRef(0)
+  const fetchLogs = useCallback(async () => {
+    const sequence = ++requestSequence.current
+    try {
+      const response = await projectsAPI.buildLogs(projectId, BUILD_LOG_LINES)
+      if (sequence !== requestSequence.current) return
+      if (jobId && response.data?.job_id && response.data.job_id !== jobId) {
+        setHasError(true)
+        return
+      }
+      setLogs(response.data?.placeholder || response.data?.available === false
+        ? ''
+        : typeof response.data?.logs === 'string' ? response.data.logs : '')
+      setHasError(false)
+    } catch {
+      if (sequence === requestSequence.current) setHasError(true)
+    }
+  }, [projectId, jobId])
+
+  useEffect(() => {
+    void fetchLogs()
+    return () => { requestSequence.current += 1 }
+  }, [fetchLogs, deploymentStatus])
+  usePolling(() => void fetchLogs(), deploymentStatus === 'building' ? 3_000 : null)
+
+  return (
+    <section className="border-t bg-muted/30" aria-label={t('projectDetail.provisioning.buildOutput')}>
+      <div className="flex items-center justify-between gap-4 border-b px-4 py-2.5">
+        <span className="text-[13px] font-medium">{t('projectDetail.provisioning.buildOutput')}</span>
+        <Link
+          to={`/projects/${projectId}?tab=build`}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {t('projectDetail.provisioning.openFullLogs')}
+          <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
+        </Link>
+      </div>
+      {hasError ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <p className="text-xs text-muted-foreground" role="alert">{t('projectDetail.provisioning.buildLogsUnavailable')}</p>
+          <Button variant="outline" size="xs" onClick={() => void fetchLogs()}>{t('common.retry')}</Button>
+        </div>
+      ) : logs === null ? (
+        <p className="px-4 py-3 text-xs text-muted-foreground" role="status">{t('projectDetail.provisioning.buildLogsLoading')}</p>
+      ) : logs ? (
+        <pre tabIndex={0} className="max-h-80 overflow-auto px-4 py-3 font-mono text-xs leading-6 whitespace-pre-wrap [overflow-wrap:anywhere]">{logs}</pre>
+      ) : (
+        <p className="px-4 py-3 text-xs text-muted-foreground" role="status">{t('projectDetail.provisioning.buildLogsEmpty')}</p>
+      )}
+    </section>
   )
 }
 
@@ -327,48 +407,6 @@ export default function ProjectDeployment() {
     () => deriveStepDurations(events, jobId, finishedAt),
     [events, jobId, finishedAt],
   )
-
-  // Inline build output. Polled only while the build is the running step - the
-  // one stretch where progress is pinned (the worker writes no value between
-  // 35 and 50) and deployment_message changes once, so nothing else on the page
-  // moves. Fetched once more on failure, where the last lines are the point.
-  const [buildTail, setBuildTail] = useState<string | null>(null)
-  const isBuilding = deploymentStatus === 'building'
-  const showsBuildTail = isBuilding || phase === 'failed'
-
-  // Responses are sequenced the same way project fetches are: a request issued
-  // while the build was running can resolve after the stage has moved on, and
-  // would otherwise re-populate output the effect below just cleared. The
-  // counter also advances on uid/job change, so a previous project's log cannot
-  // land in the new one.
-  const buildTailSequence = useRef(0)
-  const fetchBuildTail = useCallback(async () => {
-    if (!uid) return
-    const sequence = ++buildTailSequence.current
-    try {
-      const response = await projectsAPI.buildLogs(uid, BUILD_TAIL_LINES)
-      if (sequence !== buildTailSequence.current) return
-      setBuildTail(response.data?.placeholder ? null : response.data?.logs || null)
-    } catch {
-      // The log is supplementary; the pipeline reads fine without it.
-      if (sequence !== buildTailSequence.current) return
-      setBuildTail(null)
-    }
-  }, [uid])
-
-  usePolling(() => void fetchBuildTail(), isBuilding ? 3_000 : null)
-
-  // Keyed on the job as well as the stage: a retry produces a new job whose
-  // output must not inherit the previous one's. fetchBuildTail bumps the
-  // sequence itself, so re-running here invalidates anything still in flight.
-  useEffect(() => {
-    if (showsBuildTail) {
-      void fetchBuildTail()
-      return
-    }
-    buildTailSequence.current++
-    setBuildTail(null)
-  }, [showsBuildTail, fetchBuildTail, jobId])
 
   const activeStep = getActiveStep(project?.deployment_status, reported)
   const stepStates = getStepStates(phase, activeStep)
@@ -566,24 +604,23 @@ export default function ProjectDeployment() {
         )}>{title}</h1>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Badge
+          {phase !== 'ready' && <Badge
             variant="outline"
             aria-live="polite"
             className={cn(
               'h-8 gap-1.5 rounded-full px-2.5 text-xs font-medium',
               phase === 'deploying' && 'bg-muted',
-              phase === 'ready' && 'border-emerald-500/30 bg-emerald-500/[0.07] text-emerald-600 dark:text-emerald-400',
               phase === 'failed' && 'border-destructive/30 bg-destructive/[0.07] text-destructive',
             )}
           >
             <StepMeter states={stepStates} />
             <span className="font-mono">{stageLabel}</span>
-          </Badge>
+          </Badge>}
 
           {/* The badge reports state rather than offering an action. On a narrow
               screen this break puts it on its own line so the buttons wrap
               among themselves, without stretching the pill to fill the row. */}
-          <span className="basis-full sm:hidden" aria-hidden="true" />
+          {phase !== 'ready' && <span className="basis-full sm:hidden" aria-hidden="true" />}
 
           {projectUrl && phase === 'ready' && (
             <Button variant="outline" size="sm" onClick={handleCopyUrl}>
@@ -594,12 +631,6 @@ export default function ProjectDeployment() {
           {phase === 'ready' && (
             <Button size="sm" render={<Link to={`/projects/${uid}`} />}>
               {t('projectDetail.provisioning.openProject')}
-            </Button>
-          )}
-          {(phase === 'deploying' || phase === 'failed') && (
-            <Button variant="outline" size="sm" render={<Link to={`/projects/${uid}?tab=build`} />}>
-              <FileText className="size-3.5" aria-hidden="true" />
-              {t('projectDetail.provisioning.viewBuildLogs')}
             </Button>
           )}
           {phase === 'failed' && (
@@ -636,26 +667,6 @@ export default function ProjectDeployment() {
           </Button>
         </div>
       </div>
-
-      {/* Build output — only while the build runs, and on failure */}
-      {buildTail && showsBuildTail && (
-        <Card className="mb-3 gap-0 overflow-hidden py-0 shadow-none">
-          <div className="flex items-center justify-between gap-4 border-b px-4 py-2.5">
-            <span className="text-[13px] font-medium">{t('projectDetail.provisioning.buildOutput')}</span>
-            <Link
-              to={`/projects/${uid}?tab=build`}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {t('projectDetail.provisioning.openFullLogs')}
-              <ExternalLink className="size-3" aria-hidden="true" />
-            </Link>
-          </div>
-          <pre
-            className="overflow-x-auto bg-muted/30 px-4 py-3 font-mono text-[11px] leading-[1.8] whitespace-pre-wrap break-all text-muted-foreground"
-            aria-live="polite"
-          >{buildTail}</pre>
-        </Card>
-      )}
 
       {/* Pipeline */}
       <Card className="mb-3 gap-0 overflow-hidden py-0 shadow-none">
@@ -702,7 +713,16 @@ export default function ProjectDeployment() {
               detail={stepDetails[index]}
               description={t(`projectDetail.provisioning.desc_${step}`)}
               duration={stepDurations[index] !== null ? formatDuration(stepDurations[index]!) : undefined}
-            />
+            >
+              {step === 'build' && (
+                <InlineBuildLogs
+                  key={`${project.uid}:${jobId || ''}`}
+                  projectId={project.uid}
+                  jobId={jobId}
+                  deploymentStatus={deploymentStatus}
+                />
+              )}
+            </PipelineStep>
           ))}
         </ul>
 
