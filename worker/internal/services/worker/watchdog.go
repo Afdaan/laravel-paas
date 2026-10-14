@@ -380,16 +380,18 @@ func (w *CentralWatchdog) checkStaleBuilds() {
 					_ = w.redisService.PublishBuildLogForJob(project.ID, jobID, terminalErrorMsg)
 
 					// Also append to the physical log file so it persists on page refresh
-					// Sanitize jobID to prevent path traversal risks
-					safeJobID := filepath.Base(filepath.Clean(jobID))
-					buildLogPath := w.getActiveLogPath(&project, safeJobID)
+					buildLogPath := w.getActiveLogPath(&project, jobID)
 
 					// Ensure the logs directory exists; if the original worker crashed before creating it, os.OpenFile will fail
-					if err := os.MkdirAll(filepath.Dir(buildLogPath), 0755); err != nil {
+					if buildLogPath == "" {
+						slog.Error("Central watchdog: invalid deployment log identity", "projectId", project.ID, "jobId", jobID)
+					} else if err := os.MkdirAll(filepath.Dir(buildLogPath), 0700); err != nil {
 						slog.Error("Central watchdog: failed to create logs directory", "projectId", project.ID, "error", err)
 					} else {
-						if f, err := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-							_, _ = f.WriteString(terminalErrorMsg)
+						if f, err := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err == nil {
+							if _, err := utils.WriteDeploymentLog(f, terminalErrorMsg); err != nil {
+								slog.Error("Central watchdog: failed to write log file", "projectId", project.ID, "jobId", jobID, "error", err)
+							}
 							f.Close()
 						} else {
 							slog.Error("Central watchdog: failed to open log file", "projectId", project.ID, "path", buildLogPath, "error", err)
@@ -615,19 +617,18 @@ func (w *CentralWatchdog) getActiveLogPath(project *models.Project, jobID string
 	if w.cfg != nil {
 		projectsPath = w.cfg.ProjectsPath
 	}
-	projectPath := project.GetProjectPath(projectsPath)
-	if jobID != "" && jobID != "unknown" {
-		buildPath := filepath.Join(projectPath, "logs", fmt.Sprintf("build-%s.log", jobID))
-		if _, err := os.Stat(buildPath); err == nil {
-			return buildPath
-		}
-		infraPath := filepath.Join(projectPath, "logs", fmt.Sprintf("infra-%s.log", jobID))
-		if _, err := os.Stat(infraPath); err == nil {
-			return infraPath
-		}
+	buildPath, err := project.GetDeploymentLogPath(projectsPath, jobID, "build")
+	if err != nil {
+		return ""
+	}
+	if _, err := os.Stat(buildPath); err == nil {
 		return buildPath
 	}
-	return filepath.Join(projectPath, "build.log")
+	infraPath, _ := project.GetDeploymentLogPath(projectsPath, jobID, "infra")
+	if _, err := os.Stat(infraPath); err == nil {
+		return infraPath
+	}
+	return buildPath
 }
 
 func (w *CentralWatchdog) autoHealingCheck() {

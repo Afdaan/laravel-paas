@@ -77,8 +77,8 @@ repair_storage_permissions() {
         return
     fi
     sudo chown -R "${APP_UID}:${APP_GID}" "$target"
-    find "$target" -type d -exec chmod 775 {} + 2>/dev/null || true
-    find "$target" -type f -exec chmod 664 {} + 2>/dev/null || true
+    find "$target" -path "${PROJECTS_PATH%/}/.deployment-logs" -prune -o -type d -exec chmod 775 {} + 2>/dev/null || true
+    find "$target" -path "${PROJECTS_PATH%/}/.deployment-logs" -prune -o -type f -exec chmod 664 {} + 2>/dev/null || true
 }
 
 repair_storage_permissions "$PROJECTS_PATH"

@@ -77,6 +77,18 @@ Key infrastructure variables configured via the root `.env` file:
 | `DATA_PATH` | Storage | Absolute host path for tenant volume persistence | `./storage/data` |
 | `REDIS_DATA_PATH` | Storage | Absolute host path for Redis AOF/RDB files | `./storage/redis` |
 
+### Deployment Logs
+
+Build output is stored in `PROJECTS_PATH/.deployment-logs/user-<user_id>/project-<project_id>/build-<job_id>.log`, outside the Git checkout. Repository cleanup and fresh clones cannot remove an active log. Infrastructure jobs use `infra-<job_id>.log` in the same directory.
+
+Backend and worker must share the projects volume and have access to this private directory. Startup and deployment permission repair skips this log subtree. Active deployment reads require an exact job ID; unversioned or previous-job logs are not used as substitutes. Existing exact-job logs in known tenant source directories remain readable during upgrades.
+
+The existing retention policy keeps five build logs and five infrastructure logs per project after jobs finish. Project deletion removes the separate log directory. Logs are ordinary files, not an audit-grade durability store.
+
+Each deployment log file is capped at 10 MiB, including a truncation marker. The persistent infrastructure log is also capped during writes and retains its existing 5 MiB post-job cleanup policy. Cooperative writers lock the file while checking and appending, including watchdog/error writers. After the job log reaches its limit, its live build-output stream emits a truncation notice and suppresses further ordinary output; deployment state and terminal errors remain independent. The build process continues draining stdout/stderr, retaining at most 1 MiB of diagnostic output per stream. Lines larger than 64 KiB are omitted before filtering/redaction rather than split into potentially sensitive fragments. Railpack's missing-start validation observes bounded raw lines before display filtering, independently of the diagnostic tail. These are per-file/per-command limits, not aggregate tenant or host storage quotas.
+
+Deploy both backend and worker after this change, then redeploy the project to generate logs in the new layout. Existing logs are not migrated.
+
 ---
 
 ## API Specification

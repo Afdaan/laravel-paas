@@ -2,10 +2,10 @@ package project
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -100,9 +100,12 @@ func TestGetActiveOrLatestLogPathFallbackToBuildLog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := getActiveOrLatestLogPath(dir, "job-missing")
+	got := getActiveOrLatestLogPath(dir, "")
 	if got != legacyFile {
 		t.Fatalf("getActiveOrLatestLogPath() = %q, want %q", got, legacyFile)
+	}
+	if got := getActiveOrLatestLogPath(dir, "job-missing"); got == legacyFile {
+		t.Fatal("active job received unversioned legacy log")
 	}
 }
 
@@ -186,8 +189,8 @@ func TestBuildLogsRejectsStaleFallbackLog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !payload2.Available || payload2.Placeholder || !strings.Contains(payload2.Logs, "stale output") {
-		t.Fatalf("expected logs for fresh fallback, got: %+v", payload2)
+	if payload2.Available || !payload2.Placeholder {
+		t.Fatalf("fresh timestamp must not establish log ownership, got: %+v", payload2)
 	}
 }
 
@@ -196,8 +199,7 @@ func TestResolveLogPathWithUserDirMismatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	handler.cfg.ProjectsPath = tmpDir
 
-	// Real folder created with admin-1 layout
-	actualDir := filepath.Join(tmpDir, "admin-1", project.Subdomain, "logs")
+	actualDir := filepath.Join(tmpDir, models.GetUserDirName(handler.db, project.UserID), project.Subdomain, "logs")
 	if err := os.MkdirAll(actualDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -206,10 +208,138 @@ func TestResolveLogPathWithUserDirMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Project has UserSlug as user-unknown (fallback would be user-1)
 	project.UserSlug = "user-unknown"
 	resolved := handler.resolveLogPath(&project, "job-xyz")
 	if resolved != expectedLog {
 		t.Fatalf("resolveLogPath() = %q, want %q", resolved, expectedLog)
+	}
+}
+
+func TestBuildLogsReadsCanonicalJobLog(t *testing.T) {
+	handler, project, user, db, _, _ := setupRequeueTest(t, nil)
+	handler.cfg.ProjectsPath = t.TempDir()
+	jobID := "job-current"
+	if err := db.Model(&project).Update("deployment_job_id", jobID).Error; err != nil {
+		t.Fatal(err)
+	}
+	logPath, err := project.GetDeploymentLogPath(handler.cfg.ProjectsPath, jobID, "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if _, err := file.WriteString("prepare\ncompile\ncomplete\n"); err != nil {
+		t.Fatal(err)
+	}
+	pastTime := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(logPath, pastTime, pastTime); err != nil {
+		t.Fatal(err)
+	}
+	app := fiber.New()
+	app.Get("/projects/:id/build-logs", func(ctx *fiber.Ctx) error {
+		ctx.Locals("user_id", user.ID)
+		ctx.Locals("role", string(models.RoleUser))
+		return handler.BuildLogs(ctx)
+	})
+	response, err := app.Test(httptest.NewRequest("GET", "/projects/"+project.UID+"/build-logs?tail=2", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if got := response.Header.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("sensitive logs can be cached: Cache-Control=%q", got)
+	}
+	var payload struct {
+		Logs        string `json:"logs"`
+		JobID       string `json:"job_id"`
+		Available   bool   `json:"available"`
+		Placeholder bool   `json:"placeholder"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != fiber.StatusOK || payload.Logs != "compile\ncomplete" || payload.JobID != jobID || !payload.Available || payload.Placeholder {
+		t.Fatalf("unexpected build logs: status=%d payload=%+v", response.StatusCode, payload)
+	}
+	app.Get("/other/projects/:id/build-logs", func(ctx *fiber.Ctx) error {
+		ctx.Locals("user_id", user.ID+1)
+		ctx.Locals("role", string(models.RoleUser))
+		return handler.BuildLogs(ctx)
+	})
+	denied, err := app.Test(httptest.NewRequest("GET", "/other/projects/"+project.UID+"/build-logs", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer denied.Body.Close()
+	if denied.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("another tenant received build logs: status=%d", denied.StatusCode)
+	}
+}
+
+func TestResolveLogPathRejectsForeignAndStaleLogs(t *testing.T) {
+	handler, project, _, _, _, _ := setupRequeueTest(t, nil)
+	handler.cfg.ProjectsPath = t.TempDir()
+	jobID := "job-current"
+	foreign := project
+	foreign.UserID++
+	foreign.ID++
+	foreign.UserSlug = fmt.Sprintf("other-%d", foreign.UserID)
+	foreignLog, err := foreign.GetDeploymentLogPath(handler.cfg.ProjectsPath, jobID, "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignSourceLog := filepath.Join(foreign.GetProjectPath(handler.cfg.ProjectsPath), "logs", "build-"+jobID+".log")
+	oldLog, err := project.GetDeploymentLogPath(handler.cfg.ProjectsPath, "job-previous", "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, logPath := range []string{foreignLog, foreignSourceLog, oldLog} {
+		if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(logPath, []byte("must not be served"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := handler.resolveLogPath(&project, jobID); got != "" {
+		t.Fatalf("foreign or stale log selected: %q", got)
+	}
+	currentLog, err := project.GetDeploymentLogPath(handler.cfg.ProjectsPath, jobID, "build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(foreignLog, currentLog); err != nil {
+		t.Fatal(err)
+	}
+	if got := handler.resolveLogPath(&project, jobID); got != "" {
+		t.Fatalf("foreign symlink selected: %q", got)
+	}
+	legacyLog := filepath.Join(project.GetProjectPath(handler.cfg.ProjectsPath), "logs", "build-"+jobID+".log")
+	if err := os.MkdirAll(filepath.Dir(legacyLog), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(foreignLog, legacyLog); err != nil {
+		t.Fatal(err)
+	}
+	if got := handler.resolveLogPath(&project, jobID); got != "" {
+		t.Fatalf("foreign legacy symlink selected: %q", got)
+	}
+	if got := handler.resolveLogPath(&project, "../../foreign"); got != "" {
+		t.Fatalf("invalid job ID selected: %q", got)
+	}
+	if err := os.RemoveAll(filepath.Dir(currentLog)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Dir(foreignLog), filepath.Dir(currentLog)); err != nil {
+		t.Fatal(err)
+	}
+	if got := handler.resolveLogPath(&project, jobID); got != "" {
+		t.Fatalf("foreign log directory selected: %q", got)
 	}
 }

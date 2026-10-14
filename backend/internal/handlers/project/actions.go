@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -508,20 +506,6 @@ func (h *ProjectHandler) Redeploy(c *fiber.Ctx) error {
 		Type:       jobType,
 		JobID:      jobID,
 		EnqueuedAt: time.Now(),
-	}
-
-	// Truncate the build log immediately to prevent old logs from displaying
-	projectPath := project.GetProjectPath(h.cfg.ProjectsPath)
-	buildLogPath := filepath.Join(projectPath, "build.log")
-	_ = os.MkdirAll(projectPath, 0755)
-	_ = os.WriteFile(buildLogPath, []byte(""), 0644)
-	if h.db != nil {
-		userDir := models.GetUserDirName(h.db, project.UserID)
-		if userDir != "" {
-			userLog := filepath.Join(h.cfg.ProjectsPath, userDir, project.Subdomain, "build.log")
-			_ = os.MkdirAll(filepath.Dir(userLog), 0755)
-			_ = os.WriteFile(userLog, []byte(""), 0644)
-		}
 	}
 
 	// Update DB state first under transaction/row-lock

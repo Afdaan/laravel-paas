@@ -185,79 +185,64 @@ func (h *ProjectHandler) Logs(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"logs": logs})
 }
 
-func getActiveOrLatestLogPath(projectPath string, jobID string) string {
-	logsDir := filepath.Join(projectPath, "logs")
+func getActiveOrLatestLogPath(logsDir string, jobID string) string {
 	if jobID != "" {
-		buildPath := filepath.Join(logsDir, fmt.Sprintf("build-%s.log", jobID))
-		if utils.IsPathWithinRoot(projectPath, buildPath) {
-			if _, err := os.Stat(buildPath); err == nil {
-				return buildPath
-			}
-		}
-		infraPath := filepath.Join(logsDir, fmt.Sprintf("infra-%s.log", jobID))
-		if utils.IsPathWithinRoot(projectPath, infraPath) {
-			if _, err := os.Stat(infraPath); err == nil {
-				return infraPath
-			}
-		}
-		logsBuildPath := filepath.Join(logsDir, "build.log")
-		if utils.IsPathWithinRoot(projectPath, logsBuildPath) {
-			if _, err := os.Stat(logsBuildPath); err == nil {
-				return logsBuildPath
-			}
-		}
-		legacyBuildPath := filepath.Join(projectPath, "build.log")
-		if utils.IsPathWithinRoot(projectPath, legacyBuildPath) {
-			if _, err := os.Stat(legacyBuildPath); err == nil {
-				return legacyBuildPath
-			}
-		}
-	}
-
-	// Fallback to most recent file in logsDir
-	if matches, err := filepath.Glob(filepath.Join(logsDir, "build-*.log")); err == nil && len(matches) > 0 {
-		var newestFile string
-		var newestTime time.Time
-		for _, m := range matches {
-			if info, err := os.Stat(m); err == nil {
-				if info.ModTime().After(newestTime) {
-					newestTime = info.ModTime()
-					newestFile = m
+		for _, prefix := range []string{"build", "infra"} {
+			logPath := filepath.Join(logsDir, fmt.Sprintf("%s-%s.log", prefix, jobID))
+			if utils.IsPathWithinRoot(logsDir, logPath) {
+				if info, err := os.Stat(logPath); err == nil && info.Mode().IsRegular() {
+					return logPath
 				}
 			}
 		}
-		if infraMatches, err := filepath.Glob(filepath.Join(logsDir, "infra-*.log")); err == nil {
-			for _, m := range infraMatches {
-				if info, err := os.Stat(m); err == nil {
-					if info.ModTime().After(newestTime) {
-						newestTime = info.ModTime()
-						newestFile = m
-					}
-				}
-			}
-		}
-		if newestFile != "" {
-			return newestFile
-		}
-	}
-
-	// Final fallback to legacy build.log
-	if _, err := os.Stat(filepath.Join(projectPath, "build.log")); err == nil {
-		return filepath.Join(projectPath, "build.log")
-	}
-	if jobID != "" {
 		return filepath.Join(logsDir, fmt.Sprintf("build-%s.log", jobID))
 	}
-	return filepath.Join(projectPath, "build.log")
+
+	var newestFile string
+	var newestTime time.Time
+	for _, pattern := range []string{"build-*.log", "infra-*.log"} {
+		matches, _ := filepath.Glob(filepath.Join(logsDir, pattern))
+		for _, logPath := range matches {
+			if !utils.IsPathWithinRoot(logsDir, logPath) {
+				continue
+			}
+			if info, err := os.Stat(logPath); err == nil && info.Mode().IsRegular() && info.ModTime().After(newestTime) {
+				newestTime = info.ModTime()
+				newestFile = logPath
+			}
+		}
+	}
+	if newestFile != "" {
+		return newestFile
+	}
+	return filepath.Join(logsDir, "build.log")
 }
 
 // resolveLogPath searches multiple path options (with/without user folder, host/container configurations)
 // to resolve the authoritative build log location.
 func (h *ProjectHandler) resolveLogPath(project *models.Project, jobID string) string {
+	_, err := project.GetDeploymentLogPath(h.cfg.ProjectsPath, jobID, "build")
+	if err != nil {
+		slog.Warn("Invalid deployment log identity", "projectId", project.ID, "jobID", jobID, "error", err)
+		return ""
+	}
 	candidateRoots := []string{h.cfg.ProjectsPath}
 	const defaultContainerPath = "/app/storage/projects"
 	if h.cfg.ProjectsPath != defaultContainerPath {
 		candidateRoots = append(candidateRoots, defaultContainerPath)
+	}
+
+	for _, root := range candidateRoots {
+		logsDir := project.GetDeploymentLogsPath(root)
+		if utils.IsSymlink(filepath.Dir(logsDir)) || utils.IsSymlink(logsDir) {
+			continue
+		}
+		logPath := getActiveOrLatestLogPath(logsDir, jobID)
+		if utils.IsPathWithinRoot(root, logsDir) && utils.IsPathWithinRoot(logsDir, logPath) {
+			if info, err := os.Stat(logPath); err == nil && info.Mode().IsRegular() {
+				return logPath
+			}
+		}
 	}
 
 	for _, root := range candidateRoots {
@@ -281,45 +266,23 @@ func (h *ProjectHandler) resolveLogPath(project *models.Project, jobID string) s
 		// 3. Simple user folder candidates
 		candidates = append(candidates, filepath.Join(root, fmt.Sprintf("user-%d", project.UserID), project.Subdomain))
 
-		// 4. Legacy path without user folder
-		candidates = append(candidates, filepath.Join(root, project.Subdomain))
-
-		// 5. Glob matching any tenant directory containing the subdomain
-		if matches, err := filepath.Glob(filepath.Join(root, "*", project.Subdomain)); err == nil {
-			candidates = append(candidates, matches...)
-		}
-
-		// Pass 1: If jobID specified, check for exact job log across candidates first
-		if jobID != "" {
-			for _, cand := range candidates {
-				if !utils.IsPathWithinRoot(root, cand) {
-					continue
-				}
-				jobLog := filepath.Join(cand, "logs", fmt.Sprintf("build-%s.log", jobID))
-				if _, err := os.Stat(jobLog); err == nil {
-					return jobLog
-				}
-				infraJobLog := filepath.Join(cand, "infra", fmt.Sprintf("build-%s.log", jobID))
-				if _, err := os.Stat(infraJobLog); err == nil {
-					return infraJobLog
-				}
-			}
-		}
-
-		// Pass 2: Active or latest log path fallback
 		for _, cand := range candidates {
-			if !utils.IsPathWithinRoot(root, cand) {
+			if !utils.IsPathWithinRoot(root, cand) || utils.IsSymlink(filepath.Dir(cand)) || utils.IsSymlink(cand) {
 				continue
 			}
-			logCandidate := getActiveOrLatestLogPath(cand, jobID)
-			if _, err := os.Stat(logCandidate); err == nil {
-				return logCandidate
+			for _, logsDir := range []string{filepath.Join(cand, "logs"), filepath.Join(cand, "infra"), cand} {
+				logCandidate := getActiveOrLatestLogPath(logsDir, jobID)
+				if !utils.IsPathWithinRoot(cand, logCandidate) {
+					continue
+				}
+				if info, err := os.Stat(logCandidate); err == nil && info.Mode().IsRegular() {
+					return logCandidate
+				}
 			}
 		}
 	}
 
-	// Default fallback to primary path
-	return filepath.Join(project.GetProjectPath(h.cfg.ProjectsPath), "logs", fmt.Sprintf("build-%s.log", jobID))
+	return ""
 }
 
 // BuildLogs returns the railpack build log output
@@ -360,6 +323,7 @@ func tailLines(s string, n int, partialFirst bool) string {
 }
 
 func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
+	c.Set("Cache-Control", "no-store")
 	project, err := h.getProject(c)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
@@ -405,24 +369,6 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 			"available":   false,
 			"placeholder": true,
 		})
-	}
-
-	// SRE Guard: If falling back to a non-job-specific log file (e.g. build.log),
-	// ensure its modified time is not older than the active job's enqueued time
-	// to prevent leaking stale logs from prior deployments.
-	if jobID != "" && !strings.Contains(filepath.Base(logPath), jobID) {
-		jobTime := project.DeploymentEnqueuedAt
-		if jobTime == nil {
-			jobTime = project.DeploymentStartedAt
-		}
-		if jobTime != nil && st.ModTime().Before(jobTime.Add(-5*time.Second)) {
-			return c.JSON(fiber.Map{
-				"logs":        "Initializing build environment...",
-				"job_id":      jobID,
-				"available":   false,
-				"placeholder": true,
-			})
-		}
 	}
 
 	// Cap response size to avoid UI polling turning into a memory/CPU DoS.
@@ -478,7 +424,7 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 	}
 
 	c.Set("Content-Type", "text/event-stream")
-	c.Set("Cache-Control", "no-cache")
+	c.Set("Cache-Control", "no-store")
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 

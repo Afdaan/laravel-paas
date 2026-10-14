@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/laravel-paas/shared/config"
@@ -144,6 +145,9 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 	}
 	if err := s.storageService.CleanupPersistentData(project); err != nil {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("cleanup persistent project data: %w", err))
+	}
+	if err := os.RemoveAll(project.GetDeploymentLogsPath(s.cfg.ProjectsPath)); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("cleanup deployment logs: %w", err))
 	}
 	if cleanupErr != nil {
 		return cleanupErr

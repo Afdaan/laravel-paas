@@ -9,6 +9,7 @@ package utils
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -246,15 +247,15 @@ func runInDirWithEnv(parentCtx context.Context, timeout time.Duration, dir strin
 
 // RunWithRefinedLogCtx executes a command with a parent context, timeout, and writes filtered output to a log file.
 func RunWithRefinedLogCtx(parentCtx context.Context, timeout time.Duration, logFilePath string, logCallback func(string), name string, args ...string) (*Result, error) {
-	return runInDirWithEnvWithLogCtx(parentCtx, timeout, "", nil, logFilePath, true, logCallback, name, args...)
+	return runInDirWithEnvWithLogCtx(parentCtx, timeout, "", nil, logFilePath, true, logCallback, nil, name, args...)
 }
 
 // RunWithRefinedLogAndEnvCtx executes a command with a parent context, timeout, custom environment variables, and writes filtered output to a log file.
-func RunWithRefinedLogAndEnvCtx(parentCtx context.Context, timeout time.Duration, env []string, logFilePath string, logCallback func(string), name string, args ...string) (*Result, error) {
-	return runInDirWithEnvWithLogCtx(parentCtx, timeout, "", env, logFilePath, true, logCallback, name, args...)
+func RunWithRefinedLogAndEnvCtx(parentCtx context.Context, timeout time.Duration, env []string, logFilePath string, logCallback func(string), logObserver func(string), name string, args ...string) (*Result, error) {
+	return runInDirWithEnvWithLogCtx(parentCtx, timeout, "", env, logFilePath, true, logCallback, logObserver, name, args...)
 }
 
-func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration, dir string, env []string, logFilePath string, refined bool, logCallback func(string), name string, args ...string) (*Result, error) {
+func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration, dir string, env []string, logFilePath string, refined bool, logCallback func(string), logObserver func(string), name string, args ...string) (*Result, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, timeout)
 	defer cancel()
 
@@ -264,7 +265,7 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 		cmd.Env = append(os.Environ(), env...)
 	}
 
-	var stdoutBuf, stderrBuf bytes.Buffer
+	var stdoutBuf, stderrBuf buildOutputTail
 
 	var output io.Writer
 	var logFile *os.File
@@ -275,12 +276,12 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 		sw = &streamWriter{cb: logCallback}
 		output = sw
 	} else {
-		logFile, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		logFile, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open log file %s: %w", logFilePath, err)
+			return &Result{}, fmt.Errorf("failed to open log file %s: %w", logFilePath, err)
 		}
 		defer logFile.Close()
-		output = logFile
+		output = deploymentLogWriter{file: logFile}
 	}
 
 	var refiner *LogRefiner
@@ -289,15 +290,23 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 		output = refiner
 	}
 
-	cmd.Stdout = io.MultiWriter(&stdoutBuf, output)
-	cmd.Stderr = io.MultiWriter(&stderrBuf, output)
+	stdoutLines := &buildLineWriter{writer: output, observe: logObserver}
+	stderrLines := &buildLineWriter{writer: output, observe: logObserver}
+	cmd.Stdout = io.MultiWriter(&stdoutBuf, stdoutLines)
+	cmd.Stderr = io.MultiWriter(&stderrBuf, stderrLines)
 
 	startTime := time.Now()
 	err = cmd.Run()
 	duration := time.Since(startTime)
 
+	if len(stdoutLines.data) > 0 || stdoutLines.omitting {
+		err = errors.Join(err, stdoutLines.Flush())
+	}
+	if len(stderrLines.data) > 0 || stderrLines.omitting {
+		err = errors.Join(err, stderrLines.Flush())
+	}
 	if refiner != nil {
-		_ = refiner.Flush()
+		err = errors.Join(err, refiner.Flush())
 	}
 	if sw != nil {
 		sw.Flush()
@@ -315,7 +324,8 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 		}
 		logCallback("")
 	} else {
-		_, _ = logFile.WriteString("\n" + summaryMsg + "\n")
+		_, writeErr := WriteDeploymentLog(logFile, "\n"+summaryMsg+"\n")
+		err = errors.Join(err, writeErr)
 	}
 
 	result := &Result{

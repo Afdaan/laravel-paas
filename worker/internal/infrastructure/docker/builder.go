@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/laravel-paas/shared/apperr"
@@ -55,14 +56,16 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	s.injectDockerIgnore(projectPath, logCallback)
 
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-	logFilePath := filepath.Join(projectPath, "build.log")
+	jobID := ""
 	if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
-		logsDir := filepath.Join(projectPath, "logs")
-		if err := os.MkdirAll(logsDir, 0755); err != nil {
-			slog.Error("Failed to create logs directory", "path", logsDir, "error", err)
-			return "", fmt.Errorf("failed to create logs directory: %w", err)
-		}
-		logFilePath = filepath.Join(logsDir, fmt.Sprintf("build-%s.log", *project.DeploymentJobID))
+		jobID = *project.DeploymentJobID
+	}
+	logFilePath, logPathErr := project.GetDeploymentLogPath(s.cfg.ProjectsPath, jobID, "build")
+	if logPathErr != nil {
+		return "", logPathErr
+	}
+	if err := os.MkdirAll(filepath.Dir(logFilePath), 0700); err != nil {
+		return "", fmt.Errorf("failed to create logs directory: %w", err)
 	}
 
 	// Set BuildKit host to use the remote BuildKit container
@@ -348,6 +351,12 @@ stdout_logfile_backups=5
 
 // railpackBuild handles all other languages using railpacks-style auto-detection with cancellation context
 func (s *DockerService) railpackBuild(ctx context.Context, project *models.Project, buildPath, imageName, logFilePath string, noCache bool, logCallback func(string)) error {
+	var missingStartCommand atomic.Bool
+	observeLog := func(message string) {
+		if strings.Contains(message, "No start command detected") {
+			missingStartCommand.Store(true)
+		}
+	}
 	// Strip strict lockfiles before Railpack runs.
 	for _, lockfile := range []string{"bun.lock", "yarn.lock"} {
 		if err := os.Remove(filepath.Join(buildPath, lockfile)); err == nil {
@@ -679,7 +688,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	}
 
 	// Securely run build by passing secrets through OS process environment rather than command args
-	res, err := utils.RunWithRefinedLogAndEnvCtx(ctx, 30*time.Minute, envSlice, logFilePath, logCallback, "railpack", buildArgs...)
+	res, err := utils.RunWithRefinedLogAndEnvCtx(ctx, 30*time.Minute, envSlice, logFilePath, logCallback, observeLog, "railpack", buildArgs...)
 
 	if err != nil {
 		// Cleanup: Remove failed image and prune cache if it looks like a corruption issue.
@@ -698,7 +707,7 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 
 	// Verify if build output indicates missing start command for a non-static project (Smart Fail-Fast)
 	combinedOutput := res.Stdout + "\n" + res.Stderr
-	if strings.Contains(combinedOutput, "No start command detected") && project.StartCommand == "" && envs["RAILPACK_START_CMD"] == "" && !isStaticFramework {
+	if (missingStartCommand.Load() || strings.Contains(combinedOutput, "No start command detected")) && project.StartCommand == "" && envs["RAILPACK_START_CMD"] == "" && !isStaticFramework {
 		slog.Warn("Railpack build finished but no start command was configured, failing early", "subdomain", project.Subdomain)
 		_ = utils.RunSilent(time.Minute, "docker", "rmi", imageName)
 		return apperr.New(400, "NO_START_COMMAND", "Build succeeded, but no start command or static/SPA output directory was detected. Non-static projects require a start command. Please configure a 'start' script in your package.json or specify a 'Start Command' in project settings.")

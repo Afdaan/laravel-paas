@@ -259,6 +259,26 @@ func (p *Project) GetProjectPath(basePath string) string {
 	return filepath.Join(basePath, userFolder, p.Subdomain)
 }
 
+func (p *Project) GetDeploymentLogsPath(basePath string) string {
+	return filepath.Join(basePath, ".deployment-logs", fmt.Sprintf("user-%d", p.UserID), fmt.Sprintf("project-%d", p.ID))
+}
+
+func (p *Project) GetDeploymentLogPath(basePath, jobID, logType string) (string, error) {
+	if logType != "build" && logType != "infra" {
+		return "", fmt.Errorf("invalid deployment log type")
+	}
+	if len(jobID) > 100 || strings.IndexFunc(jobID, func(character rune) bool {
+		return !(character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '-' || character == '_')
+	}) >= 0 {
+		return "", fmt.Errorf("invalid deployment job ID")
+	}
+	filename := logType + ".log"
+	if jobID != "" {
+		filename = fmt.Sprintf("%s-%s.log", logType, jobID)
+	}
+	return filepath.Join(p.GetDeploymentLogsPath(basePath), filename), nil
+}
+
 // BeforeCreate hooks into GORM's creation cycle to auto-populate UserSlug.
 func (p *Project) BeforeCreate(tx *gorm.DB) error {
 	var user User

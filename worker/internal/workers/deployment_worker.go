@@ -1220,8 +1220,12 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 
 	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
-	logsDir := filepath.Join(projectPath, "logs")
-	_ = os.MkdirAll(logsDir, 0755)
+	logsDir := project.GetDeploymentLogsPath(w.cfg.ProjectsPath)
+	if err := os.MkdirAll(logsDir, 0700); err != nil {
+		slog.Error("Failed to create deployment logs directory", "projectId", project.ID, "jobId", job.JobID, "path", logsDir, "error", err)
+		w.updateProjectError(project, job.JobID, "Deployment failed: build log storage unavailable")
+		return
+	}
 
 	// 1. Register log pruning and size truncation defer block first.
 	// Because of LIFO execution of defers, this runs LAST (after log files have been cleanly closed).
@@ -1245,7 +1249,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	if !isDeployment {
 		infraLogPath := filepath.Join(logsDir, "infra.log")
 		var errOpen error
-		infraLogFile, errOpen = os.OpenFile(infraLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		infraLogFile, errOpen = os.OpenFile(infraLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 		if errOpen != nil {
 			slog.Error("Failed to open persistent infra log file", "path", infraLogPath, "error", errOpen)
 		} else {
@@ -1257,29 +1261,49 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	if isDeployment {
 		logFilePrefix = "build"
 	}
-	buildLogPath := filepath.Join(logsDir, fmt.Sprintf("%s-%s.log", logFilePrefix, job.JobID))
+	buildLogPath, logPathErr := project.GetDeploymentLogPath(w.cfg.ProjectsPath, job.JobID, logFilePrefix)
+	if logPathErr != nil {
+		slog.Error("Invalid deployment log path", "projectId", project.ID, "jobId", job.JobID, "error", logPathErr)
+		w.updateProjectError(project, job.JobID, "Deployment failed: invalid build log identity")
+		return
+	}
 
 	// 3. Open job-specific log file next
-	logFile, logOpenErr := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	logFile, logOpenErr := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if logOpenErr != nil {
 		slog.Error("Failed to open job log file", "path", buildLogPath, "error", logOpenErr)
+		w.updateProjectError(project, job.JobID, "Deployment failed: build log storage unavailable")
+		return
 	} else {
 		defer logFile.Close()
 	}
 
 	var logFileMu sync.Mutex
+	logTruncated := false
 	appendLog := func(msg string) {
 		logFileMu.Lock()
 		defer logFileMu.Unlock()
 
-		if logFile != nil {
-			_, _ = logFile.WriteString(msg + "\n")
+		if logFile != nil && !logTruncated {
+			truncated, err := utils.WriteDeploymentLog(logFile, msg+"\n")
+			if err != nil {
+				slog.Error("Failed to write deployment log", "projectId", project.ID, "jobId", job.JobID, "path", buildLogPath, "error", err)
+				logFile = nil
+			} else if truncated {
+				logTruncated = true
+				_ = w.redisService.PublishBuildLogForJob(project.ID, job.JobID, utils.DeploymentLogTruncatedMessage)
+			}
 		}
-		_ = w.redisService.PublishBuildLogForJob(project.ID, job.JobID, msg)
+		if !logTruncated {
+			_ = w.redisService.PublishBuildLogForJob(project.ID, job.JobID, msg)
+		}
 
 		if !isDeployment && infraLogFile != nil {
 			timestamp := time.Now().Format("2006-01-02 15:04:05")
-			_, _ = infraLogFile.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, msg))
+			if _, err := utils.WriteDeploymentLog(infraLogFile, fmt.Sprintf("[%s] %s\n", timestamp, msg)); err != nil {
+				slog.Error("Failed to write infrastructure log", "projectId", project.ID, "jobId", job.JobID, "error", err)
+				infraLogFile = nil
+			}
 		}
 	}
 	appendLog = w.makeRedactingLogger(project, appendLog)
@@ -2450,20 +2474,23 @@ func (w *DeploymentWorker) transitionDeploymentState(project *models.Project, jo
 }
 
 func (w *DeploymentWorker) getActiveLogPath(project *models.Project) string {
-	projectPath := project.GetProjectPath(w.cfg.ProjectsPath)
+	jobID := ""
 	if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
-		jobID := *project.DeploymentJobID
-		buildPath := filepath.Join(projectPath, "logs", fmt.Sprintf("build-%s.log", jobID))
-		if _, err := os.Stat(buildPath); err == nil {
-			return buildPath
-		}
-		infraPath := filepath.Join(projectPath, "logs", fmt.Sprintf("infra-%s.log", jobID))
-		if _, err := os.Stat(infraPath); err == nil {
-			return infraPath
-		}
+		jobID = *project.DeploymentJobID
+	}
+	buildPath, err := project.GetDeploymentLogPath(w.cfg.ProjectsPath, jobID, "build")
+	if err != nil {
+		slog.Error("Invalid deployment log path", "projectId", project.ID, "jobId", jobID, "error", err)
+		return ""
+	}
+	if _, err := os.Stat(buildPath); err == nil {
 		return buildPath
 	}
-	return filepath.Join(projectPath, "build.log")
+	infraPath, _ := project.GetDeploymentLogPath(w.cfg.ProjectsPath, jobID, "infra")
+	if _, err := os.Stat(infraPath); err == nil {
+		return infraPath
+	}
+	return buildPath
 }
 
 func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, state models.DeploymentStatus, description string) {
@@ -2564,9 +2591,20 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 		_ = w.redisService.PublishBuildLogForJob(projectID, jobID, logMsg)
 
 		buildLogPath := w.getActiveLogPath(project)
-		if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); errOpt == nil {
-			_, _ = f.WriteString(logMsg + "\n")
+		if buildLogPath == "" {
+			return
+		}
+		if err := os.MkdirAll(filepath.Dir(buildLogPath), 0700); err != nil {
+			slog.Error("Failed to create deployment logs directory", "projectId", project.ID, "jobId", jobID, "error", err)
+			return
+		}
+		if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); errOpt == nil {
+			if _, err := utils.WriteDeploymentLog(f, logMsg+"\n"); err != nil {
+				slog.Error("Failed to write deployment warning log", "projectId", project.ID, "jobId", jobID, "error", err)
+			}
 			f.Close()
+		} else {
+			slog.Error("Failed to open deployment warning log", "projectId", project.ID, "jobId", jobID, "error", errOpt)
 		}
 	}
 }
@@ -2674,9 +2712,17 @@ func (w *DeploymentWorker) updateProjectError(project *models.Project, jobID str
 
 	// Also append to the physical log file
 	buildLogPath := w.getActiveLogPath(project)
-	if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); errOpt == nil {
-		_, _ = f.WriteString(terminalErrorMsg)
-		f.Close()
+	if buildLogPath != "" {
+		if err := os.MkdirAll(filepath.Dir(buildLogPath), 0700); err != nil {
+			slog.Error("Failed to create deployment logs directory", "projectId", project.ID, "jobId", jobID, "error", err)
+		} else if f, errOpt := os.OpenFile(buildLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); errOpt == nil {
+			if _, err := utils.WriteDeploymentLog(f, terminalErrorMsg); err != nil {
+				slog.Error("Failed to write deployment error log", "projectId", project.ID, "jobId", jobID, "error", err)
+			}
+			f.Close()
+		} else {
+			slog.Error("Failed to open deployment error log", "projectId", project.ID, "jobId", jobID, "error", errOpt)
+		}
 	}
 	if project.RolloutContainerID != nil && *project.RolloutContainerID != "" {
 		w.cleanupRollout(project, jobID, *project.RolloutContainerID, project.RolloutWorkerContainerID)
