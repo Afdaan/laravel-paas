@@ -172,7 +172,7 @@ func setupRequeueTest(t *testing.T, client *redis.Client) (*ProjectHandler, mode
 		JWTSecret:               "test-secret-key-1234567890-test-secret-key-1234567890",
 		CredentialEncryptionKey: "test-key-32-chars-long-123456789",
 	}
-	service := projectservice.NewProjectService(cfg, repo, nil, nil, nil, nil, redisService, manager)
+	service := projectservice.NewProjectService(cfg, repo, nil, nil, nil, redisService, manager)
 	secretStoreService := services.NewSecretStoreService(db, cfg, redisService)
 	handler := &ProjectHandler{
 		cfg:                cfg,

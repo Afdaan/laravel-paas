@@ -125,7 +125,12 @@ The control plane exposes RESTful endpoints for frontend integration:
    ./scripts/start.sh
    ```
 
-3. **Access the Dashboard:**
+3. **Enable Traefik Recovery After Reboot:**
+   ```bash
+   ./scripts/install-traefik-boot-service.sh
+   ```
+
+4. **Access the Dashboard:**
    Open `http://localhost` (or your configured `BASE_DOMAIN`) in your browser. The platform auto-provisions a default admin account on initial startup (`admin@localhost.com`).
 
 ---

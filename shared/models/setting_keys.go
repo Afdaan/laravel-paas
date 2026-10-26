@@ -3,7 +3,6 @@ package models
 // Setting Keys
 // Use these constants throughout the application to avoid magic strings
 const (
-	SettingMaxProjects            = "max_projects_per_user"
 	SettingCPULimit               = "cpu_limit_percent"
 	SettingMemoryLimit            = "memory_limit_mb"
 	SettingBaseDomain             = "base_domain"
@@ -19,7 +18,6 @@ const (
 // Default Settings Values
 // These are used when a setting is missing from the database
 const (
-	DefaultMaxProjects          = "3"
 	DefaultCPULimit             = "50"
 	DefaultMemoryLimit          = "512"
 	DefaultAdminIdleTimeout     = "30"

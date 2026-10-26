@@ -35,10 +35,6 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) (handlerErr error) {
 		return apperr.New(500, "AUTH_INTERNAL_ERROR", "Invalid user context")
 	}
 
-	roleVal := c.Locals("role")
-	roleStr, _ := roleVal.(string)
-	role := models.Role(roleStr)
-
 	// Basic validation
 	if req.Name == "" || req.GithubURL == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -167,7 +163,7 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) (handlerErr error) {
 	}
 
 	// Create project record inside the transaction
-	project, err := h.projectService.CreateProjectTx(tx, userID, role, req.Name, req.GithubURL, req.Branch, dbOption, req.DatabaseName, req.DatabaseUsername, req.DatabasePassword, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.Port, req.QueueEnabled, req.DatabaseEngine, req.GithubInstallationID, req.GithubRepoOwner, req.GithubRepoName)
+	project, err := h.projectService.CreateProjectTx(tx, userID, req.Name, req.GithubURL, req.Branch, dbOption, req.DatabaseName, req.DatabaseUsername, req.DatabasePassword, req.BaseDirectory, req.BuildCommand, req.StartCommand, req.Port, req.QueueEnabled, req.DatabaseEngine, req.GithubInstallationID, req.GithubRepoOwner, req.GithubRepoName)
 	if err != nil {
 		tx.Rollback()
 		slog.Warn("Project creation failed", "user_id", userID, "error", err.Error())

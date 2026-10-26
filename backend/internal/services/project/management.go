@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
@@ -218,23 +217,12 @@ func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
 }
 
 // CreateProject handles the initial creation of a project record
-func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
-	return s.CreateProjectTx(nil, userID, role, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand, port, queueEnabled, databaseEngine, githubInstallationID, githubRepoOwner, githubRepoName)
+func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
+	return s.CreateProjectTx(nil, userID, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand, port, queueEnabled, databaseEngine, githubInstallationID, githubRepoOwner, githubRepoName)
 }
 
 // CreateProjectTx handles the initial creation of a project record within a transaction context
-func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.Role, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
-	// Check per-user project limit setting (0 or negative means unlimited)
-	if role != models.RoleAdmin && role != models.RoleSuperAdmin {
-		maxProjects, err := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
-		if err == nil && maxProjects > 0 {
-			count, _ := s.projectRepo.CountByUserID(userID)
-			if int(count) >= maxProjects {
-				return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
-			}
-		}
-	}
-
+func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
 	if err := validateBaseDirectory(baseDirectory); err != nil {
 		return nil, apperr.New(400, "INVALID_BASE_DIRECTORY", err.Error())
 	}

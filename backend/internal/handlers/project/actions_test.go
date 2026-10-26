@@ -27,7 +27,6 @@ import (
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/repositories"
 	"github.com/laravel-paas/shared/services/deployment"
-	"github.com/laravel-paas/shared/services/setting"
 	"gorm.io/gorm"
 )
 
@@ -94,14 +93,11 @@ func setupTestAppWithBilling(t *testing.T, dbName string, billingEnabled bool) (
 
 	projectRepo := repositories.NewProjectRepository(db)
 	userRepo := repositories.NewUserRepository(db)
-	settingRepo := repositories.NewSettingRepository(db)
 
-	settingService := setting.NewSettingService(settingRepo, redisService)
 	transitionMgr := deployment.NewTransitionManager(db, redisService)
 	projectService := projectServicePkg.NewProjectService(
 		cfg,
 		projectRepo,
-		settingService,
 		nil, // dockerService
 		nil, // storageService
 		nil, // mysqlService
@@ -125,7 +121,6 @@ func setupTestAppWithBilling(t *testing.T, dbName string, billingEnabled bool) (
 	app := fiber.New(fiber.Config{ErrorHandler: handlers.ErrorHandler})
 	app.Post("/projects", func(c *fiber.Ctx) error {
 		c.Locals("user_id", user.ID)
-		c.Locals("role", string(user.Role))
 		return projectHandler.Create(c)
 	})
 
@@ -163,6 +158,75 @@ func TestCreateProject_InvalidDatabaseOption(t *testing.T) {
 	}
 }
 
+func TestCreateProject_AllowsMoreThanLegacyLimit(t *testing.T) {
+	app, db, mock := setupTestApp(t, "project_without_legacy_limit")
+
+	var user models.User
+	if err := db.First(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index <= 5; index++ {
+		project := models.Project{
+			UserID:    user.ID,
+			UID:       fmt.Sprintf("existing-project-%d", index),
+			Name:      fmt.Sprintf("Existing Project %d", index),
+			GithubURL: fmt.Sprintf("https://github.com/test/existing-%d", index),
+			Subdomain: fmt.Sprintf("existing-%d", index),
+		}
+		if err := db.Create(&project).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:processing_queue",
+		"deployment:lock:.*",
+	}, ".*", ".*", "120000").SetVal(int64(1))
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:queued_project_counts",
+		"deployment:stats",
+		"deployment:lock:.*",
+	}, ".*", ".*", ".*").SetVal(int64(1))
+	mock.ExpectLLen("deployment:queue").SetVal(1)
+
+	body, err := json.Marshal(CreateProjectRequest{
+		Name:           "Sixth Project",
+		GithubURL:      "https://github.com/test/sixth-project",
+		Branch:         "main",
+		DatabaseOption: "none",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/projects", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		var responseBody map[string]string
+		_ = json.NewDecoder(resp.Body).Decode(&responseBody)
+		t.Fatalf("expected status 201, got %d: %s", resp.StatusCode, responseBody["error"])
+	}
+
+	var count int64
+	if err := db.Model(&models.Project{}).Where("user_id = ?", user.ID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 6 {
+		t.Fatalf("expected 6 projects, got %d", count)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCreateProjectBillingRollsBackManagedDatabaseWhenCreditsAreInsufficient(t *testing.T) {
 	app, db, mock := setupTestAppWithBilling(t, "billing_managed_database_rollback", true)
 	var user models.User
@@ -182,7 +246,6 @@ func TestCreateProjectBillingRollsBackManagedDatabaseWhenCreditsAreInsufficient(
 		t.Fatal(err)
 	}
 
-	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
 	reqPayload := CreateProjectRequest{
 		Name:                   "Billed Project",
 		GithubURL:              "https://github.com/test/billed-project",
@@ -244,7 +307,6 @@ func TestCreateProject_BillingDeductsCreditsSuccessfully(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
 	mock.Regexp().ExpectEvalSha(".*", []string{
 		"deployment:queue",
 		"deployment:delayed_queue",
@@ -327,9 +389,6 @@ func TestCreateProject_RollbackOnAttachFailure(t *testing.T) {
 	}
 	db.Create(&existingProject)
 
-	// Mock settings expectations as valid JSON strings
-	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-
 	reqPayload := CreateProjectRequest{
 		Name:                "New Project",
 		GithubURL:           "https://github.com/test/new",
@@ -382,9 +441,6 @@ func TestCreateProject_RollbackOnSecretStoreFailure(t *testing.T) {
 	})
 	defer func() { _ = db.Callback().Create().Remove("fail_secret_stores") }()
 
-	// Mock settings expectations as valid JSON strings
-	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-
 	reqPayload := CreateProjectRequest{
 		Name:           "SQLite Project",
 		GithubURL:      "https://github.com/test/sqlite-repo",
@@ -431,9 +487,6 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 
 	// Disable order matching because of concurrent requests interleaving Redis calls
 	mock.MatchExpectationsInOrder(false)
-
-	// Mock settings expectations for the successful request as valid JSON strings
-	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
 
 	// Mock queue expectations for the single successful enqueue
 	mock.Regexp().ExpectEvalSha(".*", []string{
@@ -546,9 +599,7 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 
 func TestCreateProject_DatabaseValidation(t *testing.T) {
 	t.Run("uppercase database name", func(t *testing.T) {
-		app, _, mock := setupTestApp(t, "db_val_upper_name")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-
+		app, _, _ := setupTestApp(t, "db_val_upper_name")
 		reqPayload := CreateProjectRequest{
 			Name:           "Test Project",
 			GithubURL:      "https://github.com/test/repo",
@@ -573,9 +624,7 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	})
 
 	t.Run("uppercase database username", func(t *testing.T) {
-		app, _, mock := setupTestApp(t, "db_val_upper_user")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-
+		app, _, _ := setupTestApp(t, "db_val_upper_user")
 		reqPayload := CreateProjectRequest{
 			Name:             "Test Project",
 			GithubURL:        "https://github.com/test/repo",
@@ -601,9 +650,7 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	})
 
 	t.Run("weak database password", func(t *testing.T) {
-		app, _, mock := setupTestApp(t, "db_val_weak_pass")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-
+		app, _, _ := setupTestApp(t, "db_val_weak_pass")
 		reqPayload := CreateProjectRequest{
 			Name:             "Test Project",
 			GithubURL:        "https://github.com/test/repo",
@@ -631,7 +678,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 
 	t.Run("distinct name and username persistence", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_distinct")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
 		mock.Regexp().ExpectEvalSha(".*", []string{
 			"deployment:queue",
 			"deployment:delayed_queue",
@@ -686,7 +732,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 
 	t.Run("spaced database username trimming", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_spaced_user")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
 		mock.Regexp().ExpectEvalSha(".*", []string{
 			"deployment:queue",
 			"deployment:delayed_queue",
@@ -733,7 +778,6 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 
 	t.Run("long project name username generation", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_long_name")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
 		mock.Regexp().ExpectEvalSha(".*", []string{
 			"deployment:queue",
 			"deployment:delayed_queue",

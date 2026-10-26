@@ -33,7 +33,6 @@ type ProjectRepository interface {
 	UpdateConfigHash(id uint, newHash string, expectedOldHash string) error
 	Delete(id uint) error
 	CountTotal() (int64, error)
-	CountByUserID(userID uint) (int64, error)
 	CountRunning() (int64, error)
 	GetRunningWithContainers() ([]models.Project, error)
 	RecordDeploymentEvent(event *models.DeploymentEvent) error
@@ -300,12 +299,6 @@ func (r *projectRepository) Delete(id uint) error {
 func (r *projectRepository) CountTotal() (int64, error) {
 	var count int64
 	err := r.db.Model(&models.Project{}).Count(&count).Error
-	return count, err
-}
-
-func (r *projectRepository) CountByUserID(userID uint) (int64, error) {
-	var count int64
-	err := r.db.Model(&models.Project{}).Where("user_id = ?", userID).Count(&count).Error
 	return count, err
 }
 

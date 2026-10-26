@@ -83,7 +83,6 @@ func Seed(db *gorm.DB, cfg *config.Config) error {
 
 	// Create default settings if not exists
 	defaultSettings := []models.Setting{
-		{Key: models.SettingMaxProjects, Value: models.DefaultMaxProjects, Description: "Maximum projects per user", Type: "int"},
 		{Key: models.SettingCPULimit, Value: models.DefaultCPULimit, Description: "CPU limit per container (%)", Type: "int"},
 		{Key: models.SettingMemoryLimit, Value: models.DefaultMemoryLimit, Description: "Memory limit per container (MB)", Type: "int"},
 		{Key: models.SettingBaseDomain, Value: cfg.BaseDomain, Description: "Base domain for subdomains", Type: "string"},
