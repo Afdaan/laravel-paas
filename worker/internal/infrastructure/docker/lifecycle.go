@@ -98,25 +98,31 @@ func sanitizeBuildError(stderr string) string {
 		return msg
 	}
 
-	lines := strings.Split(stderr, "\n")
+	lines := strings.Split(utils.StripLogControlSequences(stderr), "\n")
+	buildPrefix := regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`)
+	for index, line := range lines {
+		lines[index] = strings.TrimSpace(buildPrefix.ReplaceAllString(line, ""))
+	}
 
 	// Define actionable error patterns
 	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\b(SyntaxError|TypeError|ReferenceError|RangeError|ParseError):`),
 		regexp.MustCompile(`(?i)\[vite\]:\s*Rollup\s*failed`),
 		regexp.MustCompile(`(?i)ERROR\s*in\s+`),
 		regexp.MustCompile(`(?i)Failed\s*to\s*compile`),
 		regexp.MustCompile(`(?i)Your\s*requirements\s*could\s*not\s*be\s*resolved`),
+		regexp.MustCompile(`(?i)error\s+TS[0-9]+:`),
+		regexp.MustCompile(`(?i)syntax\s+error`),
+		regexp.MustCompile(`(?i)fatal:\s+`),
+		regexp.MustCompile(`(?i)npm\s+(ERR!|error)\s+(Failed at|command failed)`),
 		regexp.MustCompile(`(?i)npm\s+ERR!`),
 		regexp.MustCompile(`(?i)npm\s+error`),
 		regexp.MustCompile(`(?i)yarn\s+error`),
 		regexp.MustCompile(`(?i)command\s+failed\s+with\s+exit\s+code`),
-		regexp.MustCompile(`(?i)error\s+TS[0-9]+:`),
-		regexp.MustCompile(`(?i)syntax\s+error`),
-		regexp.MustCompile(`(?i)fatal:\s+`),
 	}
 
-	for i, line := range lines {
-		for _, pat := range patterns {
+	for _, pat := range patterns {
+		for i, line := range lines {
 			if pat.MatchString(line) {
 				start := i - 1
 				if start < 0 {
@@ -146,6 +152,8 @@ func sanitizeBuildError(stderr string) string {
 		"failed to solve:",
 		"unrecognized image format",
 		"INFO No package manager",
+		"INFO cache imports:",
+		"INFO cache exports:",
 		"Railpack build failed",
 		" ERRO ",
 		" INFO ",

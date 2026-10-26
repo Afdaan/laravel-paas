@@ -22,6 +22,15 @@ import {
 
 const renderLogLine = (line: string) => {
   const trimmed = line.trim()
+  const lower = trimmed.toLowerCase()
+
+  if (
+    trimmed.startsWith('✗') ||
+    /\[(?:FAILED|ERROR|[A-Z_]*FAILED)\]|(?:SyntaxError|TypeError|ReferenceError|RangeError|ParseError):|npm (?:ERR!|error\b)/i.test(trimmed) ||
+    ((lower.includes('error:') || lower.includes('failed')) && !lower.includes('success'))
+  ) {
+    return <span className="text-rose-400 font-medium">{line}</span>
+  }
 
   // 1. Stage / step header starting with ">>"
   if (trimmed.startsWith('>>')) {
@@ -58,23 +67,6 @@ const renderLogLine = (line: string) => {
         {line}
       </span>
     )
-  }
-
-  // 4. Error lines starting with "✗" or containing "error" (e.g. "[ERROR]", "error:")
-  if (
-    trimmed.startsWith('✗') ||
-    trimmed.startsWith('[ERROR]') ||
-    trimmed.toLowerCase().includes('error:') ||
-    trimmed.toLowerCase().includes('failed')
-  ) {
-    // Only color as error if it's not a success line
-    if (!trimmed.toLowerCase().includes('successfully') && !trimmed.toLowerCase().includes('success')) {
-      return (
-        <span className="text-rose-400 font-medium">
-          {line}
-        </span>
-      )
-    }
   }
 
   // 5. Warning lines
@@ -575,7 +567,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 h-[600px] bg-zinc-950 rounded-xl overflow-hidden shadow-2xl border border-white/10">
+    <div className="grid min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,2fr)] lg:grid-cols-3 lg:grid-rows-1 h-[600px] bg-zinc-950 rounded-xl overflow-hidden shadow-2xl border border-white/10">
       {/* Left Column: Timeline */}
       <div className="lg:col-span-1 border-b lg:border-b-0 lg:border-r border-white/10 bg-zinc-900/40 flex flex-col h-full overflow-hidden">
         <div className="bg-zinc-900/80 px-4 py-3 border-b border-white/5 flex items-center justify-between shrink-0">
@@ -709,12 +701,12 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         <CardContent className="flex-1 p-0 overflow-hidden bg-zinc-950">
           <div
             ref={scrollRef}
-            className="h-full overflow-y-auto p-6 font-mono text-[11px] leading-relaxed text-zinc-300 custom-scrollbar selection:bg-primary/30"
+            className="h-full overflow-y-auto p-3 sm:p-6 font-mono text-xs leading-relaxed text-zinc-300 custom-scrollbar selection:bg-primary/30"
           >
             {logLines.length > 0 ? logLines.map((line: string, i: number) => (
               <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.05] transition-colors">
                 <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">{lineOffset + i + 1}</span>
-                <span className="whitespace-pre-wrap break-all">{renderLogLine(line)}</span>
+                <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{renderLogLine(line)}</span>
               </div>
             )) : pendingDeploymentLogLines.length > 0 ? (
               <div className="flex flex-col gap-1 opacity-70 mt-2">

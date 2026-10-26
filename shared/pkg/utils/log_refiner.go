@@ -36,6 +36,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 	return &LogRefiner{
 		writer: w,
 		hidePatterns: []*regexp.Regexp{
+			regexp.MustCompile(`^(?:#\d+\s+[0-9.]+\s*)?INFO\s+cache (imports|exports):\s*\[\s*\]\s*$`),
 			// 1. Hide ALL Docker/BuildKit step headers and status lines (lines starting with #num but no timestamp)
 			regexp.MustCompile(`^#\d+(?:\s+[^0-9]|$)`),
 
@@ -169,7 +170,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			// 24. Hide npm warn config (e.g. npm warn config production) which occurs outside docker buildkit
 			regexp.MustCompile(`npm warn config (production|global|only|\[redacted\])`),
 		},
-		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
+		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+[ \t]?`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),
 	}
 }
@@ -210,6 +211,10 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	return r.write(p)
+}
+
+func (r *LogRefiner) write(p []byte) (n int, err error) {
 	// Add current write to buffer
 	r.buf += string(p)
 
@@ -240,9 +245,9 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 		if !shouldHide {
 			cleanedLine := r.stripPattern.ReplaceAllString(line, "")
 			cleanedLine = r.ansiPattern.ReplaceAllString(cleanedLine, "")
-			cleanedLine = strings.TrimSpace(cleanedLine)
+			cleanedLine = strings.TrimRight(cleanedLine, " \t\r")
 
-			if cleanedLine != "" {
+			if strings.TrimSpace(cleanedLine) != "" {
 				// Apply transformations
 				isStatus := false
 				for _, t := range buildTransformations {
@@ -290,14 +295,8 @@ func (r *LogRefiner) Flush() error {
 	defer r.mu.Unlock()
 
 	if strings.TrimSpace(r.buf) != "" {
-		cleaned := r.stripPattern.ReplaceAllString(r.buf, "")
-		cleaned = r.ansiPattern.ReplaceAllString(cleaned, "")
-		cleaned = strings.TrimSpace(cleaned)
-		if cleaned != "" {
-			_, err := r.writer.Write([]byte(cleaned + "\n"))
-			r.buf = ""
-			return err
-		}
+		_, err := r.write([]byte("\n"))
+		return err
 	}
 	r.buf = ""
 	return nil

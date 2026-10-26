@@ -1,10 +1,65 @@
 package workers
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/laravel-paas/shared/config"
+	"github.com/laravel-paas/shared/models"
+	"github.com/laravel-paas/worker/internal/infrastructure/docker"
 )
+
+func TestDetectProjectRuntimeEnvironment(t *testing.T) {
+	for _, manual := range []bool{false, true} {
+		t.Run(map[bool]string{false: "project environment", true: "manual override"}[manual], func(t *testing.T) {
+			root := t.TempDir()
+			project := &models.Project{Framework: "Node.js", Subdomain: "test", NodeVersion: "20", IsManualVersion: manual}
+			cfg := &config.Config{ProjectsPath: root}
+			buildPath := project.GetProjectPath(root)
+			if err := os.MkdirAll(buildPath, 0755); err != nil {
+				t.Fatal(err)
+			}
+			for name, content := range map[string]string{
+				".env":         "RAILPACK_NODE_VERSION=22\nAPI_KEY=do-not-log-my-api-key\n",
+				"package.json": `{"scripts":{"start":"node server.js"}}`,
+			} {
+				if err := os.WriteFile(filepath.Join(buildPath, name), []byte(content), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for name, script := range map[string]string{
+				"docker":   "#!/bin/sh\nexit 0\n",
+				"railpack": "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$RAILPACK_TEST_ARGS\"\nprintf '{\"success\":true,\"detectedProviders\":[\"node\"],\"resolvedPackages\":{\"node\":{\"requestedVersion\":\"%s\"}}}' \"$RAILPACK_NODE_VERSION\"\n",
+			} {
+				if err := os.WriteFile(filepath.Join(root, name), []byte(script), 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			argsPath := filepath.Join(root, "args")
+			t.Setenv("PATH", root)
+			t.Setenv("RAILPACK_TEST_ARGS", argsPath)
+			worker := &DeploymentWorker{cfg: cfg, dockerService: docker.NewDockerService(cfg, nil, nil)}
+			got := worker.detectProjectRuntime(context.Background(), project, buildPath)
+			want := "22"
+			if manual {
+				want = "20"
+			}
+			if got.Framework != "Node.js" || got.RuntimeVersion != want || got.Source != "railpack" {
+				t.Fatalf("runtime inspection = %#v, want Node %s through Railpack", got, want)
+			}
+			arguments, err := os.ReadFile(argsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(arguments), "--env\nRAILPACK_NODE_VERSION\n") || strings.Contains(string(arguments), "do-not-log-my-api-key") {
+				t.Fatalf("inspection must forward environment names without secrets: %s", arguments)
+			}
+		})
+	}
+}
 
 func TestDetectJSFrameworkFromPackage(t *testing.T) {
 	cases := map[string]struct {
@@ -65,6 +120,23 @@ func TestRuntimeDetectionFromRailpack(t *testing.T) {
 			want: projectRuntimeDetection{Framework: "Laravel", Provider: "php", Runtime: "laravel", RuntimeVersion: "8.4", Source: "railpack"},
 		},
 		{
+			name: "current Laravel metadata wins over node tooling",
+			info: railpackProjectInfo{
+				DetectedProviders: []string{"node", "php"},
+				Metadata:          map[string]string{"phpFramework": "laravel"},
+				ResolvedPackages:  map[string]railpackPackage{"php": {ResolvedVersion: "8.4.8"}},
+			},
+			want: projectRuntimeDetection{Framework: "PHP", Provider: "php", Runtime: "laravel", RuntimeVersion: "8.4", Source: "railpack"},
+		},
+		{
+			name: "plain PHP stays native",
+			info: railpackProjectInfo{
+				DetectedProviders: []string{"php"},
+				ResolvedPackages:  map[string]railpackPackage{"php": {ResolvedVersion: "8.4.8"}},
+			},
+			want: projectRuntimeDetection{Framework: "PHP", Provider: "php", Runtime: "php", RuntimeVersion: "8.4", Source: "railpack"},
+		},
+		{
 			name: "next runtime",
 			info: railpackProjectInfo{
 				DetectedProviders: []string{"node"},
@@ -117,5 +189,13 @@ func TestIsLaravelManifest(t *testing.T) {
 
 	if !isLaravelManifest(root) {
 		t.Fatal("isLaravelManifest() = false, want true")
+	}
+	info := railpackProjectInfo{
+		DetectedProviders: []string{"node", "php"},
+		ResolvedPackages:  map[string]railpackPackage{"php": {ResolvedVersion: "8.4.8"}},
+	}
+	want := projectRuntimeDetection{Framework: "PHP", Provider: "php", Runtime: "laravel", RuntimeVersion: "8.4", Source: "railpack"}
+	if got := runtimeDetectionFromRailpack(info, root); got != want {
+		t.Fatalf("Laravel manifest fallback = %#v, want %#v", got, want)
 	}
 }

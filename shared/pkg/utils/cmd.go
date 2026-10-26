@@ -184,7 +184,7 @@ func runInDirWithEnvWithLog(timeout time.Duration, dir string, env []string, log
 	if err != nil {
 		statusText = "Build failed"
 	}
-	summaryMsg := fmt.Sprintf("\n========================================================================\n[BUILD SUMMARY] %s in %s\n========================================================================\n", statusText, formatDuration(duration))
+	summaryMsg := fmt.Sprintf("[BUILD SUMMARY] %s in %s\n", statusText, formatDuration(duration))
 	_, _ = logFile.WriteString(summaryMsg)
 
 	result := &Result{
@@ -202,6 +202,10 @@ func runInDirWithEnvWithLog(timeout time.Duration, dir string, env []string, log
 // RunCtx executes a command with a parent context and timeout.
 func RunCtx(parentCtx context.Context, timeout time.Duration, name string, args ...string) (*Result, error) {
 	return runInDirWithEnv(parentCtx, timeout, "", nil, false, name, args...)
+}
+
+func RunWithEnvCtx(parentCtx context.Context, timeout time.Duration, env []string, name string, args ...string) (*Result, error) {
+	return runInDirWithEnv(parentCtx, timeout, "", env, false, name, args...)
 }
 
 // formatDuration formats a time.Duration into a human-readable string (e.g., "12.4s", "1m 5s")
@@ -316,15 +320,11 @@ func runInDirWithEnvWithLogCtx(parentCtx context.Context, timeout time.Duration,
 	if err != nil {
 		statusText = "Build failed"
 	}
-	summaryMsg := fmt.Sprintf("========================================================================\n[BUILD SUMMARY] %s in %s\n========================================================================", statusText, formatDuration(duration))
+	summaryMsg := fmt.Sprintf("[BUILD SUMMARY] %s in %s", statusText, formatDuration(duration))
 	if logCallback != nil {
-		logCallback("")
-		for _, line := range strings.Split(summaryMsg, "\n") {
-			logCallback(line)
-		}
-		logCallback("")
+		logCallback(summaryMsg)
 	} else {
-		_, writeErr := WriteDeploymentLog(logFile, "\n"+summaryMsg+"\n")
+		_, writeErr := WriteDeploymentLog(logFile, summaryMsg+"\n")
 		err = errors.Join(err, writeErr)
 	}
 

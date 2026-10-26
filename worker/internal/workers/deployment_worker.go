@@ -1829,7 +1829,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		"runtime_version", detection.RuntimeVersion,
 		"source", detection.Source,
 	)
-	appendLog(fmt.Sprintf(">> Runtime detected: %s", detection.Framework))
+	appendLog(fmt.Sprintf(">> Runtime detected: %s (provider: %s; runtime: %s)", detection.Framework, detection.Provider, detection.Runtime))
 	if err := w.projectRepo.UpdateMetadataForJob(project.ID, job.JobID, map[string]interface{}{"detected_framework": detection.Framework}); err != nil {
 		slog.Warn("Failed to persist detected runtime candidate", "id", project.ID, "error", err)
 	}
@@ -1907,8 +1907,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 			w.updateProjectError(project, job.JobID, "[BUILD_FAILED] Deployment failed: Build step exceeded maximum allowed time limit.")
 			return
 		}
-		appendLog("ERROR: Failed to deploy container: " + err.Error())
-		w.updateProjectError(project, job.JobID, "[BUILD_FAILED] Failed to deploy container: "+err.Error())
+		w.updateProjectError(project, job.JobID, err.Error())
 		return
 	}
 	sharedDocker.GetCircuitBreaker().RecordSuccess()
@@ -2237,9 +2236,18 @@ func (w *DeploymentWorker) detectProjectRuntime(ctx context.Context, project *mo
 	if project.StartCommand != "" {
 		args = append(args, "--start-cmd", project.StartCommand)
 	}
+	envs, _ := w.dockerService.ParseProjectEnv(filepath.Join(project.GetProjectPath(w.cfg.ProjectsPath), ".env"))
+	if envs == nil {
+		envs = make(map[string]string)
+	}
+	if project.IsManualVersion && strings.TrimSpace(project.NodeVersion) != "" {
+		envs["RAILPACK_NODE_VERSION"] = strings.TrimSpace(project.NodeVersion)
+	}
+	envArgs, envSlice := docker.RailpackEnvArgs(envs)
+	args = append(args, envArgs...)
 	args = append(args, buildPath)
 
-	res, err := utils.RunCtx(ctx, 20*time.Second, "railpack", args...)
+	res, err := utils.RunWithEnvCtx(ctx, 20*time.Second, envSlice, "railpack", args...)
 	if err == nil {
 		var info railpackProjectInfo
 		if json.Unmarshal([]byte(res.Stdout), &info) == nil && info.Success {
@@ -2261,7 +2269,9 @@ func (w *DeploymentWorker) detectProjectRuntime(ctx context.Context, project *mo
 
 func runtimeDetectionFromRailpack(info railpackProjectInfo, buildPath string) projectRuntimeDetection {
 	provider := ""
-	if strings.EqualFold(info.Metadata["phpLaravel"], "true") {
+	legacyLaravel := strings.EqualFold(info.Metadata["phpLaravel"], "true")
+	isLaravel := legacyLaravel || strings.EqualFold(info.Metadata["phpFramework"], "laravel") || isLaravelManifest(buildPath)
+	if isLaravel {
 		provider = "php"
 	} else if len(info.DetectedProviders) > 0 {
 		provider = strings.ToLower(info.DetectedProviders[0])
@@ -2272,12 +2282,15 @@ func runtimeDetectionFromRailpack(info railpackProjectInfo, buildPath string) pr
 	detection := projectRuntimeDetection{Provider: provider, Source: "railpack", Framework: "Other"}
 	switch provider {
 	case "php":
-		if strings.EqualFold(info.Metadata["phpLaravel"], "true") {
+		if legacyLaravel {
 			detection.Framework = "Laravel"
 			detection.Runtime = "laravel"
 		} else {
 			detection.Framework = "PHP"
 			detection.Runtime = "php"
+			if isLaravel {
+				detection.Runtime = "laravel"
+			}
 		}
 		detection.RuntimeVersion = railpackRuntimeVersion(info, "php", 2)
 	case "node":
