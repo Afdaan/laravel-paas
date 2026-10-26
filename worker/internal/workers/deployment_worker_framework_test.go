@@ -126,7 +126,7 @@ func TestRuntimeDetectionFromRailpack(t *testing.T) {
 				Metadata:          map[string]string{"phpFramework": "laravel"},
 				ResolvedPackages:  map[string]railpackPackage{"php": {ResolvedVersion: "8.4.8"}},
 			},
-			want: projectRuntimeDetection{Framework: "PHP", Provider: "php", Runtime: "laravel", RuntimeVersion: "8.4", Source: "railpack"},
+			want: projectRuntimeDetection{Framework: "Laravel", Provider: "php", Runtime: "laravel", RuntimeVersion: "8.4", Source: "railpack"},
 		},
 		{
 			name: "plain PHP stays native",
@@ -194,7 +194,7 @@ func TestIsLaravelManifest(t *testing.T) {
 		DetectedProviders: []string{"node", "php"},
 		ResolvedPackages:  map[string]railpackPackage{"php": {ResolvedVersion: "8.4.8"}},
 	}
-	want := projectRuntimeDetection{Framework: "PHP", Provider: "php", Runtime: "laravel", RuntimeVersion: "8.4", Source: "railpack"}
+	want := projectRuntimeDetection{Framework: "Laravel", Provider: "php", Runtime: "laravel", RuntimeVersion: "8.4", Source: "railpack"}
 	if got := runtimeDetectionFromRailpack(info, root); got != want {
 		t.Fatalf("Laravel manifest fallback = %#v, want %#v", got, want)
 	}

@@ -2282,15 +2282,12 @@ func runtimeDetectionFromRailpack(info railpackProjectInfo, buildPath string) pr
 	detection := projectRuntimeDetection{Provider: provider, Source: "railpack", Framework: "Other"}
 	switch provider {
 	case "php":
-		if legacyLaravel {
+		if isLaravel {
 			detection.Framework = "Laravel"
 			detection.Runtime = "laravel"
 		} else {
 			detection.Framework = "PHP"
 			detection.Runtime = "php"
-			if isLaravel {
-				detection.Runtime = "laravel"
-			}
 		}
 		detection.RuntimeVersion = railpackRuntimeVersion(info, "php", 2)
 	case "node":
