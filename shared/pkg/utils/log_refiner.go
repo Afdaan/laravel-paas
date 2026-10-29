@@ -38,7 +38,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile("(?i)(the [`']?railpack\\.json[`']? format is still evolving|customize https://railpack\\.com/config/excluding-files|applying default exclude patterns)"),
 			regexp.MustCompile(`^(Deploy|Starting Docker Build\.\.\.)$`),
 			regexp.MustCompile(`^[|│]?\s*(Run:|docker run\b.*)\s*[|│]?$`),
-			regexp.MustCompile(`^[|│]$`),
+			regexp.MustCompile(`^[|│](?:\s*[|│])*$`),
 			// 1. Hide ALL Docker/BuildKit step headers and status lines (lines starting with #num but no timestamp)
 			regexp.MustCompile(`^#\d+(?:\s+[^0-9]|$)`),
 

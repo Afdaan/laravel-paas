@@ -47,7 +47,7 @@ func TestLogRefinerHidesRailpackNoiseAndKeepsDependencySummary(t *testing.T) {
 		"Installing collected packages: typing-extensions, fastapi, uvicorn\n" +
 		"Successfully installed fastapi-0.1 uvicorn-0.2\n" +
 		"#8 9.53 │ Successfully built image in 9.53s │\n" +
-		"#8 9.54 │\n#8 9.55 │ Run: │\n" +
+		"#8 9.54 │                              │\n#8 9.55 │ Run: │\n" +
 		"#8 9.56 │ docker run -it paas-test │\n"
 
 	if _, err := refiner.Write([]byte(input)); err != nil {
