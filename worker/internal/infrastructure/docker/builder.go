@@ -402,10 +402,6 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 	slog.Info("Selected Railpack Node version override",
 		"subdomain", project.Subdomain, "framework", project.Framework,
 		"node_version_override", nodeVersion, "node_version_source", nodeVersionSource)
-	if logCallback != nil {
-		logCallback(fmt.Sprintf(">> Node version source: %s; platform override: %q", nodeVersionSource, nodeVersion))
-	}
-
 	// Dynamically inject runtime version overrides using idiomatic files for Railpack/mise
 	switch project.Framework {
 	case "Go", "Golang":

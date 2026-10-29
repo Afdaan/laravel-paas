@@ -32,14 +32,24 @@ describe('BuildLogsConsole presentation', () => {
   ])('renders failure before stage styling: %s', async (line) => {
     vi.mocked(projectsAPI.buildLogs).mockResolvedValue({ data: { logs: line } } as never)
     render(<BuildLogsConsole projectId="test-project" status="failed" />)
-    expect(await screen.findByText(line)).toHaveClass('text-rose-400')
+    expect(await screen.findByText(line)).toHaveClass('text-rose-300')
   })
 
   it('keeps successful builds green', async () => {
     const line = '[BUILD SUMMARY] Application built successfully in 16.4s'
     vi.mocked(projectsAPI.buildLogs).mockResolvedValue({ data: { logs: line } } as never)
     render(<BuildLogsConsole projectId="test-project" status="running" />)
-    expect(await screen.findByText(line)).toHaveClass('text-emerald-400')
+    expect(await screen.findByText(line)).toHaveClass('text-emerald-300')
+  })
+
+  it.each([
+    ['> pip install', 'text-cyan-300'],
+    ['Dependencies: fastapi, uvicorn', 'text-teal-200/90'],
+    ['✓ Python dependencies installed', 'text-emerald-300'],
+  ])('uses restrained semantic styling for %s', async (line, className) => {
+    vi.mocked(projectsAPI.buildLogs).mockResolvedValue({ data: { logs: line } } as never)
+    render(<BuildLogsConsole projectId="test-project" status="running" />)
+    expect(await screen.findByText(line)).toHaveClass(className)
   })
 
   it('preserves code indentation and treats application output as text', async () => {

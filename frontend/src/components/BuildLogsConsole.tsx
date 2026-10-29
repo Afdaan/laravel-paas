@@ -29,7 +29,7 @@ const renderLogLine = (line: string) => {
     /\[(?:FAILED|ERROR|[A-Z_]*FAILED)\]|(?:SyntaxError|TypeError|ReferenceError|RangeError|ParseError):|npm (?:ERR!|error\b)/i.test(trimmed) ||
     ((lower.includes('error:') || lower.includes('failed')) && !lower.includes('success'))
   ) {
-    return <span className="text-rose-400 font-medium">{line}</span>
+    return <span className="text-rose-300 font-medium">{line}</span>
   }
 
   // 1. Stage / step header starting with ">>"
@@ -38,9 +38,9 @@ const renderLogLine = (line: string) => {
     const prefix = line.substring(0, idx)
     const content = line.substring(idx + 2)
     return (
-      <span className="font-semibold text-sky-400">
+      <span className="font-medium text-sky-300">
         {prefix && <span className="text-zinc-500">{prefix}</span>}
-        <span className="text-sky-500 font-bold select-none mr-1.5">&gt;&gt;</span>
+        <span className="text-sky-500 select-none mr-1.5">&gt;&gt;</span>
         <span>{content}</span>
       </span>
     )
@@ -52,7 +52,7 @@ const renderLogLine = (line: string) => {
     const prefix = line.substring(0, idx)
     const content = line.substring(idx + 1)
     return (
-      <span className="text-emerald-400 font-medium">
+      <span className="text-emerald-300 font-medium">
         {prefix && <span className="text-zinc-500">{prefix}</span>}
         <span className="text-emerald-500 font-bold select-none mr-1.5">✓</span>
         <span>{content}</span>
@@ -63,7 +63,7 @@ const renderLogLine = (line: string) => {
   // 3. Success step starting with "[SUCCESS]" or containing build summary success
   if (trimmed.startsWith('[SUCCESS]') || (trimmed.startsWith('[BUILD SUMMARY]') && trimmed.toLowerCase().includes('successfully'))) {
     return (
-      <span className="text-emerald-400 font-semibold">
+      <span className="text-emerald-300 font-medium">
         {line}
       </span>
     )
@@ -72,7 +72,7 @@ const renderLogLine = (line: string) => {
   // 5. Warning lines
   if (trimmed.startsWith('[WARNING]') || trimmed.toLowerCase().includes('warning:')) {
     return (
-      <span className="text-amber-400 font-medium">
+      <span className="text-amber-300 font-medium">
         {line}
       </span>
     )
@@ -91,6 +91,14 @@ const renderLogLine = (line: string) => {
         {line.substring(4)}
       </span>
     )
+  }
+
+  if (trimmed.startsWith('> ')) {
+    return <span className="text-cyan-300">{line}</span>
+  }
+
+  if (trimmed.startsWith('Dependencies:')) {
+    return <span className="text-teal-200/90">{line}</span>
   }
 
   // 8. Fallback standard line
@@ -664,11 +672,6 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
       <Card className="lg:col-span-2 bg-zinc-950 text-white border-none overflow-hidden flex flex-col h-full gap-0 py-0 rounded-none shadow-none">
         <CardHeader className="bg-zinc-900/80 px-4 py-3 border-b border-white/5 flex flex-row items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="flex gap-1.5 mr-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-rose-500/80 shadow-[0_0_8px_rgba(244,63,94,0.2)]" />
-              <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80 shadow-[0_0_8px_rgba(245,158,11,0.2)]" />
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.2)]" />
-            </div>
             <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-400 flex items-center gap-2">
               <Terminal className="w-3.5 h-3.5" />
               {t('projectDetail.messages.buildLogs')}

@@ -26,13 +26,49 @@ func TestLogRefinerKeepsDiagnosticsWithoutEmptyCacheMetadata(t *testing.T) {
 			if err := refiner.Flush(); err != nil {
 				t.Fatal(err)
 			}
-			want := ">> Running build container...\n>> Initializing build environment...\n" +
-				"/app/node_modules/esbuild/install.js:122\n  } catch {\n    ^\n" +
+			want := "/app/node_modules/esbuild/install.js:122\n  } catch {\n    ^\n" +
 				"SyntaxError: Unexpected token {\n    at createScript (vm.js:74:10)\n"
 			if output.String() != want {
 				t.Fatalf("output = %q, want %q", output.String(), want)
 			}
 		})
+	}
+}
+
+func TestLogRefinerHidesRailpackNoiseAndKeepsDependencySummary(t *testing.T) {
+	var output bytes.Buffer
+	refiner := NewLogRefiner(&output)
+	input := "⚠ The `railpack.json` format is still evolving\n" +
+		"→ Applying default exclude patterns: `.venv`, `venv`\n" +
+		"Deploy\nStarting Docker Build...\n" +
+		"  $ pip install -r requirements.txt\n" +
+		"Collecting fastapi\n" +
+		"Installing collected packages: typing-extensions, fastapi, uvicorn\n" +
+		"Successfully installed fastapi-0.1 uvicorn-0.2\n"
+
+	if _, err := refiner.Write([]byte(input)); err != nil {
+		t.Fatal(err)
+	}
+	if err := refiner.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := "> pip install\nDependencies: typing-extensions, fastapi, uvicorn\n✓ Python dependencies installed\n"
+	if output.String() != want {
+		t.Fatalf("output = %q, want %q", output.String(), want)
+	}
+}
+
+func TestLogRefinerKeepsRailpackFailureDiagnostics(t *testing.T) {
+	var output bytes.Buffer
+	refiner := NewLogRefiner(&output)
+	line := "ERROR: Railpack failed to build image"
+
+	if _, err := refiner.Write([]byte(line + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != line+"\n" {
+		t.Fatalf("failure diagnostic lost: %q", output.String())
 	}
 }
 
