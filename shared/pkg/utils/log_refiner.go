@@ -37,8 +37,8 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`^(?:#\d+\s+[0-9.]+\s*)?INFO\s+(?:\d+\s+)?cache (imports|exports):\s*\[\s*\]\s*$`),
 			regexp.MustCompile("(?i)(the [`']?railpack\\.json[`']? format is still evolving|customize https://railpack\\.com/config/excluding-files|applying default exclude patterns)"),
 			regexp.MustCompile(`^(Deploy|Starting Docker Build\.\.\.)$`),
-			regexp.MustCompile(`^\|?\s*(Run:|docker run\b.*)\s*\|?$`),
-			regexp.MustCompile(`^\|$`),
+			regexp.MustCompile(`^[|│]?\s*(Run:|docker run\b.*)\s*[|│]?$`),
+			regexp.MustCompile(`^[|│]$`),
 			// 1. Hide ALL Docker/BuildKit step headers and status lines (lines starting with #num but no timestamp)
 			regexp.MustCompile(`^#\d+(?:\s+[^0-9]|$)`),
 
@@ -209,7 +209,7 @@ var buildTransformations = []logTransformation{
 	{regexp.MustCompile(`^↳ Using config.*`), "Detected configuration..."},
 
 	// Transform final build status lines
-	{regexp.MustCompile(`^\s*(?:INFO\s+)?\|?\s*Successfully built image in\s+([0-9.]+(?:ms|s|m))\s*\|?\s*$`), "✓ Image built in $1"},
+	{regexp.MustCompile(`^\s*(?:INFO\s+)?[|│]?\s*Successfully built image in\s+([0-9.]+(?:ms|s|m))\s*[|│]?\s*$`), "✓ Image built in $1"},
 
 	{regexp.MustCompile(`^(Generating|Generated) optimized autoload files.*`), "Optimizing autoload files..."},
 }
