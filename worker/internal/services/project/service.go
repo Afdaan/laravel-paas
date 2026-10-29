@@ -311,7 +311,7 @@ func (s *ProjectService) RecreateProjectZeroDowntime(ctx context.Context, projec
 	hcCtx, hcCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer hcCancel()
 
-	if err := s.dockerService.AdvancedHealthcheck(hcCtx, project, newID, logFunc, project.ResolveRuntimeExposure(0)); err != nil {
+	if err := s.dockerService.AdvancedHealthcheck(hcCtx, project, newID, project.ResolveRuntimeExposure(0)); err != nil {
 		logFunc("✗ Health checks failed. Rolling back configuration changes...")
 		slog.Error("New container failed advanced healthcheck, rolling back", "subdomain", project.Subdomain, "newID", newID, "error", err)
 

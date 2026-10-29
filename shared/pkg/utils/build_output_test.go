@@ -174,7 +174,7 @@ func TestBuildRunnerDrainsOutputAndKeepsDiagnostics(t *testing.T) {
 			var callback func(string)
 			if mode != "file" {
 				callback = func(message string) {
-					if strings.Contains(message, "[BUILD SUMMARY]") {
+					if strings.HasPrefix(message, "✓ Build completed in ") || strings.HasPrefix(message, "✗ Build failed in ") {
 						finalSummary.Store(true)
 					}
 					message = strings.ReplaceAll(message, "TOPSECRET", "[REDACTED]")

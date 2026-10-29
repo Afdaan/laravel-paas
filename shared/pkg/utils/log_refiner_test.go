@@ -40,11 +40,15 @@ func TestLogRefinerHidesRailpackNoiseAndKeepsDependencySummary(t *testing.T) {
 	refiner := NewLogRefiner(&output)
 	input := "⚠ The `railpack.json` format is still evolving\n" +
 		"→ Applying default exclude patterns: `.venv`, `venv`\n" +
-		"Deploy\nStarting Docker Build...\n" +
+		"#8 0.1 Deploy\n#8 0.2 Starting Docker Build...\n" +
+		"#8 0.3 INFO 0 cache imports: []\n#8 0.4 INFO 0 cache exports: []\n" +
 		"  $ pip install -r requirements.txt\n" +
 		"Collecting fastapi\n" +
 		"Installing collected packages: typing-extensions, fastapi, uvicorn\n" +
-		"Successfully installed fastapi-0.1 uvicorn-0.2\n"
+		"Successfully installed fastapi-0.1 uvicorn-0.2\n" +
+		"#8 9.53 | Successfully built image in 9.53s |\n" +
+		"#8 9.54 |\n#8 9.55 | Run: |\n" +
+		"#8 9.56 | docker run -it paas-test |\n"
 
 	if _, err := refiner.Write([]byte(input)); err != nil {
 		t.Fatal(err)
@@ -53,7 +57,7 @@ func TestLogRefinerHidesRailpackNoiseAndKeepsDependencySummary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "> pip install\nDependencies: typing-extensions, fastapi, uvicorn\n✓ Python dependencies installed\n"
+	want := "> pip install\nDependencies: typing-extensions, fastapi, uvicorn\n✓ Python dependencies installed\n✓ Image built in 9.53s\n"
 	if output.String() != want {
 		t.Fatalf("output = %q, want %q", output.String(), want)
 	}
@@ -96,7 +100,7 @@ func TestBuildRunnerWritesSingleLineSummary(t *testing.T) {
 		t.Fatal("expected failed build")
 	}
 	output := strings.Join(lines, "\n")
-	if strings.Count(output, "[BUILD SUMMARY] Build failed in ") != 1 || strings.Contains(output, "========") {
+	if strings.Count(output, "✗ Build failed in ") != 1 || strings.Contains(output, "========") {
 		t.Fatalf("unexpected summary: %s", output)
 	}
 	if !strings.Contains(output, "SyntaxError: Unexpected token {") {

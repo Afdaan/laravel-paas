@@ -1829,7 +1829,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		"runtime_version", detection.RuntimeVersion,
 		"source", detection.Source,
 	)
-	appendLog(fmt.Sprintf(">> Runtime detected: %s (provider: %s; runtime: %s)", detection.Framework, detection.Provider, detection.Runtime))
+	appendLog(fmt.Sprintf(">> Runtime: %s", detection.Framework))
 	if err := w.projectRepo.UpdateMetadataForJob(project.ID, job.JobID, map[string]interface{}{"detected_framework": detection.Framework}); err != nil {
 		slog.Warn("Failed to persist detected runtime candidate", "id", project.ID, "error", err)
 	}
@@ -1979,7 +1979,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 	}
 
-	appendLog(">> Starting container readiness checks...")
+	appendLog(">> Checking application readiness...")
 	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusHealthchecking, 65, "healthchecking_container", "Executing readiness probe and stabilization monitoring") {
 		appendLog("ERROR: Deployment state rejected the healthcheck step. Rolling back.")
 		w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
@@ -1987,7 +1987,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		return
 	}
 
-	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID, appendLog, project.ResolveRuntimeExposure(0)); err != nil {
+	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID, project.ResolveRuntimeExposure(0)); err != nil {
 		slog.Error("New container failed advanced healthcheck, initiating rollback", "subdomain", project.Subdomain, "id", newContainerID, "error", err)
 		appendLog("ERROR: Health check failed: " + err.Error() + ". Rolling back.")
 
@@ -2000,7 +2000,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		w.updateProjectError(project, job.JobID, "[RUNTIME_FAILED] Deployment failed healthcheck: "+err.Error()+". Old version is still running.")
 		return
 	} else {
-		appendLog("✓ Health check passed.")
+		appendLog("✓ Application ready.")
 	}
 
 	// For non-SQLite Laravel projects, run migrations after healthcheck (original behavior)
@@ -2047,7 +2047,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		w.cleanupRollout(project, job.JobID, newContainerID, project.WorkerContainerID)
 		return
 	}
-	appendLog(">> Promoting deployment...")
+	appendLog(">> Releasing application...")
 
 	if _, err := w.projectService.SyncProjectNginxFrom(project, "deployment_promote"); err != nil {
 		slog.Error("Nginx sync failed during promote, rolling back", "subdomain", project.Subdomain, "error", err)
@@ -2070,7 +2070,6 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		}
 		return
 	}
-	appendLog("✓ Release promoted successfully.")
 	if cloneHash != "" {
 		_ = w.redisService.SetIdempotency(project.ID, cloneHash, project.Subdomain, job.Type)
 	}
@@ -2102,10 +2101,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 	w.dockerService.PruneProjectImages(project.Subdomain, maxRetention)
 
-	appendLog("")
-	appendLog("========================================================================")
-	appendLog("✓ Deployment completed successfully! Application is live.")
-	appendLog("========================================================================")
+	appendLog("✓ Deployment completed.")
 
 	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", fmt.Sprintf("Deployed %s", utils.ShortCommitHash(project.LastCommitHash))) {
 		w.forceDeploymentCompleted(project, job.JobID)

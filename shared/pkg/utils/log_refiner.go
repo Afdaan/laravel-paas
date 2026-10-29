@@ -34,9 +34,11 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 	return &LogRefiner{
 		writer: w,
 		hidePatterns: []*regexp.Regexp{
-			regexp.MustCompile(`^(?:#\d+\s+[0-9.]+\s*)?INFO\s+cache (imports|exports):\s*\[\s*\]\s*$`),
+			regexp.MustCompile(`^(?:#\d+\s+[0-9.]+\s*)?INFO\s+(?:\d+\s+)?cache (imports|exports):\s*\[\s*\]\s*$`),
 			regexp.MustCompile("(?i)(the [`']?railpack\\.json[`']? format is still evolving|customize https://railpack\\.com/config/excluding-files|applying default exclude patterns)"),
 			regexp.MustCompile(`^(Deploy|Starting Docker Build\.\.\.)$`),
+			regexp.MustCompile(`^\|?\s*(Run:|docker run\b.*)\s*\|?$`),
+			regexp.MustCompile(`^\|$`),
 			// 1. Hide ALL Docker/BuildKit step headers and status lines (lines starting with #num but no timestamp)
 			regexp.MustCompile(`^#\d+(?:\s+[^0-9]|$)`),
 
@@ -207,9 +209,7 @@ var buildTransformations = []logTransformation{
 	{regexp.MustCompile(`^↳ Using config.*`), "Detected configuration..."},
 
 	// Transform final build status lines
-	{regexp.MustCompile(`^INFO\s+Successfully built image in\s+(.*)`), "Successfully built image in $1"},
-	{regexp.MustCompile(`^Successfully built image in\s+(.*)`), "Successfully built image in $1"},
-	{regexp.MustCompile(`^Deploy.*`), "Deploying application..."},
+	{regexp.MustCompile(`^\s*(?:INFO\s+)?\|?\s*Successfully built image in\s+([0-9.]+(?:ms|s|m))\s*\|?\s*$`), "✓ Image built in $1"},
 
 	{regexp.MustCompile(`^(Generating|Generated) optimized autoload files.*`), "Optimizing autoload files..."},
 }
@@ -241,20 +241,21 @@ func (r *LogRefiner) write(p []byte) (n int, err error) {
 			line = line[lastCR+1:]
 		}
 
+		cleanedLine := r.stripPattern.ReplaceAllString(line, "")
+		cleanedLine = r.ansiPattern.ReplaceAllString(cleanedLine, "")
+		cleanedLine = strings.TrimRight(cleanedLine, " \t\r")
+		matchLine := strings.TrimSpace(cleanedLine)
+
 		shouldHide := false
 		for _, pattern := range r.hidePatterns {
-			if pattern.MatchString(line) {
+			if pattern.MatchString(line) || pattern.MatchString(cleanedLine) || pattern.MatchString(matchLine) {
 				shouldHide = true
 				break
 			}
 		}
 
 		if !shouldHide {
-			cleanedLine := r.stripPattern.ReplaceAllString(line, "")
-			cleanedLine = r.ansiPattern.ReplaceAllString(cleanedLine, "")
-			cleanedLine = strings.TrimRight(cleanedLine, " \t\r")
-
-			if strings.TrimSpace(cleanedLine) != "" {
+			if matchLine != "" {
 				// Apply transformations
 				isStatus := false
 				for _, t := range buildTransformations {

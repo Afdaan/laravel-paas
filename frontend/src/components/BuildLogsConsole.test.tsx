@@ -25,7 +25,7 @@ describe('BuildLogsConsole presentation', () => {
 
   it.each([
     '>> [FAILED] DEPLOYMENT ERROR: [BUILD_FAILED] SyntaxError: Unexpected token {',
-    '[BUILD SUMMARY] Build failed in 16.4s',
+    '✗ Build failed in 16.4s',
     'npm ERR! code ELIFECYCLE',
     'npm error code 1',
     'SyntaxError: Unexpected token {',
@@ -36,7 +36,7 @@ describe('BuildLogsConsole presentation', () => {
   })
 
   it('keeps successful builds green', async () => {
-    const line = '[BUILD SUMMARY] Application built successfully in 16.4s'
+    const line = '✓ Build completed in 16.4s'
     vi.mocked(projectsAPI.buildLogs).mockResolvedValue({ data: { logs: line } } as never)
     render(<BuildLogsConsole projectId="test-project" status="running" />)
     expect(await screen.findByText(line)).toHaveClass('text-emerald-300')
