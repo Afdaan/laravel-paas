@@ -1546,7 +1546,7 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		return
 	}
 
-	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 10, "deployment_started", fmt.Sprintf("Triggered by %s", job.Type)) {
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusPreparing, 10, "deployment_started", deploymentStartMessage(job.Type)) {
 		return
 	}
 
@@ -2148,6 +2148,21 @@ func (w *DeploymentWorker) acknowledgeProjectDeletion(projectID uint) {
 		Where("project_id = ? AND completed_at IS NULL", projectID).
 		Update("completed_at", now).Error; err != nil {
 		slog.Error("Failed to acknowledge durable project deletion", "projectId", projectID, "error", err)
+	}
+}
+
+func deploymentStartMessage(jobType string) string {
+	switch jobType {
+	case "deploy":
+		return "Starting initial deployment"
+	case "redeploy":
+		return "Starting redeployment"
+	case "redeploy_clean":
+		return "Starting clean rebuild"
+	case "rollback":
+		return "Starting rollback"
+	default:
+		return "Starting deployment"
 	}
 }
 

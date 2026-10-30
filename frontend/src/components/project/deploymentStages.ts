@@ -91,10 +91,18 @@ export function formatDuration(totalSeconds: number): string {
  */
 const TERMINAL_STATUSES = ['completed', 'failed', 'rollback', 'cancelled']
 
+const LEGACY_TRIGGER_MESSAGES: Record<string, string> = {
+  'Triggered by deploy': 'Starting initial deployment',
+  'Triggered by redeploy': 'Starting redeployment',
+  'Triggered by redeploy_clean': 'Starting clean rebuild',
+  'Triggered by rollback': 'Starting rollback',
+}
+
 export function getLiveMessage(project: Project): string | undefined {
   const status = project.deployment_status
   if (!status || TERMINAL_STATUSES.includes(status)) return undefined
-  return project.deployment_message || undefined
+  if (!project.deployment_message) return undefined
+  return LEGACY_TRIGGER_MESSAGES[project.deployment_message] || project.deployment_message
 }
 
 /**

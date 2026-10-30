@@ -45,3 +45,19 @@ func TestActiveLogPathUsesCanonicalJobDirectory(t *testing.T) {
 		t.Fatalf("invalid job ID accepted: %q", got)
 	}
 }
+
+func TestDeploymentStartMessageHidesInternalJobType(t *testing.T) {
+	tests := map[string]string{
+		"deploy":         "Starting initial deployment",
+		"redeploy":       "Starting redeployment",
+		"redeploy_clean": "Starting clean rebuild",
+		"rollback":       "Starting rollback",
+		"unknown":        "Starting deployment",
+	}
+
+	for jobType, expected := range tests {
+		if actual := deploymentStartMessage(jobType); actual != expected {
+			t.Errorf("deploymentStartMessage(%q) = %q, want %q", jobType, actual, expected)
+		}
+	}
+}

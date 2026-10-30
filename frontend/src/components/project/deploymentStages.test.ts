@@ -119,6 +119,11 @@ describe('getLiveMessage', () => {
     }))).toBe('Cloning https://github.com/example/app (main)')
   })
 
+  it('normalizes legacy internal trigger messages', () => {
+    expect(getLiveMessage(project({ deployment_message: 'Triggered by redeploy_clean' })))
+      .toBe('Starting clean rebuild')
+  })
+
   it('stays quiet on terminal stages, where the title already says the outcome', () => {
     for (const status of ['completed', 'failed', 'rollback', 'cancelled'] as const) {
       expect(getLiveMessage(project({ deployment_status: status, deployment_message: 'anything' })))
