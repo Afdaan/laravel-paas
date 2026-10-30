@@ -321,13 +321,20 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         const res = await fetch('/api/auth/stream-token', {
           method: 'POST',
           credentials: 'include',
-          headers: { 'X-CSRF-Token': getCSRFToken() }
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCSRFToken(),
+          },
+          body: JSON.stringify({ project_uid: String(projectId) }),
         })
         if (!res.ok) {
           throw new Error('Failed to get stream token')
         }
         if (!isMounted) return
-        const data = await res.json()
+        const data = await res.json() as { token?: unknown }
+        if (typeof data.token !== 'string' || !data.token) {
+          throw new Error('Invalid stream token response')
+        }
         const streamToken = data.token
 
         if (!isMounted) return

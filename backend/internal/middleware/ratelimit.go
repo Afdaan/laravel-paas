@@ -107,6 +107,8 @@ var (
 	loginEmailLimiter         = NewRateLimiter(5, 1*time.Minute)   // 5 req/min per email
 	reauthUserLimiter         = NewRateLimiter(5, 1*time.Minute)   // 5 req/min per user
 	reauthIPLimiter           = NewRateLimiter(15, 1*time.Minute)  // 15 req/min per IP
+	streamTokenUserLimiter    = NewRateLimiter(30, 1*time.Minute)  // 30 req/min per user
+	streamTokenIPLimiter      = NewRateLimiter(60, 1*time.Minute)  // 60 req/min per IP
 	queryLimiter              = NewRateLimiter(60, 1*time.Minute)  // 60 req/min per user
 	publicCatalogLimiter      = NewRateLimiter(120, 1*time.Minute) // 120 req/min per IP
 	proxyLimiter              = NewRateLimiter(120, 1*time.Minute) // 120 req/min per IP
@@ -200,6 +202,72 @@ func RateLimitLogin(redis distributedRateLimiter) fiber.Handler {
 				c.Set("Retry-After", strconv.Itoa(sec))
 				return apperr.NewRateLimited(formatRateLimitMsg(rule.errMsg, sec), sec)
 			}
+		}
+
+		return c.Next()
+	}
+}
+
+// RateLimitStreamToken limits short-lived stream credential issuance by user and IP.
+func RateLimitStreamToken(redis distributedRateLimiter) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		uidVal := c.Locals("user_id")
+		if uidVal == nil {
+			return apperr.ErrUnauthorized
+		}
+
+		ip := c.IP()
+		userKey := fmt.Sprintf("auth:stream-token:user:%v", uidVal)
+		ipKey := fmt.Sprintf("auth:stream-token:ip:%s", ip)
+		localIPKey := "ip:" + ip
+
+		if redis != nil {
+			allowedUser, ttlUser, errUser := redis.RateLimit(userKey, 30, time.Minute)
+			if errUser != nil {
+				slog.Warn("Redis stream token rate limit failed; falling back to local limiter", "error", errUser)
+				allowedLocal, sec := streamTokenUserLimiter.Allow(userKey)
+				if !allowedLocal {
+					c.Set("Retry-After", strconv.Itoa(sec))
+					return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests", sec), sec)
+				}
+			} else if !allowedUser {
+				sec := int(math.Ceil(ttlUser.Seconds()))
+				if sec < 1 {
+					sec = 1
+				}
+				c.Set("Retry-After", strconv.Itoa(sec))
+				return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests", sec), sec)
+			}
+
+			allowedIP, ttlIP, errIP := redis.RateLimit(ipKey, 60, time.Minute)
+			if errIP != nil {
+				slog.Warn("Redis stream token IP rate limit failed; falling back to local limiter", "error", errIP)
+				allowedLocalIP, secIP := streamTokenIPLimiter.Allow(localIPKey)
+				if !allowedLocalIP {
+					c.Set("Retry-After", strconv.Itoa(secIP))
+					return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests from this IP", secIP), secIP)
+				}
+			} else if !allowedIP {
+				sec := int(math.Ceil(ttlIP.Seconds()))
+				if sec < 1 {
+					sec = 1
+				}
+				c.Set("Retry-After", strconv.Itoa(sec))
+				return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests from this IP", sec), sec)
+			}
+			return c.Next()
+		}
+
+		allowedUser, secUser := streamTokenUserLimiter.Allow(userKey)
+		if !allowedUser {
+			c.Set("Retry-After", strconv.Itoa(secUser))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests", secUser), secUser)
+		}
+
+		allowedIP, secIP := streamTokenIPLimiter.Allow(localIPKey)
+		if !allowedIP {
+			c.Set("Retry-After", strconv.Itoa(secIP))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests from this IP", secIP), secIP)
 		}
 
 		return c.Next()

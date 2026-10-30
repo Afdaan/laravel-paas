@@ -137,7 +137,7 @@ describe('ProjectDeployment', () => {
     vi.unstubAllGlobals()
   })
 
-  it('refreshes project data from deployment events and disables fallback polling', async () => {
+  it('observes a new deployment from a completed snapshot without polling', async () => {
     class MockEventSource {
       static instances: MockEventSource[] = []
       onopen: ((event: Event) => void) | null = null
@@ -163,16 +163,25 @@ describe('ProjectDeployment', () => {
       }
     }
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    const streamTokenFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ token: 'stream-token' }),
-    }))
+    })
+    vi.stubGlobal('fetch', streamTokenFetch)
     vi.stubGlobal('EventSource', MockEventSource)
-    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        data: createProject({ status: 'running', deployment_status: 'completed', deployment_progress: 100 }),
+      })
+      .mockResolvedValueOnce({ data: createProject() })
 
     renderPage()
 
+    await screen.findByText('billing-service is live')
     await waitFor(() => expect(MockEventSource.instances).toHaveLength(1))
+    expect(streamTokenFetch).toHaveBeenCalledWith('/api/auth/stream-token', expect.objectContaining({
+      body: JSON.stringify({ project_uid: 'proj-123' }),
+    }))
     expect(MockEventSource.instances[0].url).toContain('/deployment-events/stream?stream_token=stream-token')
 
     act(() => MockEventSource.instances[0].onopen?.(new Event('open')))
@@ -186,6 +195,8 @@ describe('ProjectDeployment', () => {
       await new Promise(resolve => setTimeout(resolve, 250))
     })
     expect(projectsAPI.get).toHaveBeenCalledTimes(2)
+    expect(await screen.findByText('Deploying billing-service')).toBeInTheDocument()
+    expect(MockEventSource.instances).toHaveLength(1)
   })
 
   it.each([

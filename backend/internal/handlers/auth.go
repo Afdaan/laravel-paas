@@ -137,13 +137,21 @@ func (h *AuthHandler) UpdateProfile(c *fiber.Ctx) error {
 	return c.JSON(user)
 }
 
+type generateStreamTokenRequest struct {
+	ProjectUID string `json:"project_uid"`
+}
+
 func (h *AuthHandler) GenerateStreamToken(c *fiber.Ctx) error {
+	var req generateStreamTokenRequest
+	if err := c.BodyParser(&req); err != nil {
+		return apperr.ErrBadRequest
+	}
 	userID, _ := c.Locals("user_id").(uint)
 	user, err := h.service.GetUserByID(userID)
 	if err != nil {
 		return err
 	}
-	token, err := h.service.GenerateStreamToken(user)
+	token, err := h.service.GenerateStreamToken(user, req.ProjectUID)
 	if err != nil {
 		return err
 	}

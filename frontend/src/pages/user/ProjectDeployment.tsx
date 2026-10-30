@@ -336,7 +336,7 @@ export default function ProjectDeployment() {
 
   const phase = project ? getProjectCreationPhase(project) : 'deploying'
   useEffect(() => {
-    if (!uid || !project?.id || phase !== 'deploying') {
+    if (!uid || !project?.id) {
       setDeploymentStreamConnected(false)
       return
     }
@@ -344,22 +344,54 @@ export default function ProjectDeployment() {
     let disposed = false
     let eventSource: EventSource | null = null
     let refreshTimer: ReturnType<typeof setTimeout> | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let reconnectDelay = 2_000
 
-    const connect = async () => {
+    setDeploymentStreamConnected(false)
+
+    function scheduleReconnect() {
+      if (disposed || reconnectTimer) return
+
+      setDeploymentStreamConnected(false)
+      eventSource?.close()
+      eventSource = null
+
+      const delay = reconnectDelay
+      reconnectDelay = Math.min(reconnectDelay * 2, 30_000)
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        void connect()
+      }, delay)
+    }
+
+    async function connect() {
       try {
         const response = await fetch('/api/auth/stream-token', {
           method: 'POST',
           credentials: 'include',
-          headers: { 'X-CSRF-Token': getCSRFToken() },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCSRFToken(),
+          },
+          body: JSON.stringify({ project_uid: uid }),
         })
-        if (!response.ok) return
+        if (!response.ok) {
+          scheduleReconnect()
+          return
+        }
 
         const data = await response.json() as { token?: unknown }
-        if (disposed || typeof data.token !== 'string' || !data.token) return
+        if (disposed) return
+        if (typeof data.token !== 'string' || !data.token) {
+          scheduleReconnect()
+          return
+        }
 
         eventSource = new EventSource(`/api/projects/${uid}/deployment-events/stream?stream_token=${encodeURIComponent(data.token)}`)
         eventSource.onopen = () => {
-          if (!disposed) setDeploymentStreamConnected(true)
+          if (disposed) return
+          reconnectDelay = 2_000
+          setDeploymentStreamConnected(true)
         }
         eventSource.addEventListener('deployment_event', () => {
           if (disposed) return
@@ -367,12 +399,10 @@ export default function ProjectDeployment() {
           refreshTimer = setTimeout(() => void fetchProject(true), 200)
         })
         eventSource.onerror = () => {
-          if (disposed) return
-          setDeploymentStreamConnected(false)
-          eventSource?.close()
+          scheduleReconnect()
         }
       } catch {
-        if (!disposed) setDeploymentStreamConnected(false)
+        scheduleReconnect()
       }
     }
 
@@ -382,12 +412,13 @@ export default function ProjectDeployment() {
       disposed = true
       eventSource?.close()
       if (refreshTimer) clearTimeout(refreshTimer)
+      if (reconnectTimer) clearTimeout(reconnectTimer)
     }
-  }, [uid, project?.id, phase, fetchProject])
+  }, [uid, project?.id, fetchProject])
 
   usePolling(
     () => void fetchProject(true),
-    project && phase === 'deploying' && !deploymentStreamConnected ? 10_000 : null,
+    project && !deploymentStreamConnected ? (phase === 'deploying' ? 10_000 : 60_000) : null,
   )
 
   // Progress only ever climbs within one job. Watchdog recovery re-queues an

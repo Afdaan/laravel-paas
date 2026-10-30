@@ -40,6 +40,16 @@ func TestCookieNamesAndOrigin(t *testing.T) {
 	}
 }
 
+func TestStreamProjectMatches(t *testing.T) {
+	claims := &models.JWTClaims{StreamProjectUID: "project-123"}
+	if !streamProjectMatches(claims, "project-123") {
+		t.Fatal("matching project scope rejected")
+	}
+	if streamProjectMatches(claims, "project-456") || streamProjectMatches(nil, "project-123") {
+		t.Fatal("mismatched project scope accepted")
+	}
+}
+
 func TestRequireRecentBillingAuthentication(t *testing.T) {
 	cfg := &config.Config{}
 	app := fiber.New()

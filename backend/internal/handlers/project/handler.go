@@ -105,9 +105,6 @@ func (h *ProjectHandler) StreamDeploymentEvents(c *fiber.Ctx) error {
 			return
 		}
 
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-
 		keepAliveTicker := time.NewTicker(15 * time.Second)
 		defer keepAliveTicker.Stop()
 
@@ -132,16 +129,15 @@ func (h *ProjectHandler) StreamDeploymentEvents(c *fiber.Ctx) error {
 				if err != nil {
 					return
 				}
+				if err := w.Flush(); err != nil {
+					return
+				}
 			case <-keepAliveTicker.C:
 				_, err := w.WriteString(":\n\n")
 				if err != nil {
 					return
 				}
 				_ = w.Flush()
-			case <-ticker.C:
-				if err := w.Flush(); err != nil {
-					return
-				}
 			}
 		}
 	})

@@ -249,13 +249,21 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
         const res = await fetch('/api/auth/stream-token', {
           method: 'POST',
           credentials: 'include',
-          headers: { 'X-CSRF-Token': getCSRFToken() }
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCSRFToken(),
+          },
+          body: JSON.stringify({ project_uid: String(projectId) }),
         });
         if (!res.ok || !isSubscribed) {
           scheduleReconnect();
           return;
         }
-        const data = await res.json();
+        const data = await res.json() as { token?: unknown };
+        if (typeof data.token !== 'string' || !data.token) {
+          scheduleReconnect();
+          return;
+        }
         const streamToken = data.token;
 
         const sseUrl = `/api/projects/${projectId}/domains/events/stream?stream_token=${encodeURIComponent(streamToken)}`;

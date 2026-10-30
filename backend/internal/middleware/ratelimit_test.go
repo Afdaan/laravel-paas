@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
@@ -759,6 +760,31 @@ func TestRateLimitReauthIPLimitWithNilRedis(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 429, respExhaust.StatusCode)
 	assert.NotEmpty(t, respExhaust.Header.Get("Retry-After"))
+}
+
+func TestRateLimitStreamTokenRejectsDistributedLimit(t *testing.T) {
+	app := fiber.New(fiber.Config{
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			if ae, ok := err.(*apperr.AppError); ok {
+				return c.Status(ae.HTTPStatus).JSON(fiber.Map{"error": ae.Message})
+			}
+			return c.SendStatus(500)
+		},
+	})
+	app.Post("/auth/stream-token", func(c *fiber.Ctx) error {
+		c.Locals("user_id", uint(42))
+		return c.Next()
+	}, RateLimitStreamToken(&mockLimiter{allowed: false, ttl: 20 * time.Second}), func(c *fiber.Ctx) error {
+		return c.SendStatus(http.StatusNoContent)
+	})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodPost, "/auth/stream-token", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") != "20" {
+		t.Fatalf("status = %d, retry-after = %q", resp.StatusCode, resp.Header.Get("Retry-After"))
+	}
 }
 
 func TestRateLimitReauthLocalIPFallbackOnRedisError(t *testing.T) {

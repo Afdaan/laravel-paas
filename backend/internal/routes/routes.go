@@ -211,7 +211,7 @@ func Setup(
 	protected.Post("/auth/logout", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.Logout)
 	protected.Get("/auth/me", middleware.NoStore(), authHandler.Me)
 	protected.Put("/auth/profile", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.UpdateProfile)
-	protected.Post("/auth/stream-token", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.GenerateStreamToken)
+	protected.Post("/auth/stream-token", middleware.NoStore(), middleware.MaxBody(8*1024), middleware.RateLimitStreamToken(redisService), authHandler.GenerateStreamToken)
 	protected.Post("/auth/return-to-admin", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.ReturnToAdmin)
 	protected.Post("/auth/re-auth", middleware.NoStore(), middleware.MaxBody(8*1024), middleware.RateLimitReauth(redisService), authHandler.Reauthenticate)
 

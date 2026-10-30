@@ -11,8 +11,9 @@ const (
 
 // JWTClaims keeps browser-session identity and authentication freshness.
 type JWTClaims struct {
-	TokenUse       TokenUse         `json:"token_use"`
-	ImpersonatorID uint             `json:"impersonator_id,omitempty"`
-	AuthTime       *jwt.NumericDate `json:"auth_time,omitempty"`
+	TokenUse         TokenUse         `json:"token_use"`
+	StreamProjectUID string           `json:"stream_project_uid,omitempty"`
+	ImpersonatorID   uint             `json:"impersonator_id,omitempty"`
+	AuthTime         *jwt.NumericDate `json:"auth_time,omitempty"`
 	jwt.RegisteredClaims
 }

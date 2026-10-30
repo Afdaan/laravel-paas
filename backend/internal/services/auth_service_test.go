@@ -61,3 +61,24 @@ func TestIssuePasswordAuthenticatedSessionSetsAuthTime(t *testing.T) {
 		t.Fatalf("impersonated session inherited password authentication: %#v", impersonated.Claims)
 	}
 }
+
+func TestGenerateStreamTokenBindsProject(t *testing.T) {
+	service := &AuthService{cfg: &config.Config{
+		JWTSecret: "abcdefghijklmnopqrstuvwxyz123456", JWTKeyID: "current", JWTIssuer: "runara", JWTAudience: "runara-api", JWTExpiryHours: 24,
+	}}
+	user := &models.User{ID: 7}
+	token, err := service.GenerateStreamToken(user, "Project_123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := service.Verify(token, models.TokenUseStream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.StreamProjectUID != "Project_123" {
+		t.Fatalf("stream project UID = %q", claims.StreamProjectUID)
+	}
+	if _, err := service.GenerateStreamToken(user, "../other"); err == nil {
+		t.Fatal("unsafe project UID accepted")
+	}
+}

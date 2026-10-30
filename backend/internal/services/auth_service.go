@@ -83,8 +83,19 @@ func (s *AuthService) Reauthenticate(userID uint, password string) (*models.User
 	return user, nil
 }
 
-func (s *AuthService) GenerateStreamToken(user *models.User) (string, error) {
-	return s.sign(s.newClaims(user.ID, models.TokenUseStream, s.cfg.JWTAudience+"-stream", 0, 0, nil))
+func (s *AuthService) GenerateStreamToken(user *models.User, projectUID string) (string, error) {
+	if !validStreamProjectUID(projectUID) {
+		return "", apperr.NewBadRequest("Invalid project identity")
+	}
+	claims := s.newClaims(user.ID, models.TokenUseStream, s.cfg.JWTAudience+"-stream", 0, 0, nil)
+	claims.StreamProjectUID = projectUID
+	return s.sign(claims)
+}
+
+func validStreamProjectUID(projectUID string) bool {
+	return projectUID != "" && len(projectUID) <= 100 && strings.IndexFunc(projectUID, func(character rune) bool {
+		return !(character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '-' || character == '_')
+	}) == -1
 }
 
 func (s *AuthService) newClaims(userID uint, tokenUse models.TokenUse, audience string, expiryHours int, impersonatorID uint, authenticatedAt *time.Time) *models.JWTClaims {
@@ -162,6 +173,9 @@ func (s *AuthService) validClaimTimes(claims *models.JWTClaims, expectedUse mode
 		return false
 	}
 	if claims.AuthTime != nil && (claims.AuthTime.After(claims.IssuedAt.Time) || claims.AuthTime.After(claims.ExpiresAt.Time)) {
+		return false
+	}
+	if expectedUse == models.TokenUseStream && !validStreamProjectUID(claims.StreamProjectUID) {
 		return false
 	}
 	maxLifetime := time.Duration(s.cfg.JWTExpiryHours)*time.Hour + 30*time.Second
