@@ -9,6 +9,7 @@ import ProjectDeployment from './ProjectDeployment'
 
 vi.mock('@/lib/usePolling', () => ({ usePolling: vi.fn() }))
 vi.mock('@/services/api', () => ({
+  getCSRFToken: vi.fn(() => 'csrf-token'),
   projectsAPI: {
     get: vi.fn(),
     redeploy: vi.fn(),
@@ -133,6 +134,58 @@ describe('ProjectDeployment', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('refreshes project data from deployment events and disables fallback polling', async () => {
+    class MockEventSource {
+      static instances: MockEventSource[] = []
+      onopen: ((event: Event) => void) | null = null
+      onerror: ((event: Event) => void) | null = null
+      listeners = new Map<string, Array<(event: MessageEvent) => void>>()
+      close = vi.fn()
+
+      constructor(readonly url: string) {
+        MockEventSource.instances.push(this)
+      }
+
+      addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+        const callback = typeof listener === 'function'
+          ? listener
+          : (event: Event) => listener.handleEvent(event)
+        const listeners = this.listeners.get(type) || []
+        listeners.push(callback as (event: MessageEvent) => void)
+        this.listeners.set(type, listeners)
+      }
+
+      emit(type: string) {
+        this.listeners.get(type)?.forEach(listener => listener(new MessageEvent(type, { data: '{}' })))
+      }
+    }
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ token: 'stream-token' }),
+    }))
+    vi.stubGlobal('EventSource', MockEventSource)
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
+
+    renderPage()
+
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1))
+    expect(MockEventSource.instances[0].url).toContain('/deployment-events/stream?stream_token=stream-token')
+
+    act(() => MockEventSource.instances[0].onopen?.(new Event('open')))
+    await waitFor(() => {
+      const pollingCalls = vi.mocked(usePolling).mock.calls
+      expect(pollingCalls[pollingCalls.length - 1]?.[1]).toBeNull()
+    })
+
+    await act(async () => {
+      MockEventSource.instances[0].emit('deployment_event')
+      await new Promise(resolve => setTimeout(resolve, 250))
+    })
+    expect(projectsAPI.get).toHaveBeenCalledTimes(2)
   })
 
   it.each([
@@ -600,6 +653,21 @@ describe('ProjectDeployment build output', () => {
     await openBuildLogs()
     expect(await screen.findByText(output)).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Build output' }).querySelector('img')).toBeNull()
+  })
+
+  it.each([
+    ['> npm install', 'text-cyan-300'],
+    ['Dependencies: react, vite', 'text-teal-200/90'],
+    ['✓ Dependencies installed', 'text-emerald-300'],
+    ['[WARNING] optional package skipped', 'text-amber-300'],
+    ['npm ERR! code ELIFECYCLE', 'text-rose-300'],
+  ])('uses semantic build log styling for %s', async (line, className) => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: createProject() })
+    ;(projectsAPI.buildLogs as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { logs: line } })
+
+    renderPage()
+    await openBuildLogs()
+    expect(await screen.findByText(line)).toHaveClass(className)
   })
 })
 

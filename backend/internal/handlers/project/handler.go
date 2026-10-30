@@ -77,7 +77,7 @@ func (h *ProjectHandler) StreamDeploymentEvents(c *fiber.Ctx) error {
 	}
 
 	c.Set("Content-Type", "text/event-stream")
-	c.Set("Cache-Control", "no-cache")
+	c.Set("Cache-Control", "no-store")
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 

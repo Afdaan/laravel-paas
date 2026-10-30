@@ -19,7 +19,7 @@ import {
 import useTranslation from '@/lib/useTranslation'
 import { usePolling } from '@/lib/usePolling'
 import { useNow } from '@/lib/useNow'
-import { projectsAPI } from '@/services/api'
+import { getCSRFToken, projectsAPI } from '@/services/api'
 import type { DeploymentEvent, Project } from '@/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,7 @@ import { Tooltip } from '@base-ui/react/tooltip'
 import { cn } from '@/lib/utils'
 import { FrameworkIcon } from '@/components/FrameworkIcon'
 import { DatabaseEngineIcon } from '@/components/database-studio/utils'
+import { BuildLogLine } from '@/components/BuildLogLine'
 import { getProjectCreationPhase, isTerminalDeploymentStatus } from '@/components/project/projectCreationContext'
 import { parseFailure } from '@/components/project/deploymentFailure'
 import {
@@ -235,7 +236,13 @@ function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
       ) : logs === null ? (
         <p className="px-4 py-3 text-xs text-muted-foreground" role="status">{t('projectDetail.provisioning.buildLogsLoading')}</p>
       ) : logs ? (
-        <pre tabIndex={0} className="max-h-80 overflow-auto px-4 py-3 font-mono text-xs leading-6 whitespace-pre-wrap [overflow-wrap:anywhere]">{logs}</pre>
+        <pre tabIndex={0} className="max-h-80 overflow-auto bg-zinc-950 px-4 py-3 font-mono text-xs leading-6 text-zinc-300 [overflow-wrap:anywhere]">
+          {logs.split('\n').map((line, index) => (
+            <span key={`${index}:${line}`} className="block min-h-6 whitespace-pre-wrap">
+              <BuildLogLine line={line} />
+            </span>
+          ))}
+        </pre>
       ) : (
         <p className="px-4 py-3 text-xs text-muted-foreground" role="status">{t('projectDetail.provisioning.buildLogsEmpty')}</p>
       )}
@@ -295,6 +302,7 @@ export default function ProjectDeployment() {
   const [isRetrying, setIsRetrying] = useState(false)
   const [urlCopied, setUrlCopied] = useState(false)
   const [serverClock, setServerClock] = useState<{ time: number; receivedAt: number } | null>(null)
+  const [deploymentStreamConnected, setDeploymentStreamConnected] = useState(false)
   const requestSequence = useRef(0)
 
   const fetchProject = useCallback(async (silent = false) => {
@@ -327,7 +335,60 @@ export default function ProjectDeployment() {
   }, [fetchProject])
 
   const phase = project ? getProjectCreationPhase(project) : 'deploying'
-  usePolling(() => void fetchProject(true), project && phase === 'deploying' ? 2_000 : null)
+  useEffect(() => {
+    if (!uid || !project?.id || phase !== 'deploying') {
+      setDeploymentStreamConnected(false)
+      return
+    }
+
+    let disposed = false
+    let eventSource: EventSource | null = null
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null
+
+    const connect = async () => {
+      try {
+        const response = await fetch('/api/auth/stream-token', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'X-CSRF-Token': getCSRFToken() },
+        })
+        if (!response.ok) return
+
+        const data = await response.json() as { token?: unknown }
+        if (disposed || typeof data.token !== 'string' || !data.token) return
+
+        eventSource = new EventSource(`/api/projects/${uid}/deployment-events/stream?stream_token=${encodeURIComponent(data.token)}`)
+        eventSource.onopen = () => {
+          if (!disposed) setDeploymentStreamConnected(true)
+        }
+        eventSource.addEventListener('deployment_event', () => {
+          if (disposed) return
+          if (refreshTimer) clearTimeout(refreshTimer)
+          refreshTimer = setTimeout(() => void fetchProject(true), 200)
+        })
+        eventSource.onerror = () => {
+          if (disposed) return
+          setDeploymentStreamConnected(false)
+          eventSource?.close()
+        }
+      } catch {
+        if (!disposed) setDeploymentStreamConnected(false)
+      }
+    }
+
+    void connect()
+
+    return () => {
+      disposed = true
+      eventSource?.close()
+      if (refreshTimer) clearTimeout(refreshTimer)
+    }
+  }, [uid, project?.id, phase, fetchProject])
+
+  usePolling(
+    () => void fetchProject(true),
+    project && phase === 'deploying' && !deploymentStreamConnected ? 10_000 : null,
+  )
 
   // Progress only ever climbs within one job. Watchdog recovery re-queues an
   // in-flight deploy, which moves preparing(10) back to queued(0) and would

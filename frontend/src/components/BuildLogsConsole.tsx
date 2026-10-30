@@ -19,91 +19,7 @@ import {
   type BuildLogsSnapshot,
   type BuildLogsState,
 } from '@/lib/buildLogsState'
-
-const renderLogLine = (line: string) => {
-  const trimmed = line.trim()
-  const lower = trimmed.toLowerCase()
-
-  if (
-    trimmed.startsWith('✗') ||
-    /\[(?:FAILED|ERROR|[A-Z_]*FAILED)\]|(?:SyntaxError|TypeError|ReferenceError|RangeError|ParseError):|npm (?:ERR!|error\b)/i.test(trimmed) ||
-    ((lower.includes('error:') || lower.includes('failed')) && !lower.includes('success'))
-  ) {
-    return <span className="text-rose-300 font-medium">{line}</span>
-  }
-
-  // 1. Stage / step header starting with ">>"
-  if (trimmed.startsWith('>>')) {
-    const idx = line.indexOf('>>')
-    const prefix = line.substring(0, idx)
-    const content = line.substring(idx + 2)
-    return (
-      <span className="font-medium text-sky-300">
-        {prefix && <span className="text-zinc-500">{prefix}</span>}
-        <span className="text-sky-500 select-none mr-1.5">&gt;&gt;</span>
-        <span>{content}</span>
-      </span>
-    )
-  }
-
-  // 2. Success step starting with "✓"
-  if (trimmed.startsWith('✓')) {
-    const idx = line.indexOf('✓')
-    const prefix = line.substring(0, idx)
-    const content = line.substring(idx + 1)
-    return (
-      <span className="text-emerald-300 font-medium">
-        {prefix && <span className="text-zinc-500">{prefix}</span>}
-        <span className="text-emerald-500 font-bold select-none mr-1.5">✓</span>
-        <span>{content}</span>
-      </span>
-    )
-  }
-
-  // 3. Success step starting with "[SUCCESS]" or containing build summary success
-  if (trimmed.startsWith('[SUCCESS]') || (trimmed.startsWith('[BUILD SUMMARY]') && trimmed.toLowerCase().includes('successfully'))) {
-    return (
-      <span className="text-emerald-300 font-medium">
-        {line}
-      </span>
-    )
-  }
-
-  // 5. Warning lines
-  if (trimmed.startsWith('[WARNING]') || trimmed.toLowerCase().includes('warning:')) {
-    return (
-      <span className="text-amber-300 font-medium">
-        {line}
-      </span>
-    )
-  }
-
-  // 6. Section dividers (e.g. === or ---)
-  if (trimmed.startsWith('===') || trimmed.startsWith('---')) {
-    return <span className="text-zinc-600 font-light select-none tracking-widest">{line}</span>
-  }
-
-  // 7. General info logs
-  if (trimmed.startsWith('INFO')) {
-    return (
-      <span className="text-zinc-300">
-        <span className="text-zinc-500 font-medium mr-1.5">INFO</span>
-        {line.substring(4)}
-      </span>
-    )
-  }
-
-  if (trimmed.startsWith('> ')) {
-    return <span className="text-cyan-300">{line}</span>
-  }
-
-  if (trimmed.startsWith('Dependencies:')) {
-    return <span className="text-teal-200/90">{line}</span>
-  }
-
-  // 8. Fallback standard line
-  return <span>{line}</span>
-}
+import { BuildLogLine } from '@/components/BuildLogLine'
 
 interface BuildLogsConsoleProps {
   projectId: string | number
@@ -709,7 +625,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
             {logLines.length > 0 ? logLines.map((line: string, i: number) => (
               <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.05] transition-colors">
                 <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">{lineOffset + i + 1}</span>
-                <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{renderLogLine(line)}</span>
+                <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]"><BuildLogLine line={line} /></span>
               </div>
             )) : pendingDeploymentLogLines.length > 0 ? (
               <div className="flex flex-col gap-1 opacity-70 mt-2">
