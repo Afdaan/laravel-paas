@@ -1,14 +1,23 @@
 package nginx
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
 
 	"github.com/laravel-paas/shared/config"
 	"github.com/laravel-paas/shared/models"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestGetSSLStatus_UsesProjectCertificateIdentity(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +102,65 @@ func TestSyncProject_HTTP500(t *testing.T) {
 	// Verify we do NOT leak internal URL details
 	if strings.Contains(err.Error(), server.URL) {
 		t.Errorf("Security risk: error message contains raw webhook URL: %v", err)
+	}
+}
+
+func TestSyncProject_RetriesTransientNetworkFailure(t *testing.T) {
+	var attempts atomic.Int32
+	service := NewNginxWebhookService(&config.Config{
+		NginxWebhookEnabled: true,
+		NginxWebhookURL:     "http://private-routing.internal/webhook",
+		NginxWebhookKey:     "testkey",
+	})
+	service.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if attempts.Add(1) < webhookMaxAttempts {
+			return nil, syscall.ECONNRESET
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"message":"Synced","config_hash":"retry-hash"}`)),
+			Request:    req,
+		}, nil
+	})
+
+	hash, err := service.SyncProject(&models.Project{Subdomain: "testproj"}, "paas.test")
+	if err != nil {
+		t.Fatalf("Expected retry to recover, got: %v", err)
+	}
+	if hash != "retry-hash" {
+		t.Fatalf("Expected retry-hash, got %q", hash)
+	}
+	if got := attempts.Load(); got != webhookMaxAttempts {
+		t.Fatalf("Expected %d attempts, got %d", webhookMaxAttempts, got)
+	}
+}
+
+func TestSyncProject_NetworkFailureRemainsSanitized(t *testing.T) {
+	var attempts atomic.Int32
+	cfg := &config.Config{
+		NginxWebhookEnabled: true,
+		NginxWebhookURL:     "http://10.0.0.8:49512/webhook",
+		NginxWebhookKey:     "testkey",
+	}
+	service := NewNginxWebhookService(cfg)
+	service.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		attempts.Add(1)
+		return nil, syscall.ECONNREFUSED
+	})
+
+	_, err := service.SyncProject(&models.Project{Subdomain: "testproj"}, "paas.test")
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "webhook connection refused") {
+		t.Fatalf("Expected safe connection-refused category, got: %v", err)
+	}
+	if strings.Contains(err.Error(), cfg.NginxWebhookURL) {
+		t.Fatalf("Security risk: error contains webhook URL: %v", err)
+	}
+	if got := attempts.Load(); got != webhookMaxAttempts {
+		t.Fatalf("Expected %d attempts, got %d", webhookMaxAttempts, got)
 	}
 }
 
