@@ -289,8 +289,8 @@ func sanitizeWebhookNetworkError(err error) error {
 
 	switch {
 	case errors.As(err, &dnsErr):
-		return errors.New("webhook DNS resolution failed")
-	case errors.As(err, &netErr) && netErr.Timeout():
+			return errors.New("webhook DNS resolution failed")
+		case errors.As(err, &netErr) && netErr.Timeout():
 		return errors.New("webhook request timed out")
 	case errors.Is(err, syscall.ECONNREFUSED):
 		return errors.New("webhook connection refused")
