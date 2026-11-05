@@ -191,6 +191,11 @@ function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
   const [hasError, setHasError] = useState(false)
   const requestSequence = useRef(0)
   const isDeploying = Boolean(deploymentStatus && !isTerminalDeploymentStatus(deploymentStatus))
+  const logRef = useRef<HTMLPreElement>(null)
+  // tail -f: stick to bottom as lines arrive, but stop forcing it the moment
+  // the viewer scrolls up to read earlier output. Reset on a fresh deploy so
+  // a new run starts following again.
+  const stickToBottomRef = useRef(true)
 
   const fetchLogs = useCallback(async () => {
     const sequence = ++requestSequence.current
@@ -216,6 +221,26 @@ function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
   }, [fetchLogs, deploymentStatus])
   usePolling(() => void fetchLogs(), isDeploying ? 3_000 : null)
 
+  // New job: start following again.
+  useEffect(() => { stickToBottomRef.current = true }, [jobId])
+
+  // Follows new output like `tail -f`, but only while the viewer hasn't
+  // scrolled up to read earlier lines. Driven by `logs` changing, not a
+  // timer, so it naturally stops the moment the build finishes and the
+  // response stops changing — nothing left running to fight a later scroll.
+  useEffect(() => {
+    if (!stickToBottomRef.current) return
+    logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
+  }, [logs])
+
+  const handleScroll = () => {
+    const el = logRef.current
+    if (!el) return
+    // Within 24px of bottom still counts as "at the bottom" so it re-sticks
+    // without needing an exact scrollTop match.
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+  }
+
   return (
     <section className="border-t bg-muted/30" aria-label={t('projectDetail.provisioning.buildOutput')}>
       <div className="flex items-center justify-between gap-4 border-b px-4 py-2.5">
@@ -236,7 +261,7 @@ function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
       ) : logs === null ? (
         <p className="px-4 py-3 text-xs text-muted-foreground" role="status">{t('projectDetail.provisioning.buildLogsLoading')}</p>
       ) : logs ? (
-        <pre tabIndex={0} className="max-h-80 overflow-auto bg-zinc-950 px-4 py-3 font-mono text-xs leading-6 text-zinc-300 [overflow-wrap:anywhere]">
+        <pre ref={logRef} onScroll={handleScroll} tabIndex={0} className="max-h-80 overflow-auto bg-zinc-950 px-4 py-3 font-mono text-xs leading-6 text-zinc-300 [overflow-wrap:anywhere]">
           {logs.split('\n').map((line, index) => (
             <span key={`${index}:${line}`} className="block min-h-6 whitespace-pre-wrap">
               <BuildLogLine line={line} />
