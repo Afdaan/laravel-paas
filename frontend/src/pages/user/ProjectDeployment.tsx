@@ -275,24 +275,34 @@ function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
   )
 }
 
-function MetaCell({ label, children, icon, secondary }: {
+function MetaCell({ label, children, icon, secondary, footer }: {
   label: string
   children: React.ReactNode
   /** A small mark before the value, only where it identifies something. */
   icon?: React.ReactNode
   /** Supporting detail under the value, set smaller and muted. */
   secondary?: React.ReactNode
+  /** A trailing action, e.g. a link out to a deeper view of this value. */
+  footer?: React.ReactNode
 }) {
   return (
-    <div className="min-w-0 border-t px-4 py-2.5 first:border-t-0 sm:border-t-0 sm:border-l sm:first:border-l-0">
-      <dt className="mb-0.5 text-xs text-muted-foreground">{label}</dt>
+    // Hug-width card, not an equal-thirds column: each cell sizes to its own
+    // content (so a short runtime name and a long commit message don't force
+    // the same width), and flex-stretches to the row's tallest sibling.
+    <div className="flex min-w-0 flex-1 basis-60 flex-col gap-1 rounded-lg border border-border/60 bg-background/60 px-3.5 py-3 sm:flex-initial">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-[13px] text-foreground">
-        <div className="flex min-w-0 items-center gap-1.5">
-          {icon && <span className="flex size-3.5 shrink-0 items-center justify-center">{icon}</span>}
-          <div className="min-w-0 truncate">{children}</div>
+        <div className="flex min-w-0 items-start gap-2">
+          {icon && (
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted/60 ring-1 ring-border/60 [&_svg]:size-3.5">
+              {icon}
+            </span>
+          )}
+          <div className="min-w-0 break-words">{children}</div>
         </div>
-        {secondary && <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{secondary}</div>}
+        {secondary && <div className="mt-1 font-mono text-[11px] text-muted-foreground">{secondary}</div>}
       </dd>
+      {footer && <div className="mt-auto pt-1.5">{footer}</div>}
     </div>
   )
 }
@@ -934,7 +944,7 @@ export default function ProjectDeployment() {
           ))}
         </div>
 
-        <dl className="grid grid-cols-1 border-t bg-muted/45 sm:grid-cols-3">
+        <dl className="flex flex-col gap-2 border-t bg-muted/45 p-2.5 sm:flex-row sm:items-stretch">
           <MetaCell
             label={t('projectDetail.provisioning.metaSource')}
             icon={<RepoHostIcon url={repositoryUrl} />}
@@ -977,6 +987,17 @@ export default function ProjectDeployment() {
                 {t('projectDetail.provisioning.attachDatabase')} →
               </Link>
             ) : databaseDetail}
+            // A provisioned database is reachable from here, so the cell
+            // routes straight to its console instead of leaving the user to
+            // find it under the project's own tabs.
+            footer={databaseHasValue && databaseOption !== 'none' && (
+              <Link
+                to={`/projects/${uid}/database`}
+                className="inline-flex items-center gap-1 text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
+              >
+                {t('projectDetail.provisioning.openDatabaseConsole')} <ArrowUpRight className="size-3" aria-hidden="true" />
+              </Link>
+            )}
           >
             <span className={cn(databaseIsName && 'font-mono', !databaseHasValue && 'text-muted-foreground')}>
               {databaseLabel}
