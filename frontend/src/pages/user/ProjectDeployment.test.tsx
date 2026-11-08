@@ -799,6 +799,24 @@ describe('ProjectDeployment failure remedies', () => {
     expect(screen.getByText('PostgreSQL 16')).toBeInTheDocument()
   })
 
+  it('hides database package metadata from the user-facing version', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({
+        database_option: 'new',
+        database_instance: {
+          engine: 'mysql',
+          version: '10.11.18-MariaDB-ubu2204',
+          name: 'billing_db',
+        } as Project['database_instance'],
+      }),
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('MariaDB 10.11.18')).toBeInTheDocument()
+    expect(screen.queryByText(/ubu2204/i)).not.toBeInTheDocument()
+  })
+
   it('says a project has no database instead of waiting for one', async () => {
     ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: createProject({ database_option: 'none', database_name: '' }),

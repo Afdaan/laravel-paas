@@ -294,7 +294,7 @@ function MetaCell({ label, children, icon, secondary, footer, centerValue = fals
       <dd className={cn('min-w-0 text-[13px] text-foreground', centerValue && 'sm:flex sm:flex-1 sm:flex-col sm:justify-center')}>
         <div className="flex min-w-0 items-start gap-2">
           {icon && (
-            <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted/60 ring-1 ring-border/60 [&_svg]:size-3.5">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60 ring-1 ring-border/60 [&_svg]:size-4">
               {icon}
             </span>
           )}
@@ -319,6 +319,16 @@ function RepoHostIcon({ url }: { url?: string }) {
 }
 
 const DATABASE_ENGINE_LABEL: Record<string, string> = { mysql: 'MySQL', postgresql: 'PostgreSQL' }
+
+function databaseVersionLabel(engine: string, version?: string) {
+  const engineLabel = DATABASE_ENGINE_LABEL[engine] || engine
+  if (!version) return engineLabel
+
+  const versionNumber = version.match(/\d+(?:\.\d+){0,2}/)?.[0]
+  if (!versionNumber) return engineLabel
+
+  return `${/mariadb/i.test(version) ? 'MariaDB' : engineLabel} ${versionNumber}`
+}
 
 // ponytail: GitHub and GitLab both resolve /commit/<sha>; Bitbucket uses
 // /commits/ and lands on a 404 until a host-aware mapping is worth adding.
@@ -696,7 +706,7 @@ export default function ProjectDeployment() {
         : databaseName || unknownValue
   const databaseHasValue = databaseOption === 'sqlite' || databaseOption === 'external' || Boolean(databaseIsName)
   const databaseDetail = databaseIsName && database
-    ? [DATABASE_ENGINE_LABEL[database.engine] || database.engine, database.version].filter(Boolean).join(' ')
+    ? databaseVersionLabel(database.engine, database.version)
     : undefined
 
   const pipelineStatus = phase === 'ready'
@@ -970,7 +980,7 @@ export default function ProjectDeployment() {
 
           <MetaCell
             label={t('projectDetail.provisioning.metaRuntime')}
-            icon={runtimeIcon && <FrameworkIcon framework={runtimeIcon} variant="plain" className="size-3.5" />}
+            icon={runtimeIcon && <FrameworkIcon framework={runtimeIcon} variant="plain" className="size-4" />}
             secondary={runtimeDetail}
             centerValue
           >
@@ -979,7 +989,7 @@ export default function ProjectDeployment() {
 
           <MetaCell
             label={t('projectDetail.provisioning.metaDatabase')}
-            icon={databaseDetail && database && <DatabaseEngineIcon engine={database.engine} className="size-3.5" />}
+            icon={databaseDetail && database && <DatabaseEngineIcon engine={database.engine} className="size-4" />}
             secondary={databaseOption === 'none' ? (
               <Link
                 to={`/projects/${uid}?tab=settings`}
