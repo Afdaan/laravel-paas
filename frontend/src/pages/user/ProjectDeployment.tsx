@@ -286,9 +286,8 @@ function MetaCell({ label, children, icon, secondary, footer }: {
   footer?: React.ReactNode
 }) {
   return (
-    // Hug-width card, not an equal-thirds column: each cell sizes to its own
-    // content (so a short runtime name and a long commit message don't force
-    // the same width), and flex-stretches to the row's tallest sibling.
+    // The parent grid gives Source the flexible column while compact metadata
+    // keeps its intrinsic width; min-w-0 lets long source text wrap safely.
     <div className="flex min-w-0 flex-1 basis-60 flex-col gap-1 rounded-lg border border-border/60 bg-background/60 px-3.5 py-3 sm:flex-initial">
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-[13px] text-foreground">
@@ -944,7 +943,7 @@ export default function ProjectDeployment() {
           ))}
         </div>
 
-        <dl className="flex flex-col gap-2 border-t bg-muted/45 p-2.5 sm:flex-row sm:items-stretch">
+        <dl className="flex flex-col gap-2 border-t bg-muted/45 p-2.5 sm:grid sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-stretch">
           <MetaCell
             label={t('projectDetail.provisioning.metaSource')}
             icon={<RepoHostIcon url={repositoryUrl} />}
