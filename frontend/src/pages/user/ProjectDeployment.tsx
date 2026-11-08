@@ -974,7 +974,7 @@ export default function ProjectDeployment() {
             secondary={runtimeDetail}
             centerValue
           >
-            <span className={runtimeLabel ? undefined : 'text-muted-foreground'}>{runtimeLabel || unknownValue}</span>
+            <span className={runtimeLabel ? 'font-medium' : 'text-muted-foreground'}>{runtimeLabel || unknownValue}</span>
           </MetaCell>
 
           <MetaCell
@@ -983,9 +983,10 @@ export default function ProjectDeployment() {
             secondary={databaseOption === 'none' ? (
               <Link
                 to={`/projects/${uid}?tab=settings`}
-                className="font-sans text-xs text-foreground/80 underline-offset-[3px] transition-colors hover:text-foreground hover:underline"
+                className="inline-flex items-center gap-1 font-sans text-xs font-medium text-primary underline decoration-primary/40 underline-offset-4 transition-colors hover:decoration-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {t('projectDetail.provisioning.attachDatabase')} →
+                {t('projectDetail.provisioning.attachDatabase')}
+                <ArrowUpRight className="size-3" aria-hidden="true" />
               </Link>
             ) : databaseDetail}
             // A provisioned database is reachable from here, so the cell
@@ -994,13 +995,13 @@ export default function ProjectDeployment() {
             footer={databaseHasValue && databaseOption !== 'none' && (
               <Link
                 to={`/projects/${uid}/database`}
-                className="inline-flex items-center gap-1 text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary underline decoration-primary/40 underline-offset-4 transition-colors hover:decoration-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {t('projectDetail.provisioning.openDatabaseConsole')} <ArrowUpRight className="size-3" aria-hidden="true" />
               </Link>
             )}
           >
-            <span className={cn(databaseIsName && 'font-mono', !databaseHasValue && 'text-muted-foreground')}>
+            <span className={cn(databaseIsName && 'font-mono text-xs font-medium tracking-tight', !databaseHasValue && 'text-xs font-medium text-muted-foreground/80')}>
               {databaseLabel}
             </span>
           </MetaCell>
