@@ -797,6 +797,8 @@ describe('ProjectDeployment failure remedies', () => {
     expect(screen.getByText('PHP 8.3 · projectDetail.provisioning.runtimePort')).toBeInTheDocument()
     expect(screen.getByText('billing_db')).toBeInTheDocument()
     expect(screen.getByText('PostgreSQL 16')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'projectDetail.provisioning.openDatabaseConsole' }))
+      .toHaveAttribute('href', '/projects/proj-123?tab=database')
   })
 
   it('hides database package metadata from the user-facing version', async () => {

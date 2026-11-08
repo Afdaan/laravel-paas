@@ -1002,7 +1002,7 @@ export default function ProjectDeployment() {
             // find it under the project's own tabs.
             footer={databaseHasValue && databaseOption !== 'none' && (
               <Link
-                to={`/projects/${uid}/database`}
+                to={`/projects/${uid}?tab=database`}
                 className="inline-flex items-center gap-1 text-xs font-medium text-primary underline decoration-primary/40 underline-offset-4 transition-colors hover:decoration-primary focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {t('projectDetail.provisioning.openDatabaseConsole')} <ArrowUpRight className="size-3" aria-hidden="true" />
