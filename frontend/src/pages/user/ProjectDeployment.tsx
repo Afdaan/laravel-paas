@@ -275,7 +275,7 @@ function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
   )
 }
 
-function MetaCell({ label, children, icon, secondary, footer }: {
+function MetaCell({ label, children, icon, secondary, footer, centerValue = false }: {
   label: string
   children: React.ReactNode
   /** A small mark before the value, only where it identifies something. */
@@ -284,13 +284,14 @@ function MetaCell({ label, children, icon, secondary, footer }: {
   secondary?: React.ReactNode
   /** A trailing action, e.g. a link out to a deeper view of this value. */
   footer?: React.ReactNode
+  centerValue?: boolean
 }) {
   return (
     // The parent grid gives Source the flexible column while compact metadata
     // keeps its intrinsic width; min-w-0 lets long source text wrap safely.
     <div className="flex min-w-0 flex-1 basis-60 flex-col gap-1 rounded-lg border border-border/60 bg-background/60 px-3.5 py-3 sm:flex-initial">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-[13px] text-foreground">
+      <dd className={cn('min-w-0 text-[13px] text-foreground', centerValue && 'sm:flex sm:flex-1 sm:flex-col sm:justify-center')}>
         <div className="flex min-w-0 items-start gap-2">
           {icon && (
             <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted/60 ring-1 ring-border/60 [&_svg]:size-3.5">
@@ -971,6 +972,7 @@ export default function ProjectDeployment() {
             label={t('projectDetail.provisioning.metaRuntime')}
             icon={runtimeIcon && <FrameworkIcon framework={runtimeIcon} variant="plain" className="size-3.5" />}
             secondary={runtimeDetail}
+            centerValue
           >
             <span className={runtimeLabel ? undefined : 'text-muted-foreground'}>{runtimeLabel || unknownValue}</span>
           </MetaCell>
