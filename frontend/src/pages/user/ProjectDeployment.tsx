@@ -943,7 +943,7 @@ export default function ProjectDeployment() {
           ))}
         </div>
 
-        <dl className="flex flex-col gap-2 border-t bg-muted/45 p-2.5 sm:grid sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-stretch">
+        <dl className="flex flex-col gap-2 border-t bg-muted/45 p-2.5 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(8rem,max-content)_minmax(10rem,max-content)] sm:items-stretch">
           <MetaCell
             label={t('projectDetail.provisioning.metaSource')}
             icon={<RepoHostIcon url={repositoryUrl} />}
@@ -961,7 +961,7 @@ export default function ProjectDeployment() {
             )}
           >
             {commitSubject
-              ? <span title={commitSubject}>{commitSubject}</span>
+              ? <span className="block sm:truncate" title={commitSubject}>{commitSubject}</span>
               : commitLink
                 ? <span className="font-mono">{commitLink}</span>
                 : <span className="text-muted-foreground">{unknownValue}</span>}
