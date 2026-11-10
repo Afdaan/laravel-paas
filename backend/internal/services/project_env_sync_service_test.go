@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -86,9 +87,8 @@ func TestEnvSyncAdmissionBeforeFastWorkerPickup(t *testing.T) {
 		if err != nil || claimed == nil || claimed.JobID != published.JobID {
 			return fmt.Errorf("worker pickup: job=%+v err=%w", claimed, err)
 		}
-		defer workerRedis.AcknowledgeDeployment(claimed)
-		_, err = manager.TransitionState(context.Background(), project.ID, claimed.JobID, models.DepStatusPreparing, 20, "env_started", "running")
-		return err
+		_, transitionErr := manager.TransitionState(context.Background(), project.ID, claimed.JobID, models.DepStatusPreparing, 20, "env_started", "running")
+		return errors.Join(transitionErr, workerRedis.AcknowledgeDeployment(claimed))
 	}})
 	jobID, err := service.Enqueue(context.Background(), project.ID, 3)
 	if err != nil || jobID == "" {

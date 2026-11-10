@@ -60,7 +60,7 @@ func TestRollbackPromotionFencedAndAtomic(t *testing.T) {
 			}
 			if scenario == "write_failure" {
 				if err := db.Callback().Update().Before("gorm:update").Register("rollback_promotion_fault", func(tx *gorm.DB) {
-					tx.AddError(errors.New("simulated DB write failure"))
+					_ = tx.AddError(errors.New("simulated DB write failure"))
 				}); err != nil {
 					t.Fatal(err)
 				}

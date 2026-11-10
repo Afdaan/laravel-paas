@@ -148,12 +148,20 @@ func TestAdminOverrideWaitsForProjectResources(t *testing.T) {
 	if err != nil || claimed == nil || claimed.JobID != "B" {
 		t.Fatalf("claim B: %v %v", claimed, err)
 	}
-	defer service.AcknowledgeDeployment(claimed)
+	t.Cleanup(func() {
+		if err := service.AcknowledgeDeployment(claimed); err != nil {
+			t.Errorf("acknowledge deployment: %v", err)
+		}
+	})
 	lockB, err := service.AcquireDeploymentLock(projectID, "B", 2*time.Minute)
 	if err != nil || lockB == "" {
 		t.Fatalf("override did not let B claim Redis: %q %v", lockB, err)
 	}
-	defer service.ReleaseDeploymentLock(projectID, lockB)
+	t.Cleanup(func() {
+		if err := service.ReleaseDeploymentLock(projectID, lockB); err != nil {
+			t.Errorf("release deployment lock: %v", err)
+		}
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

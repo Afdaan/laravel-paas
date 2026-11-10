@@ -126,7 +126,9 @@ func TestBuildOutputTailBoundsAndSecretBoundary(t *testing.T) {
 	if cap(tail.data) > limit || len(tail.String()) > buildOutputMaxBytes || strings.Contains(tail.String(), "SECRET") {
 		t.Fatal("capture exceeded ceiling or exposed a partial secret")
 	}
-	tail.Write([]byte("\nfinal diagnostic\n"))
+	if _, err := tail.Write([]byte("\nfinal diagnostic\n")); err != nil {
+		t.Fatal(err)
+	}
 	if !strings.HasSuffix(tail.String(), "final diagnostic\n") {
 		t.Fatal("diagnostic tail lost")
 	}

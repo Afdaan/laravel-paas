@@ -74,7 +74,7 @@ func TestBuiltRedeployFencedAcrossAdminOverride(t *testing.T) {
 				}
 				if step == "promotion_db_failure" {
 					if err := db.Callback().Update().Before("gorm:update").Register("fail_built_promotion", func(tx *gorm.DB) {
-						tx.AddError(errors.New("promotion write failed"))
+						_ = tx.AddError(errors.New("promotion write failed"))
 					}); err != nil {
 						t.Fatal(err)
 					}

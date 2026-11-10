@@ -1136,7 +1136,7 @@ func TestRollbackAdmissionPreservesRunningCommit(t *testing.T) {
 				client.AddHook(adminRequeueFaultHook{afterReserve: func() { failDB = true }})
 				if err := db.Callback().Update().Before("gorm:update").Register("fail_rollback_stage", func(tx *gorm.DB) {
 					if failDB && tx.Statement.Table == "projects" {
-						tx.AddError(errors.New("private database connection detail"))
+						_ = tx.AddError(errors.New("private database connection detail"))
 					}
 				}); err != nil {
 					t.Fatal(err)

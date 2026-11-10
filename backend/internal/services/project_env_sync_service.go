@@ -61,7 +61,11 @@ func (s *ProjectEnvSyncService) Enqueue(ctx context.Context, projectID, generati
 	if err != nil || token == "" {
 		return "", err
 	}
-	defer s.redis.ReleaseDeploymentLock(projectID, token)
+	defer func() {
+		if releaseErr := s.redis.ReleaseDeploymentLock(projectID, token); releaseErr != nil {
+			slog.Warn("Release project environment sync lock failed", "project_id", projectID, "error", releaseErr)
+		}
+	}()
 
 	jobID := utils.GenerateRandomUID()
 	manager := deployment.NewTransitionManager(s.db, s.redis)
