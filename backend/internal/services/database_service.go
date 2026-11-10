@@ -518,7 +518,10 @@ func (s *DatabaseService) GetTableData(instance *models.DatabaseInstance, tableN
 	}
 	defer rows.Close()
 
-	columns, _ := rows.Columns()
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to read table columns: %w", err)
+	}
 	var data []map[string]interface{}
 
 	for rows.Next() {
@@ -543,6 +546,9 @@ func (s *DatabaseService) GetTableData(instance *models.DatabaseInstance, tableN
 			}
 		}
 		data = append(data, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to read table rows: %w", err)
 	}
 
 	return columns, data, total, nil
@@ -788,7 +794,11 @@ func (s *DatabaseService) ExecuteRawQuery(instance *models.DatabaseInstance, que
 		}
 		defer rows.Close()
 
-		columns, _ := rows.Columns()
+		columns, err := rows.Columns()
+		if err != nil {
+			slog.Warn("Failed to read raw query columns", "database", instance.Name, "error", err)
+			return nil, apperr.New(400, "QUERY_ERROR", "Query execution failed")
+		}
 		var data []map[string]interface{}
 		rowCount := 0
 		maxRows := 2000 // Safety cap to prevent OOM on large SELECTs
@@ -819,6 +829,10 @@ func (s *DatabaseService) ExecuteRawQuery(instance *models.DatabaseInstance, que
 				}
 			}
 			data = append(data, row)
+		}
+		if err := rows.Err(); err != nil {
+			slog.Warn("Failed while reading raw query rows", "database", instance.Name, "error", err)
+			return nil, apperr.New(400, "QUERY_ERROR", "Query execution failed")
 		}
 
 		return &QueryResult{
@@ -860,13 +874,16 @@ func (s *DatabaseService) GenerateProjectDump(instance *models.DatabaseInstance)
 	// Enforce SRE safety cap: check database size to prevent memory exhaustion (OOM)
 	var totalSize float64
 	if engine == "postgresql" {
-		_ = db.QueryRowContext(ctx, "SELECT COALESCE(SUM(pg_total_relation_size(quote_ident(tablename)) / 1024.0), 0) FROM pg_tables WHERE schemaname = 'public'").Scan(&totalSize)
+		err = db.QueryRowContext(ctx, "SELECT COALESCE(SUM(pg_total_relation_size(quote_ident(tablename)) / 1024.0), 0) FROM pg_tables WHERE schemaname = 'public'").Scan(&totalSize)
 	} else {
-		_ = db.QueryRowContext(ctx, `
+		err = db.QueryRowContext(ctx, `
 			SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH) / 1024.0, 0)
 			FROM information_schema.TABLES
 			WHERE TABLE_SCHEMA = ?
 		`, instance.Name).Scan(&totalSize)
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to determine database size: %w", err)
 	}
 
 	if totalSize > 102400 { // 100MB in KB
@@ -887,9 +904,13 @@ func (s *DatabaseService) GenerateProjectDump(instance *models.DatabaseInstance)
 		defer rows.Close()
 		for rows.Next() {
 			var tbl string
-			if err := rows.Scan(&tbl); err == nil {
-				tables = append(tables, tbl)
+			if err := rows.Scan(&tbl); err != nil {
+				return "", fmt.Errorf("failed to scan PostgreSQL table name: %w", err)
 			}
+			tables = append(tables, tbl)
+		}
+		if err := rows.Err(); err != nil {
+			return "", fmt.Errorf("failed to list PostgreSQL tables: %w", err)
 		}
 	} else {
 		rows, err := db.QueryContext(ctx, "SHOW TABLES")
@@ -899,9 +920,13 @@ func (s *DatabaseService) GenerateProjectDump(instance *models.DatabaseInstance)
 		defer rows.Close()
 		for rows.Next() {
 			var tbl string
-			if err := rows.Scan(&tbl); err == nil {
-				tables = append(tables, tbl)
+			if err := rows.Scan(&tbl); err != nil {
+				return "", fmt.Errorf("failed to scan MySQL table name: %w", err)
 			}
+			tables = append(tables, tbl)
+		}
+		if err := rows.Err(); err != nil {
+			return "", fmt.Errorf("failed to list MySQL tables: %w", err)
 		}
 	}
 
@@ -920,25 +945,32 @@ func (s *DatabaseService) GenerateProjectDump(instance *models.DatabaseInstance)
 				WHERE table_schema = 'public' AND table_name = $1
 				ORDER BY ordinal_position
 			`, tableName)
-			if err == nil {
-				var colDefs []string
-				for cols.Next() {
-					var colName, dataType, isNullable string
-					var colDefault sql.NullString
-					if err := cols.Scan(&colName, &dataType, &isNullable, &colDefault); err == nil {
-						def := fmt.Sprintf("  %s %s", s.escapeIdentifier(engine, colName), dataType)
-						if isNullable == "NO" {
-							def += " NOT NULL"
-						}
-						if colDefault.Valid {
-							def += " DEFAULT " + colDefault.String
-						}
-						colDefs = append(colDefs, def)
-					}
-				}
-				cols.Close()
-				sqlDump.WriteString(strings.Join(colDefs, ",\n"))
+			if err != nil {
+				return "", fmt.Errorf("failed to query columns for table %q: %w", tableName, err)
 			}
+			var colDefs []string
+			for cols.Next() {
+				var colName, dataType, isNullable string
+				var colDefault sql.NullString
+				if err := cols.Scan(&colName, &dataType, &isNullable, &colDefault); err != nil {
+					cols.Close()
+					return "", fmt.Errorf("failed to scan columns for table %q: %w", tableName, err)
+				}
+				def := fmt.Sprintf("  %s %s", s.escapeIdentifier(engine, colName), dataType)
+				if isNullable == "NO" {
+					def += " NOT NULL"
+				}
+				if colDefault.Valid {
+					def += " DEFAULT " + colDefault.String
+				}
+				colDefs = append(colDefs, def)
+			}
+			if err := cols.Err(); err != nil {
+				cols.Close()
+				return "", fmt.Errorf("failed to read columns for table %q: %w", tableName, err)
+			}
+			cols.Close()
+			sqlDump.WriteString(strings.Join(colDefs, ",\n"))
 			sqlDump.WriteString("\n);\n\n")
 		} else {
 			var tblName, createStmt string
@@ -948,7 +980,8 @@ func (s *DatabaseService) GenerateProjectDump(instance *models.DatabaseInstance)
 			}
 			sqlDump.WriteString(fmt.Sprintf("-- Table: %s\n", tableName))
 			sqlDump.WriteString(fmt.Sprintf("DROP TABLE IF EXISTS %s;\n", escapedTable))
-			sqlDump.WriteString(createStmt + ";\n\n")
+			sqlDump.WriteString(createStmt)
+			sqlDump.WriteString(";\n\n")
 		}
 
 		// Insert rows
@@ -957,7 +990,11 @@ func (s *DatabaseService) GenerateProjectDump(instance *models.DatabaseInstance)
 			continue
 		}
 
-		columns, _ := rows.Columns()
+		columns, err := rows.Columns()
+		if err != nil {
+			rows.Close()
+			return "", fmt.Errorf("failed to read columns for table %q: %w", tableName, err)
+		}
 		if len(columns) == 0 {
 			rows.Close()
 			continue
@@ -985,6 +1022,10 @@ func (s *DatabaseService) GenerateProjectDump(instance *models.DatabaseInstance)
 			}
 			sqlDump.WriteString(fmt.Sprintf("INSERT INTO %s VALUES (%s);\n", escapedTable, strings.Join(vals, ", ")))
 		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return "", fmt.Errorf("failed to read rows for table %q: %w", tableName, err)
+		}
 		rows.Close()
 		sqlDump.WriteString("\n")
 	}
@@ -1008,31 +1049,74 @@ func (s *DatabaseService) ResetProjectDatabase(instance *models.DatabaseInstance
 
 	var tables []string
 	if engine == "postgresql" {
-		rows, _ := db.QueryContext(ctx, "SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
-		defer rows.Close()
+		rows, err := db.QueryContext(ctx, "SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+		if err != nil {
+			return 0, fmt.Errorf("failed to list PostgreSQL tables: %w", err)
+		}
 		for rows.Next() {
 			var tbl string
-			if err := rows.Scan(&tbl); err == nil {
-				tables = append(tables, tbl)
+			if err := rows.Scan(&tbl); err != nil {
+				rows.Close()
+				return 0, fmt.Errorf("failed to scan PostgreSQL table name: %w", err)
 			}
+			tables = append(tables, tbl)
 		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("failed to read PostgreSQL table names: %w", err)
+		}
+		rows.Close()
 		for _, tbl := range tables {
-			_, _ = db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", s.escapeIdentifier(engine, tbl)))
+			if _, err := db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", s.escapeIdentifier(engine, tbl))); err != nil {
+				return 0, fmt.Errorf("failed to drop PostgreSQL table %q: %w", tbl, err)
+			}
 		}
 	} else {
-		rows, _ := db.QueryContext(ctx, "SHOW TABLES")
-		defer rows.Close()
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("failed to acquire MySQL connection: %w", err)
+		}
+		defer conn.Close()
+
+		rows, err := conn.QueryContext(ctx, "SHOW TABLES")
+		if err != nil {
+			return 0, fmt.Errorf("failed to list MySQL tables: %w", err)
+		}
 		for rows.Next() {
 			var tbl string
-			if err := rows.Scan(&tbl); err == nil {
-				tables = append(tables, tbl)
+			if err := rows.Scan(&tbl); err != nil {
+				rows.Close()
+				return 0, fmt.Errorf("failed to scan MySQL table name: %w", err)
+			}
+			tables = append(tables, tbl)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("failed to read MySQL table names: %w", err)
+		}
+		rows.Close()
+
+		if _, err := conn.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 0"); err != nil {
+			return 0, fmt.Errorf("failed to disable MySQL foreign key checks: %w", err)
+		}
+
+		var dropErr error
+		for _, tbl := range tables {
+			if _, err := conn.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", s.escapeIdentifier(engine, tbl))); err != nil {
+				dropErr = fmt.Errorf("failed to drop MySQL table %q: %w", tbl, err)
+				break
 			}
 		}
-		_, _ = db.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 0")
-		for _, tbl := range tables {
-			_, _ = db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", s.escapeIdentifier(engine, tbl)))
+
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, enableErr := conn.ExecContext(cleanupCtx, "SET FOREIGN_KEY_CHECKS = 1")
+		cleanupCancel()
+		if dropErr != nil {
+			return 0, dropErr
 		}
-		_, _ = db.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 1")
+		if enableErr != nil {
+			return 0, fmt.Errorf("failed to restore MySQL foreign key checks: %w", enableErr)
+		}
 	}
 
 	return len(tables), nil

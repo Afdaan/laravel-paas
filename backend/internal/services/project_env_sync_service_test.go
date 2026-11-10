@@ -34,7 +34,7 @@ func (hook envSyncPublishHook) ProcessHook(next redis.ProcessHook) redis.Process
 		}
 		for _, arg := range cmd.Args() {
 			var job infrastructure.DeploymentJob
-			if json.Unmarshal([]byte(fmt.Sprint(arg)), &job) == nil && job.JobID != "" {
+			if json.Unmarshal(fmt.Append(nil, arg), &job) == nil && job.JobID != "" {
 				return hook.onPublish(&job)
 			}
 		}
