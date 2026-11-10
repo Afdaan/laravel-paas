@@ -53,7 +53,18 @@ tar \
     docker-buildx-plugin \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -sSL https://railpack.com/install.sh | sh
+ARG RAILPACK_VERSION=0.43.0
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) arch=x86_64; checksum=248a8f60f36854aabed6124113631078a802de3461660855fc4de9c26065c1fb ;; \
+        arm64) arch=arm64; checksum=732ece14eb4f4676a43ebba19431f954edf7b130acb76159ef0f2ff86ac42ac9 ;; \
+        *) echo "Unsupported Railpack architecture" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --retry 3 "https://github.com/railwayapp/railpack/releases/download/v${RAILPACK_VERSION}/railpack-v${RAILPACK_VERSION}-${arch}-unknown-linux-musl.tar.gz" -o /tmp/railpack.tar.gz; \
+    printf '%s  /tmp/railpack.tar.gz\n' "$checksum" | sha256sum -c -; \
+    tar -xzf /tmp/railpack.tar.gz -C /usr/local/bin railpack; \
+    rm /tmp/railpack.tar.gz; \
+    railpack --version
 
 WORKDIR /app
 

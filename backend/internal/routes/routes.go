@@ -211,7 +211,7 @@ func Setup(
 	protected.Post("/auth/logout", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.Logout)
 	protected.Get("/auth/me", middleware.NoStore(), authHandler.Me)
 	protected.Put("/auth/profile", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.UpdateProfile)
-	protected.Post("/auth/stream-token", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.GenerateStreamToken)
+	protected.Post("/auth/stream-token", middleware.NoStore(), middleware.MaxBody(8*1024), middleware.RateLimitStreamToken(redisService), authHandler.GenerateStreamToken)
 	protected.Post("/auth/return-to-admin", middleware.NoStore(), middleware.MaxBody(8*1024), authHandler.ReturnToAdmin)
 	protected.Post("/auth/re-auth", middleware.NoStore(), middleware.MaxBody(8*1024), middleware.RateLimitReauth(redisService), authHandler.Reauthenticate)
 
@@ -352,7 +352,7 @@ func Setup(
 	projects.Post("/:id/restart", projectHandler.Restart)
 	projects.Delete("/:id", middleware.RequireNoBillingImpersonation(), projectHandler.Delete)
 	projects.Get("/:id/logs", projectHandler.Logs)
-	projects.Get("/:id/build-logs", projectHandler.BuildLogs)
+	projects.Get("/:id/build-logs", middleware.RateLimitBuildLogs(redisService), projectHandler.BuildLogs)
 	projects.Get("/:id/deployment-events", projectHandler.GetDeploymentEvents)
 	projects.Get("/:id/stats", projectHandler.Stats)
 	projects.Post("/:id/console", middleware.RateLimitConsole(redisService), projectHandler.RunConsoleCommand)

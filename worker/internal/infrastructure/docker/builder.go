@@ -9,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/laravel-paas/shared/apperr"
@@ -55,14 +57,16 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	s.injectDockerIgnore(projectPath, logCallback)
 
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-	logFilePath := filepath.Join(projectPath, "build.log")
+	jobID := ""
 	if project.DeploymentJobID != nil && *project.DeploymentJobID != "" {
-		logsDir := filepath.Join(projectPath, "logs")
-		if err := os.MkdirAll(logsDir, 0755); err != nil {
-			slog.Error("Failed to create logs directory", "path", logsDir, "error", err)
-			return "", fmt.Errorf("failed to create logs directory: %w", err)
-		}
-		logFilePath = filepath.Join(logsDir, fmt.Sprintf("build-%s.log", *project.DeploymentJobID))
+		jobID = *project.DeploymentJobID
+	}
+	logFilePath, logPathErr := project.GetDeploymentLogPath(s.cfg.ProjectsPath, jobID, "build")
+	if logPathErr != nil {
+		return "", logPathErr
+	}
+	if err := os.MkdirAll(filepath.Dir(logFilePath), 0700); err != nil {
+		return "", fmt.Errorf("failed to create logs directory: %w", err)
 	}
 
 	// Set BuildKit host to use the remote BuildKit container
@@ -122,9 +126,6 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		slog.Info("Automatically detected exposed port from image", "subdomain", project.Subdomain, "port", detectedPort)
 		p := detectedPort
 		project.Port = &p
-		if s.GetDB() != nil {
-			s.GetDB().Model(project).UpdateColumn("port", detectedPort)
-		}
 	}
 
 	// 4. Determine Final Internal Port for Traefik
@@ -351,13 +352,12 @@ stdout_logfile_backups=5
 
 // railpackBuild handles all other languages using railpacks-style auto-detection with cancellation context
 func (s *DockerService) railpackBuild(ctx context.Context, project *models.Project, buildPath, imageName, logFilePath string, noCache bool, logCallback func(string)) error {
-	// Strip strict lockfiles before Railpack runs.
-	for _, lockfile := range []string{"bun.lock", "yarn.lock"} {
-		if err := os.Remove(filepath.Join(buildPath, lockfile)); err == nil {
-			slog.Info("Stripped lockfile to allow non-frozen install", "file", lockfile, "subdomain", project.Subdomain)
+	var missingStartCommand atomic.Bool
+	observeLog := func(message string) {
+		if strings.Contains(message, "No start command detected") {
+			missingStartCommand.Store(true)
 		}
 	}
-
 	cacheKey := fmt.Sprintf("project-%d", project.ID)
 	if noCache {
 		cacheKey = fmt.Sprintf("project-%d-%d", project.ID, time.Now().Unix())
@@ -388,6 +388,20 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		envs["RAILPACK_DISABLE_CACHES"] = "*"
 	}
 
+	nodeVersion := resolveRailpackNodeVersion(project)
+	nodeVersionSource := "railpack_auto"
+	if nodeVersion != "" {
+		envs["RAILPACK_NODE_VERSION"] = nodeVersion
+		nodeVersionSource = "framework_language_version"
+		if strings.TrimSpace(project.NodeVersion) != "" {
+			nodeVersionSource = "project_node_version"
+		}
+	} else if strings.TrimSpace(envs["RAILPACK_NODE_VERSION"]) != "" {
+		nodeVersionSource = "project_environment"
+	}
+	slog.Info("Selected Railpack Node version override",
+		"subdomain", project.Subdomain, "framework", project.Framework,
+		"node_version_override", nodeVersion, "node_version_source", nodeVersionSource)
 	// Dynamically inject runtime version overrides using idiomatic files for Railpack/mise
 	switch project.Framework {
 	case "Go", "Golang":
@@ -412,22 +426,6 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 				}
 			}
 		}
-	default:
-		// Default / Node runtime version overrides
-		nodeVer := project.NodeVersion
-		if nodeVer == "" {
-			nodeVer = project.LanguageVersion
-		}
-		if nodeVer != "" {
-			versionFile := filepath.Join(buildPath, ".node-version")
-			if _, err := os.Stat(versionFile); os.IsNotExist(err) {
-				if err := os.WriteFile(versionFile, []byte(nodeVer), 0644); err != nil {
-					slog.Warn("Failed to inject .node-version for Railpack", "error", err, "subdomain", project.Subdomain)
-				} else {
-					slog.Info("Injected .node-version for Railpack", "version", nodeVer)
-				}
-			}
-		}
 	}
 
 	// Fallback check if framework is empty but language version is provided
@@ -448,15 +446,6 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 					slog.Warn("Failed to inject fallback .python-version for Railpack", "error", err, "subdomain", project.Subdomain)
 				} else {
 					slog.Info("Injected fallback .python-version for Railpack", "version", project.LanguageVersion)
-				}
-			}
-		} else if _, err := os.Stat(filepath.Join(buildPath, "package.json")); err == nil {
-			versionFile := filepath.Join(buildPath, ".node-version")
-			if _, e := os.Stat(versionFile); os.IsNotExist(e) {
-				if err := os.WriteFile(versionFile, []byte(project.LanguageVersion), 0644); err != nil {
-					slog.Warn("Failed to inject fallback .node-version for Railpack", "error", err, "subdomain", project.Subdomain)
-				} else {
-					slog.Info("Injected fallback .node-version for Railpack", "version", project.LanguageVersion)
 				}
 			}
 		}
@@ -672,17 +661,12 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 		buildArgs = append(buildArgs, "--start-cmd", startCommand)
 	}
 
-	// Finalize build command with path
+	envArgs, envSlice := RailpackEnvArgs(envs)
+	buildArgs = append(buildArgs, envArgs...)
 	buildArgs = append(buildArgs, buildPath)
 
-	// Collect env variables in KEY=VALUE format for secure OS-level injection
-	var envSlice []string
-	for key, value := range envs {
-		envSlice = append(envSlice, fmt.Sprintf("%s=%s", key, value))
-	}
-
 	// Securely run build by passing secrets through OS process environment rather than command args
-	res, err := utils.RunWithRefinedLogAndEnvCtx(ctx, 30*time.Minute, envSlice, logFilePath, logCallback, "railpack", buildArgs...)
+	res, err := utils.RunWithRefinedLogAndEnvCtx(ctx, 30*time.Minute, envSlice, logFilePath, logCallback, observeLog, "railpack", buildArgs...)
 
 	if err != nil {
 		// Cleanup: Remove failed image and prune cache if it looks like a corruption issue.
@@ -695,19 +679,44 @@ func (s *DockerService) railpackBuild(ctx context.Context, project *models.Proje
 			_ = utils.RunSilent(time.Minute, "docker", "builder", "prune", "-f", "--filter", "until=0s")
 		}
 
-		userMessage := sanitizeBuildError(res.Stderr)
+		userMessage := sanitizeBuildError(res.Stderr + "\n" + res.Stdout)
 		return apperr.New(500, "BUILD_FAILED", userMessage)
 	}
 
 	// Verify if build output indicates missing start command for a non-static project (Smart Fail-Fast)
 	combinedOutput := res.Stdout + "\n" + res.Stderr
-	if strings.Contains(combinedOutput, "No start command detected") && project.StartCommand == "" && envs["RAILPACK_START_CMD"] == "" && !isStaticFramework {
+	if (missingStartCommand.Load() || strings.Contains(combinedOutput, "No start command detected")) && project.StartCommand == "" && envs["RAILPACK_START_CMD"] == "" && !isStaticFramework {
 		slog.Warn("Railpack build finished but no start command was configured, failing early", "subdomain", project.Subdomain)
 		_ = utils.RunSilent(time.Minute, "docker", "rmi", imageName)
 		return apperr.New(400, "NO_START_COMMAND", "Build succeeded, but no start command or static/SPA output directory was detected. Non-static projects require a start command. Please configure a 'start' script in your package.json or specify a 'Start Command' in project settings.")
 	}
 
 	return nil
+}
+
+func RailpackEnvArgs(envs map[string]string) ([]string, []string) {
+	keys := make([]string, 0, len(envs))
+	for key := range envs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	args := make([]string, 0, 2*len(keys))
+	values := make([]string, 0, len(keys))
+	for _, key := range keys {
+		args = append(args, "--env", key)
+		values = append(values, key+"="+envs[key])
+	}
+	return args, values
+}
+
+func resolveRailpackNodeVersion(project *models.Project) string {
+	if version := strings.TrimSpace(project.NodeVersion); version != "" {
+		return version
+	}
+	if usesNodeBuildTemplate(project.Framework) {
+		return strings.TrimSpace(project.LanguageVersion)
+	}
+	return ""
 }
 
 func usesNodeBuildTemplate(framework string) bool {
@@ -930,23 +939,14 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 	}
 
 	// 4. Perform version substitution
-	version := "20" // default Node
-	switch stack {
-	case "golang":
-		version = "1.22"
-	case "python":
-		version = "3.11"
-	}
-
-	// Use project's specified version if provided
-	if project.LanguageVersion != "" {
-		version = project.LanguageVersion
-	} else if stack == "nodejs" && project.NodeVersion != "" {
-		version = project.NodeVersion
-	}
-
 	configStr := string(templateData)
-	configStr = strings.ReplaceAll(configStr, "{{VERSION}}", version)
+	if stack == "python" {
+		version := project.LanguageVersion
+		if version == "" {
+			version = "3.11"
+		}
+		configStr = strings.ReplaceAll(configStr, "{{VERSION}}", version)
+	}
 	if stack == "static" {
 		configStr = strings.ReplaceAll(configStr, "{{STATIC_DIR}}", staticDir)
 	}

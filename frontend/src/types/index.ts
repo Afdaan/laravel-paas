@@ -65,7 +65,6 @@ export interface Project {
   branch: string;
   php_version: string;
   port: number | null;
-  db_name: string;
   status: 'running' | 'stopped' | 'error' | 'deploying' | 'building' | 'failed' | 'pending' | 'queued' | 'restarting';
   subdomain?: string;
   url?: string;
@@ -76,10 +75,15 @@ export interface Project {
   github_repo_owner?: string;
   github_repo_name?: string;
   error_log?: string;
+  /** Runtime health notices (OOM kills, crash restarts) on a running project.
+   *  Separate from error_log, which is deployment failures only. */
+  health_notice?: string;
+  health_notice_at?: string;
   queue_enabled?: boolean;
   is_manual_version?: boolean;
   container_id?: string;
   database_name?: string;
+  database_option?: 'none' | 'sqlite' | 'new' | 'existing' | 'external';
   base_directory?: string;
   worker_command?: string;
   worker_container_id?: string;
@@ -95,9 +99,12 @@ export interface Project {
   last_commit_hash?: string;
   custom_domains?: CustomDomain[];
   database_instance?: DatabaseInstance;
-  deployment_status?: 'queued' | 'preparing' | 'cloning' | 'building' | 'provisioning' | 'starting' | 'healthchecking' | 'migrating' | 'promoting' | 'cleanup' | 'completed' | 'failed' | 'rollback' | 'cancelled';
+  deployment_status?: 'queued' | 'preparing' | 'cloning' | 'building' | 'starting' | 'healthchecking' | 'migrating' | 'promoting' | 'cleanup' | 'completed' | 'failed' | 'rollback' | 'cancelled';
   deployment_job_id?: string;
-  rollout_container_id?: string;
+  /** Set when the job is enqueued. deployment_started_at is worker pickup,
+   *  so the gap between the two is queue wait. */
+  deployment_enqueued_at?: string;
+  server_time?: string;
   deployment_started_at?: string;
   deployment_finished_at?: string;
   deployment_heartbeat_at?: string;

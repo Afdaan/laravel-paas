@@ -18,8 +18,6 @@ type LogRefiner struct {
 	ansiPattern *regexp.Regexp
 	// buffer for partial lines
 	buf string
-	// started indicates if the build header has been written
-	started bool
 	// lastStep tracks the last status message to avoid duplicates
 	lastStep string
 	// mutex for thread safety (Stdout and Stderr use the same refiner)
@@ -36,6 +34,11 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 	return &LogRefiner{
 		writer: w,
 		hidePatterns: []*regexp.Regexp{
+			regexp.MustCompile(`^(?:#\d+\s+[0-9.]+\s*)?INFO\s+(?:\d+\s+)?cache (imports|exports):\s*\[\s*\]\s*$`),
+			regexp.MustCompile("(?i)(the [`']?railpack\\.json[`']? format is still evolving|customize https://railpack\\.com/config/excluding-files|applying default exclude patterns)"),
+			regexp.MustCompile(`^(Deploy|Starting Docker Build\.\.\.)$`),
+			regexp.MustCompile(`^[|│]?\s*(Run:|docker run\b.*)\s*[|│]?$`),
+			regexp.MustCompile(`^[|│](?:\s*[|│])*$`),
 			// 1. Hide ALL Docker/BuildKit step headers and status lines (lines starting with #num but no timestamp)
 			regexp.MustCompile(`^#\d+(?:\s+[^0-9]|$)`),
 
@@ -88,7 +91,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`(Packages: \+|Progress:|Already up to date|Lockfile is up to date)`), // pnpm progress
 
 			// 11. Hide pip / Python build noise
-			regexp.MustCompile(`(Collecting |Requirement already satisfied|Successfully installed|Using cached|Downloading .+\.whl|Building wheel for|Created wheel for)`),
+			regexp.MustCompile(`(Collecting |Requirement already satisfied|Using cached|Downloading .+\.whl|Building wheel for|Created wheel for)`),
 			regexp.MustCompile(`(Downloading .+tar\.gz|Installing build dependencies:|Getting requirements to build wheel:|Installing backend dependencies:|Rust not found, installing|Python reports SOABI:|Computed rustc target|Installation directory:|Rustup already downloaded|Installing rust to|warn: It looks like you have|warn: \/root\/\.cache\/|warn: Rustup will install|warn: instead of the one inferred|info: profile set to|info: setting default host triple|warn: Updating existing toolchain|info: syncing channel updates|info: default toolchain set to|Checking if cargo is installed|Running \x60maturin|📦 Including license|🍹 Building a mixed python/rust|🐍 Found CPython|🔗 Found pyo3|📡 Using build options|Compiling [a-zA-Z0-9_\-]+ v[0-9.]+|cargo:rustc-cfg=|cargo:rerun-if-changed=|error: failed-wheel-build-for-install|Failed to build installable wheels)`),
 			regexp.MustCompile(`(process didn't exit successfully:|thread 'main' panicked at|note: run with \x60RUST_BACKTRACE=1\x60|warning: build failed, waiting for other jobs|💥 maturin failed|Caused by:|Cargo build finished with|Error: command .* returned non-zero|ERROR: Failed building wheel)`),
 
@@ -96,7 +99,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			regexp.MustCompile(`(go: downloading |go: finding |go: extracting )`),
 
 			// 13. Hide Ruby/Bundler noise
-			regexp.MustCompile(`(Fetching gem metadata|Resolving dependencies\.\.\.|Using bundler|Installing .+ with native extensions|Bundle complete!|Bundled gems are installed)`),
+			regexp.MustCompile(`(Fetching gem metadata|Resolving dependencies\.\.\.|Using bundler|Installing .+ with native extensions|Bundled gems are installed)`),
 
 			// 14. Hide Deno noise
 			regexp.MustCompile(`(Download https://deno\.land|Check file://)`),
@@ -155,7 +158,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 
 			// 22. Hide verbose Composer/NPM dependency download, install, and lock lines
 			regexp.MustCompile(`^(#\d+\s+[0-9.]+\s*)?-\s*(Downloading|Installing|Locking)\s+`),
-			regexp.MustCompile(`(Verifying lock file contents|Package operations: \d+ installs)`),
+			regexp.MustCompile(`Verifying lock file contents`),
 
 			// 21. Hide Vite/Rollup internal progress noise but ALLOW asset table, version, and build timing
 			regexp.MustCompile(`(transforming\.\.\.|\d+\s+modules? transformed|rendering chunks\.\.\.|computing gzip size\.\.\.|Some chunks are larger than .* after minification|Using dynamic import\(\)|build\.rollupOptions\.output\.manualChunks|build\.chunkSizeWarningLimit)`),
@@ -169,7 +172,7 @@ func NewLogRefiner(w io.Writer) *LogRefiner {
 			// 24. Hide npm warn config (e.g. npm warn config production) which occurs outside docker buildkit
 			regexp.MustCompile(`npm warn config (production|global|only|\[redacted\])`),
 		},
-		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`),
+		stripPattern: regexp.MustCompile(`^#\d+\s+[0-9.]+[ \t]?`),
 		ansiPattern:  regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`),
 	}
 }
@@ -193,15 +196,20 @@ var buildTransformations = []logTransformation{
 	{regexp.MustCompile(`^error:\s+subprocess-exited-with-error`), ">> Dependency build failed"},
 	{regexp.MustCompile(`^error:\s+failed to run custom build command for\s+\x60(.+)\x60`), ">> Failed to compile native extension for $1"},
 
+	// Keep one useful dependency summary per package manager.
+	{regexp.MustCompile(`^Installing collected packages:\s*(.+)`), "Dependencies: $1"},
+	{regexp.MustCompile(`^Successfully installed(?:\s+.*)?$`), "✓ Python dependencies installed"},
+	{regexp.MustCompile(`^Package operations:\s*(.+)`), "Dependencies: $1"},
+	{regexp.MustCompile(`^Bundle complete!.*`), "✓ Ruby dependencies installed"},
+	{regexp.MustCompile(`^added (\d+) packages?.*$`), "✓ Node dependencies installed ($1 packages)"},
+
 	// Transform progress indicators
 	{regexp.MustCompile(`^\[\d+/\d+\]\s+(install|download|extracting).*`), "Installing dependencies..."},
 	{regexp.MustCompile(`^\[\d+/\d+\]\s+(build|generate|compiling).*`), "Building application..."},
 	{regexp.MustCompile(`^↳ Using config.*`), "Detected configuration..."},
 
 	// Transform final build status lines
-	{regexp.MustCompile(`^INFO\s+Successfully built image in\s+(.*)`), "Successfully built image in $1"},
-	{regexp.MustCompile(`^Successfully built image in\s+(.*)`), "Successfully built image in $1"},
-	{regexp.MustCompile(`^Deploy.*`), "Deploying application..."},
+	{regexp.MustCompile(`^\s*(?:INFO\s+)?[|│]?\s*Successfully built image in\s+([0-9.]+(?:ms|s|m))\s*[|│]?\s*$`), "✓ Image built in $1"},
 
 	{regexp.MustCompile(`^(Generating|Generated) optimized autoload files.*`), "Optimizing autoload files..."},
 }
@@ -210,6 +218,10 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	return r.write(p)
+}
+
+func (r *LogRefiner) write(p []byte) (n int, err error) {
 	// Add current write to buffer
 	r.buf += string(p)
 
@@ -229,20 +241,21 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 			line = line[lastCR+1:]
 		}
 
+		cleanedLine := r.stripPattern.ReplaceAllString(line, "")
+		cleanedLine = r.ansiPattern.ReplaceAllString(cleanedLine, "")
+		cleanedLine = strings.TrimRight(cleanedLine, " \t\r")
+		matchLine := strings.TrimSpace(cleanedLine)
+
 		shouldHide := false
 		for _, pattern := range r.hidePatterns {
-			if pattern.MatchString(line) {
+			if pattern.MatchString(line) || pattern.MatchString(cleanedLine) || pattern.MatchString(matchLine) {
 				shouldHide = true
 				break
 			}
 		}
 
 		if !shouldHide {
-			cleanedLine := r.stripPattern.ReplaceAllString(line, "")
-			cleanedLine = r.ansiPattern.ReplaceAllString(cleanedLine, "")
-			cleanedLine = strings.TrimSpace(cleanedLine)
-
-			if cleanedLine != "" {
+			if matchLine != "" {
 				// Apply transformations
 				isStatus := false
 				for _, t := range buildTransformations {
@@ -267,13 +280,6 @@ func (r *LogRefiner) Write(p []byte) (n int, err error) {
 					r.lastStep = "" // Reset last step if it's a real log line
 				}
 
-				if !r.started {
-					if _, err := r.writer.Write([]byte(">> Running build container...\n>> Initializing build environment...\n")); err != nil {
-						return len(p), err
-					}
-					r.started = true
-				}
-
 				if _, err := r.writer.Write([]byte(cleanedLine + "\n")); err != nil {
 					return len(p), err
 				}
@@ -290,14 +296,8 @@ func (r *LogRefiner) Flush() error {
 	defer r.mu.Unlock()
 
 	if strings.TrimSpace(r.buf) != "" {
-		cleaned := r.stripPattern.ReplaceAllString(r.buf, "")
-		cleaned = r.ansiPattern.ReplaceAllString(cleaned, "")
-		cleaned = strings.TrimSpace(cleaned)
-		if cleaned != "" {
-			_, err := r.writer.Write([]byte(cleaned + "\n"))
-			r.buf = ""
-			return err
-		}
+		_, err := r.write([]byte("\n"))
+		return err
 	}
 	r.buf = ""
 	return nil

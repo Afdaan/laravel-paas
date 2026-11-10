@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -400,7 +401,7 @@ func (s *SecretStoreService) EnqueueDatabaseEnvironmentSync(project *models.Proj
 	if s == nil || s.redisService == nil || project == nil || project.ID == 0 {
 		return errors.New("database environment sync is unavailable")
 	}
-	_, err := s.redisService.EnqueueDeploymentEnvSync(project.ID, project.UserID, generation)
+	_, err := NewProjectEnvSyncService(s.db, s.redisService).Enqueue(context.Background(), project.ID, generation)
 	return err
 }
 

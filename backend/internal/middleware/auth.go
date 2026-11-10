@@ -87,6 +87,9 @@ func jwtAuth(cfg *config.Config, auth *services.AuthService, userProvider Curren
 		if err != nil {
 			return err
 		}
+		if expectedUse == models.TokenUseStream && !streamProjectMatches(claims, c.Params("id")) {
+			return apperr.New(403, "TOKEN_SCOPE_INVALID", "Stream token is not valid for this project")
+		}
 		revoked, err := auth.IsRevoked(claims)
 		if err != nil {
 			return apperr.New(503, "AUTH_UNAVAILABLE", "Authentication is temporarily unavailable")
@@ -139,6 +142,13 @@ func jwtAuth(cfg *config.Config, auth *services.AuthService, userProvider Curren
 	}
 }
 
+func streamProjectMatches(claims *models.JWTClaims, projectUID string) bool {
+	if claims == nil || claims.StreamProjectUID == "" || len(claims.StreamProjectUID) != len(projectUID) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(claims.StreamProjectUID), []byte(projectUID)) == 1
+}
+
 func isUnsafeMethod(method string) bool {
 	return method != fiber.MethodGet && method != fiber.MethodHead && method != fiber.MethodOptions
 }
@@ -187,7 +197,6 @@ func validOriginURL(c *fiber.Ctx, expectedURL, appEnv string) bool {
 	}
 	return false
 }
-
 
 func clearLegacyCookies(c *fiber.Ctx, _ *config.Config) {
 	for _, name := range []string{legacySessionCookieName, legacyAdminCookieName, legacyCSRFCookieName} {

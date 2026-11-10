@@ -1,6 +1,23 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { AxiosError } from 'axios'
-import api, { getCSRFToken, isSessionExpiredError } from './api'
+import api, { getCSRFToken, getRetryAfterSeconds, isSessionExpiredError } from './api'
+
+describe('getRetryAfterSeconds helper', () => {
+  it('uses Retry-After response header as source of truth', () => {
+    expect(getRetryAfterSeconds({
+      response: {
+        headers: { 'retry-after': '42' },
+        data: { details: { retry_after: 60 } },
+      },
+    })).toBe(42)
+  })
+
+  it('falls back to response metadata and rejects invalid values', () => {
+    expect(getRetryAfterSeconds({ response: { headers: {}, data: { details: { retry_after: 15 } } } })).toBe(15)
+    expect(getRetryAfterSeconds({ response: { headers: {}, data: { retry_after: 0 } } })).toBeNull()
+    expect(getRetryAfterSeconds(new Error('network error'))).toBeNull()
+  })
+})
 
 describe('getCSRFToken helper', () => {
   const originalCookie = document.cookie

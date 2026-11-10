@@ -8,6 +8,7 @@ import useTranslation from '@/lib/useTranslation'
 import ConfirmationModal from './ConfirmationModal'
 import { cn } from '@/lib/utils'
 import { Project, DeploymentEvent } from '@/types'
+import { isTerminalDeploymentStatus } from './project/projectCreationContext'
 import {
   appendBuildLogLines,
   clearVisibleBuildLogs,
@@ -18,91 +19,7 @@ import {
   type BuildLogsSnapshot,
   type BuildLogsState,
 } from '@/lib/buildLogsState'
-
-const renderLogLine = (line: string) => {
-  const trimmed = line.trim()
-
-  // 1. Stage / step header starting with ">>"
-  if (trimmed.startsWith('>>')) {
-    const idx = line.indexOf('>>')
-    const prefix = line.substring(0, idx)
-    const content = line.substring(idx + 2)
-    return (
-      <span className="font-semibold text-sky-400">
-        {prefix && <span className="text-zinc-500">{prefix}</span>}
-        <span className="text-sky-500 font-bold select-none mr-1.5">&gt;&gt;</span>
-        <span>{content}</span>
-      </span>
-    )
-  }
-
-  // 2. Success step starting with "✓"
-  if (trimmed.startsWith('✓')) {
-    const idx = line.indexOf('✓')
-    const prefix = line.substring(0, idx)
-    const content = line.substring(idx + 1)
-    return (
-      <span className="text-emerald-400 font-medium">
-        {prefix && <span className="text-zinc-500">{prefix}</span>}
-        <span className="text-emerald-500 font-bold select-none mr-1.5">✓</span>
-        <span>{content}</span>
-      </span>
-    )
-  }
-
-  // 3. Success step starting with "[SUCCESS]" or containing build summary success
-  if (trimmed.startsWith('[SUCCESS]') || (trimmed.startsWith('[BUILD SUMMARY]') && trimmed.toLowerCase().includes('successfully'))) {
-    return (
-      <span className="text-emerald-400 font-semibold">
-        {line}
-      </span>
-    )
-  }
-
-  // 4. Error lines starting with "✗" or containing "error" (e.g. "[ERROR]", "error:")
-  if (
-    trimmed.startsWith('✗') ||
-    trimmed.startsWith('[ERROR]') ||
-    trimmed.toLowerCase().includes('error:') ||
-    trimmed.toLowerCase().includes('failed')
-  ) {
-    // Only color as error if it's not a success line
-    if (!trimmed.toLowerCase().includes('successfully') && !trimmed.toLowerCase().includes('success')) {
-      return (
-        <span className="text-rose-400 font-medium">
-          {line}
-        </span>
-      )
-    }
-  }
-
-  // 5. Warning lines
-  if (trimmed.startsWith('[WARNING]') || trimmed.toLowerCase().includes('warning:')) {
-    return (
-      <span className="text-amber-400 font-medium">
-        {line}
-      </span>
-    )
-  }
-
-  // 6. Section dividers (e.g. === or ---)
-  if (trimmed.startsWith('===') || trimmed.startsWith('---')) {
-    return <span className="text-zinc-600 font-light select-none tracking-widest">{line}</span>
-  }
-
-  // 7. General info logs
-  if (trimmed.startsWith('INFO')) {
-    return (
-      <span className="text-zinc-300">
-        <span className="text-zinc-500 font-medium mr-1.5">INFO</span>
-        {line.substring(4)}
-      </span>
-    )
-  }
-
-  // 8. Fallback standard line
-  return <span>{line}</span>
-}
+import { BuildLogLine } from '@/components/BuildLogLine'
 
 interface BuildLogsConsoleProps {
   projectId: string | number
@@ -266,7 +183,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
 
 
   const isDeploying = useMemo(() => {
-    return Boolean(project?.deployment_status && !['completed', 'failed', 'rollback', 'cancelled'].includes(project.deployment_status))
+    return Boolean(project?.deployment_status && !isTerminalDeploymentStatus(project.deployment_status))
   }, [project?.deployment_status])
 
   const pendingDeploymentLogLines = useMemo(() => {
@@ -404,13 +321,20 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         const res = await fetch('/api/auth/stream-token', {
           method: 'POST',
           credentials: 'include',
-          headers: { 'X-CSRF-Token': getCSRFToken() }
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCSRFToken(),
+          },
+          body: JSON.stringify({ project_uid: String(projectId) }),
         })
         if (!res.ok) {
           throw new Error('Failed to get stream token')
         }
         if (!isMounted) return
-        const data = await res.json()
+        const data = await res.json() as { token?: unknown }
+        if (typeof data.token !== 'string' || !data.token) {
+          throw new Error('Invalid stream token response')
+        }
         const streamToken = data.token
 
         if (!isMounted) return
@@ -574,7 +498,7 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 h-[600px] bg-zinc-950 rounded-xl overflow-hidden shadow-2xl border border-white/10">
+    <div className="grid min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,2fr)] lg:grid-cols-3 lg:grid-rows-1 h-[600px] bg-zinc-950 rounded-xl overflow-hidden shadow-2xl border border-white/10">
       {/* Left Column: Timeline */}
       <div className="lg:col-span-1 border-b lg:border-b-0 lg:border-r border-white/10 bg-zinc-900/40 flex flex-col h-full overflow-hidden">
         <div className="bg-zinc-900/80 px-4 py-3 border-b border-white/5 flex items-center justify-between shrink-0">
@@ -671,11 +595,6 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
       <Card className="lg:col-span-2 bg-zinc-950 text-white border-none overflow-hidden flex flex-col h-full gap-0 py-0 rounded-none shadow-none">
         <CardHeader className="bg-zinc-900/80 px-4 py-3 border-b border-white/5 flex flex-row items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="flex gap-1.5 mr-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-rose-500/80 shadow-[0_0_8px_rgba(244,63,94,0.2)]" />
-              <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80 shadow-[0_0_8px_rgba(245,158,11,0.2)]" />
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.2)]" />
-            </div>
             <div className="text-[10px] uppercase font-bold tracking-widest text-zinc-400 flex items-center gap-2">
               <Terminal className="w-3.5 h-3.5" />
               {t('projectDetail.messages.buildLogs')}
@@ -708,12 +627,12 @@ const BuildLogsConsole = ({ projectId, status, project, onDeploymentEvent }: Bui
         <CardContent className="flex-1 p-0 overflow-hidden bg-zinc-950">
           <div
             ref={scrollRef}
-            className="h-full overflow-y-auto p-6 font-mono text-[11px] leading-relaxed text-zinc-300 custom-scrollbar selection:bg-primary/30"
+            className="h-full overflow-y-auto p-3 sm:p-6 font-mono text-xs leading-relaxed text-zinc-300 custom-scrollbar selection:bg-primary/30"
           >
             {logLines.length > 0 ? logLines.map((line: string, i: number) => (
               <div key={i} className="flex gap-4 group py-0.5 px-2 rounded -mx-2 hover:bg-white/[0.05] transition-colors">
                 <span className="shrink-0 text-zinc-800 select-none w-8 text-right font-light">{lineOffset + i + 1}</span>
-                <span className="whitespace-pre-wrap break-all">{renderLogLine(line)}</span>
+                <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]"><BuildLogLine line={line} /></span>
               </div>
             )) : pendingDeploymentLogLines.length > 0 ? (
               <div className="flex flex-col gap-1 opacity-70 mt-2">

@@ -98,25 +98,31 @@ func sanitizeBuildError(stderr string) string {
 		return msg
 	}
 
-	lines := strings.Split(stderr, "\n")
+	lines := strings.Split(utils.StripLogControlSequences(stderr), "\n")
+	buildPrefix := regexp.MustCompile(`^#\d+\s+[0-9.]+\s*`)
+	for index, line := range lines {
+		lines[index] = strings.TrimSpace(buildPrefix.ReplaceAllString(line, ""))
+	}
 
 	// Define actionable error patterns
 	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\b(SyntaxError|TypeError|ReferenceError|RangeError|ParseError):`),
 		regexp.MustCompile(`(?i)\[vite\]:\s*Rollup\s*failed`),
 		regexp.MustCompile(`(?i)ERROR\s*in\s+`),
 		regexp.MustCompile(`(?i)Failed\s*to\s*compile`),
 		regexp.MustCompile(`(?i)Your\s*requirements\s*could\s*not\s*be\s*resolved`),
+		regexp.MustCompile(`(?i)error\s+TS[0-9]+:`),
+		regexp.MustCompile(`(?i)syntax\s+error`),
+		regexp.MustCompile(`(?i)fatal:\s+`),
+		regexp.MustCompile(`(?i)npm\s+(ERR!|error)\s+(Failed at|command failed)`),
 		regexp.MustCompile(`(?i)npm\s+ERR!`),
 		regexp.MustCompile(`(?i)npm\s+error`),
 		regexp.MustCompile(`(?i)yarn\s+error`),
 		regexp.MustCompile(`(?i)command\s+failed\s+with\s+exit\s+code`),
-		regexp.MustCompile(`(?i)error\s+TS[0-9]+:`),
-		regexp.MustCompile(`(?i)syntax\s+error`),
-		regexp.MustCompile(`(?i)fatal:\s+`),
 	}
 
-	for i, line := range lines {
-		for _, pat := range patterns {
+	for _, pat := range patterns {
+		for i, line := range lines {
 			if pat.MatchString(line) {
 				start := i - 1
 				if start < 0 {
@@ -146,6 +152,8 @@ func sanitizeBuildError(stderr string) string {
 		"failed to solve:",
 		"unrecognized image format",
 		"INFO No package manager",
+		"INFO cache imports:",
+		"INFO cache exports:",
 		"Railpack build failed",
 		" ERRO ",
 		" INFO ",
@@ -183,14 +191,30 @@ func sanitizeBuildError(stderr string) string {
 // swap disablement (--memory-swap), process table limits (--pids-limit=250),
 // and privilege escalation prevention (--security-opt=no-new-privileges:true). Traefik routing rules
 // enforce strict network ingress isolation.
-func (s *DockerService) StartExistingImage(project *models.Project, projectDomain string) (string, error) {
+func (s *DockerService) StartExistingImage(project *models.Project, projectDomain string, requireCommitTag bool) (string, error) {
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
-	if project.LastCommitHash != "" {
+	if requireCommitTag && project.LastCommitHash != "" {
 		tagToCheck := fmt.Sprintf("%s:%s", imageName, project.LastCommitHash)
 		checkImg, err := exec.Command("docker", "image", "inspect", tagToCheck).Output()
 		if err == nil && len(checkImg) > 0 && strings.TrimSpace(string(checkImg)) != "[]" {
 			imageName = tagToCheck
 			slog.Info("Using specific commit tag image for startup", "tag", tagToCheck)
+		} else {
+			return "", fmt.Errorf("rollback image %s unavailable: %v", tagToCheck, err)
+		}
+	} else if requireCommitTag {
+		return "", errors.New("rollback requires target commit image")
+	} else {
+		if project.ContainerID == nil || *project.ContainerID == "" {
+			return "", errors.New("serving container is required to restart its image")
+		}
+		image, err := utils.Run(10*time.Second, "docker", "inspect", "--format", "{{.Image}}", *project.ContainerID)
+		if err != nil {
+			return "", fmt.Errorf("inspect serving container image: %w", err)
+		}
+		imageName = strings.TrimSpace(image.Stdout)
+		if !strings.HasPrefix(imageName, "sha256:") {
+			return "", errors.New("serving container image unavailable")
 		}
 	}
 
@@ -207,9 +231,6 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 	if exposure.Reason == models.RuntimeExposureReasonImageExpose {
 		p := detectedPort
 		project.Port = &p
-		if s.GetDB() != nil {
-			s.GetDB().Model(project).UpdateColumn("port", detectedPort)
-		}
 	}
 	internalPort := fmt.Sprintf("%d", exposure.Port)
 	slog.Info("Resolved runtime exposure",
@@ -268,6 +289,7 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		volumes = append(volumes, "-v", fmt.Sprintf("%s:/var/www/html/database/database.sqlite", hostSQLiteFile))
 	}
 	runArgs = append(runArgs, volumes...)
+	runArgs = append(runArgs, "--pull=never")
 	runArgs = append(runArgs, imageName)
 
 	res, err := utils.Run(3*time.Minute, "docker", runArgs...)

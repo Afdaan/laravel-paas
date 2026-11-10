@@ -176,6 +176,69 @@
   }
 }
 
+/* Deployment pipeline indicators (pages/user/ProjectDeployment.tsx).
+
+   Both cues are one motion in two geometries: a stroke grows from its start
+   edge, then its trailing edge advances to meet the head, so the cycle closes
+   without a still frame. Nothing scales or fades in and out - a pulsing dot
+   reads as decoration, while a stroke that travels reads as work in progress.
+
+   The arc rides a circle with pathLength="58", so dasharray values are in
+   those units rather than in pixels and stay correct at any rendered size. */
+@keyframes deploy-arc {
+  0%   { stroke-dasharray: 0 58;  stroke-dashoffset: 0; }
+  45%  { stroke-dasharray: 44 58; stroke-dashoffset: 0; }
+  100% { stroke-dasharray: 0 58;  stroke-dashoffset: -58; }
+}
+
+/* Sweeps a fixed-width highlight across the pill rather than growing/
+   shrinking it to zero width each cycle — at this pill's ~8px size, a width
+   that hits zero reads to the eye as a blink, not motion. The highlight
+   starts and ends fully outside the pill (off at -60%/100%), so the loop's
+   reset is invisible and the sweep reads as one continuous pass. */
+@keyframes deploy-segment {
+  0%   { left: -60%; }
+  100% { left: 100%; }
+}
+
+.deploy-arc {
+  animation: deploy-arc 1.6s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+.deploy-segment::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 60%;
+  border-radius: inherit;
+  background: currentColor;
+  animation: deploy-segment 1.1s linear infinite;
+}
+
+.deploy-arc-stalled {
+  animation-duration: 3.2s;
+}
+
+.deploy-segment-stalled::after {
+  animation-duration: 3.2s;
+}
+
+/* This page sits outside .runara-landing / .runara-surface, so the broad
+   reduced-motion rule further down does not reach it. */
+@media (prefers-reduced-motion: reduce) {
+  .deploy-arc {
+    animation: none;
+    stroke-dasharray: 44 58;
+    stroke-dashoffset: 0;
+  }
+
+  .deploy-segment::after {
+    animation: none;
+    left: 0;
+  }
+}
+
 .runara-press {
   box-shadow: 4px 4px 0 var(--foreground);
 }

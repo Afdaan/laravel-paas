@@ -64,3 +64,30 @@ func TestGenericMigrationFailureWarnsAboutPartialChanges(t *testing.T) {
 		t.Fatalf("SanitizeError() must warn about partial database changes: %s", summary)
 	}
 }
+
+func TestCommitSubjectBoundsUntrustedInput(t *testing.T) {
+	long := strings.Repeat("a", MaxCommitSubjectLength*3)
+	got := CommitSubject(long + "\nsecond line")
+	if len([]rune(got)) != MaxCommitSubjectLength+1 {
+		t.Fatalf("expected subject truncated to %d runes plus ellipsis, got %d", MaxCommitSubjectLength, len([]rune(got)))
+	}
+	if strings.Contains(got, "second line") {
+		t.Fatal("only the first line may be stored")
+	}
+
+	if got := CommitSubject("  fix: bound input\r\nbody  "); got != "fix: bound input" {
+		t.Fatalf("unexpected subject %q", got)
+	}
+	if got := CommitSubject(""); got != "" {
+		t.Fatalf("expected empty subject, got %q", got)
+	}
+}
+
+func TestShortCommitHash(t *testing.T) {
+	if got := ShortCommitHash("a1b2c3d4e5f6a7b8"); got != "a1b2c3d" {
+		t.Fatalf("unexpected short hash %q", got)
+	}
+	if got := ShortCommitHash(""); got != "unknown commit" {
+		t.Fatalf("unexpected placeholder %q", got)
+	}
+}

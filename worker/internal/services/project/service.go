@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/laravel-paas/shared/config"
@@ -30,6 +31,8 @@ type ProjectService struct {
 	redisService      *infrastructure.RedisService
 	transitionManager deployment.TransitionManager
 }
+
+var ErrRolloutPersistence = errors.New("rollout persistence failed")
 
 func NewProjectService(
 	cfg *config.Config,
@@ -83,6 +86,21 @@ func (s *ProjectService) PromoteRolloutContainerWithWorker(id uint, newContainer
 	return s.projectRepo.PromoteRolloutContainerWithWorker(id, newContainerID, workerContainerID)
 }
 
+func (s *ProjectService) PromoteRolloutForJob(project *models.Project, jobID, newContainerID string, runtimeUpdates map[string]interface{}) error {
+	updates := make(map[string]interface{}, len(runtimeUpdates)+6)
+	for key, value := range runtimeUpdates {
+		updates[key] = value
+	}
+	updates["container_id"] = newContainerID
+	updates["worker_container_id"] = project.WorkerContainerID
+	updates["rollout_container_id"] = nil
+	updates["rollout_worker_container_id"] = nil
+	updates["status"] = models.StatusRunning
+	updates["port"] = project.Port
+	updates["last_commit_hash"] = project.LastCommitHash
+	return s.projectRepo.UpdateMetadataForJob(project.ID, jobID, updates, newContainerID)
+}
+
 func (s *ProjectService) DeleteProject(project *models.Project) error {
 	slog.Info("Executing thorough project deletion",
 		"id", project.ID,
@@ -127,6 +145,9 @@ func (s *ProjectService) DeleteProject(project *models.Project) error {
 	}
 	if err := s.storageService.CleanupPersistentData(project); err != nil {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("cleanup persistent project data: %w", err))
+	}
+	if err := os.RemoveAll(project.GetDeploymentLogsPath(s.cfg.ProjectsPath)); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("cleanup deployment logs: %w", err))
 	}
 	if cleanupErr != nil {
 		return cleanupErr
@@ -224,13 +245,25 @@ func (s *ProjectService) SyncProjectNginxFrom(project *models.Project, triggerSo
 	return hash, nil
 }
 
-func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, logFunc func(string)) error {
+func (s *ProjectService) RecreateProjectZeroDowntime(ctx context.Context, project *models.Project, logFunc func(string), jobID string, requireCommitTag bool) error {
 	if logFunc == nil {
 		logFunc = func(string) {}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	updateRollout := func(updates map[string]interface{}) error {
+		if jobID != "" {
+			return s.projectRepo.UpdateMetadataForJob(project.ID, jobID, updates)
+		}
+		return s.projectRepo.UpdateMetadata(project.ID, updates)
 	}
 	projectDomain := s.cfg.ProjectDomain
 
 	if project.ContainerID == nil || *project.ContainerID == "" {
+		if jobID != "" {
+			return errors.New("no running container to replace")
+		}
 		return nil
 	}
 
@@ -250,31 +283,35 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 	project.WorkerContainerID = nil
 
 	logFunc(">> Starting new application instance...")
-	newID, err := s.dockerService.StartExistingImage(project, projectDomain)
+	newID, err := s.dockerService.StartExistingImage(project, projectDomain, requireCommitTag)
 	if err != nil {
 		logFunc("✗ Failed to start new application instance: " + err.Error())
 		slog.Error("Failed to start new container during recreation", "subdomain", project.Subdomain, "error", err)
 		return err
 	}
 	logFunc("✓ New application instance started.")
+	if err := ctx.Err(); err != nil {
+		_ = s.dockerService.RemoveContainer(newID, project.WorkerContainerID)
+		return err
+	}
 
 	project.RolloutContainerID = &newID
 	project.RolloutWorkerContainerID = project.WorkerContainerID
-	if err := s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+	if err := updateRollout(map[string]interface{}{
 		"rollout_container_id":        newID,
 		"rollout_worker_container_id": project.WorkerContainerID,
 	}); err != nil {
 		_ = s.dockerService.RemoveContainer(newID, project.WorkerContainerID)
-		return fmt.Errorf("checkpoint recreation rollout: %w", err)
+		return fmt.Errorf("%w: checkpoint recreation rollout: %w", ErrRolloutPersistence, err)
 	}
 
 	logFunc("")
 	logFunc(">> Running application health checks...")
 	// Run Advanced 2-step Healthcheck with timeout context
-	hcCtx, hcCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	hcCtx, hcCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer hcCancel()
 
-	if err := s.dockerService.AdvancedHealthcheck(hcCtx, project, newID, logFunc, project.ResolveRuntimeExposure(0)); err != nil {
+	if err := s.dockerService.AdvancedHealthcheck(hcCtx, project, newID, project.ResolveRuntimeExposure(0)); err != nil {
 		logFunc("✗ Health checks failed. Rolling back configuration changes...")
 		slog.Error("New container failed advanced healthcheck, rolling back", "subdomain", project.Subdomain, "newID", newID, "error", err)
 
@@ -282,7 +319,7 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 		logFunc(">> Rolling back release...")
 		if err := s.dockerService.RemoveContainer(newID, project.WorkerContainerID); err != nil {
 			slog.Warn("Failed to cleanup unhealthy new container", "id", newID, "error", err)
-		} else if err := s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		} else if err := updateRollout(map[string]interface{}{
 			"rollout_container_id":        nil,
 			"rollout_worker_container_id": nil,
 		}); err != nil {
@@ -292,21 +329,33 @@ func (s *ProjectService) RecreateProjectZeroDowntime(project *models.Project, lo
 		return fmt.Errorf("recreation failed: %w", err)
 	}
 	logFunc("✓ Health checks passed successfully.")
+	if err := ctx.Err(); err != nil {
+		if cleanupErr := s.dockerService.RemoveContainer(newID, project.WorkerContainerID); cleanupErr == nil {
+			_ = updateRollout(map[string]interface{}{"rollout_container_id": nil, "rollout_worker_container_id": nil})
+		}
+		return err
+	}
 
 	logFunc("")
 	logFunc(">> Swapping application routing...")
-	if err := s.PromoteRolloutContainerWithWorker(project.ID, newID, project.WorkerContainerID); err != nil {
+	var promoteErr error
+	if jobID != "" {
+		promoteErr = s.PromoteRolloutForJob(project, jobID, newID, nil)
+	} else {
+		promoteErr = s.PromoteRolloutContainerWithWorker(project.ID, newID, project.WorkerContainerID)
+	}
+	if err := promoteErr; err != nil {
 		logFunc("✗ Failed to route traffic to the new instance: " + err.Error())
 		slog.Error("Failed to promote rollout container during recreation", "id", project.ID, "error", err)
 		if cleanupErr := s.dockerService.RemoveContainer(newID, project.WorkerContainerID); cleanupErr != nil {
 			slog.Warn("Failed to cleanup unpromoted container", "id", newID, "error", cleanupErr)
-		} else if cleanupErr := s.projectRepo.UpdateMetadata(project.ID, map[string]interface{}{
+		} else if cleanupErr := updateRollout(map[string]interface{}{
 			"rollout_container_id":        nil,
 			"rollout_worker_container_id": nil,
 		}); cleanupErr != nil {
 			slog.Warn("Failed to clear rollout checkpoint after promotion failure", "id", project.ID, "error", cleanupErr)
 		}
-		return fmt.Errorf("promote rollout container: %w", err)
+		return fmt.Errorf("%w: promote rollout container: %w", ErrRolloutPersistence, err)
 	}
 	logFunc("✓ Application routing updated successfully.")
 	project.ContainerID = &newID
@@ -339,8 +388,35 @@ func (s *ProjectService) TransitionDeploymentState(ctx context.Context, projectI
 	return s.transitionManager.TransitionState(ctx, projectID, jobID, nextState, progress, eventType, payload)
 }
 
+// UpdateDeploymentStatus routes through the transition manager so state machine
+// validation, audit events and lifecycle timestamps are identical on every path.
 func (s *ProjectService) UpdateDeploymentStatus(id uint, status models.DeploymentStatus, message string, progress int, jobID string) error {
-	return s.projectRepo.UpdateDeploymentStatus(id, status, message, progress, jobID)
+	_, err := s.transitionManager.TransitionState(context.Background(), id, jobID, status, progress, "system_update", message)
+	return err
+}
+
+// FailQueuedDeploymentIfUnchanged conditionally transitions a queued deployment row to failed
+// only if it is still in queued state and still owned by jobID.
+func (s *ProjectService) FailQueuedDeploymentIfUnchanged(ctx context.Context, projectID uint, jobID string, message string, markProjectFailed bool) (bool, error) {
+	if s.transitionManager == nil {
+		return false, fmt.Errorf("transition manager not initialized")
+	}
+	return s.transitionManager.FailQueuedDeploymentIfUnchanged(ctx, projectID, jobID, message, markProjectFailed)
+}
+
+func (s *ProjectService) TransitionStateIfMatch(ctx context.Context, projectID uint, expectedStatus models.DeploymentStatus, expectedJobID *string, newJobID string, nextState models.DeploymentStatus, progress int, eventType, payload string) (*models.Project, bool, error) {
+	if s.transitionManager == nil {
+		return nil, false, fmt.Errorf("transition manager not initialized")
+	}
+	return s.transitionManager.TransitionStateIfMatch(ctx, projectID, expectedStatus, expectedJobID, newJobID, nextState, progress, eventType, payload)
+}
+
+func (s *ProjectService) RequeueDeployment(ctx context.Context, projectID uint, jobID string, message string, initialStatus ...models.ProjectStatus) error {
+	if s.transitionManager == nil {
+		return fmt.Errorf("transition manager not initialized")
+	}
+	_, err := s.transitionManager.RequeueDeployment(ctx, projectID, jobID, message, initialStatus...)
+	return err
 }
 
 func (s *ProjectService) GetProjectByID(id uint) (*models.Project, error) {

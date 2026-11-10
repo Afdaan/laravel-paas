@@ -96,7 +96,7 @@ build_traefik_trusted_ips_yaml() {
 }
 
 render_traefik_static_config() {
-  local template=$1 private_dir=${TRAEFIK_PRIVATE_DIR:-/run/runara} private_parent tmp stat config owner group
+  local template=$1 private_dir=${TRAEFIK_PRIVATE_DIR:-/run/runara} private_parent config_path tmp stat config owner group
   local -a privileged=()
 
   valid_internal_api_token || { printf 'INTERNAL_API_TOKEN must be 64 lowercase hexadecimal characters\n' >&2; return 1; }
@@ -117,6 +117,14 @@ render_traefik_static_config() {
   umask 077
   "${privileged[@]}" install -d -o "$owner" -g "$group" -m 700 "$private_dir"
   [[ $("${privileged[@]}" stat -c '%u:%a' "$private_dir") == "$owner:700" ]] || { printf 'Traefik private directory permissions are unsafe\n' >&2; return 1; }
+  config_path="$private_dir/traefik.yml"
+  "${privileged[@]}" test ! -L "$config_path" || { printf 'Traefik config path is a symlink\n' >&2; return 1; }
+  if "${privileged[@]}" test -d "$config_path"; then
+    "${privileged[@]}" rmdir -- "$config_path" || { printf 'Traefik config path is a non-empty directory\n' >&2; return 1; }
+  elif "${privileged[@]}" test -e "$config_path" && ! "${privileged[@]}" test -f "$config_path"; then
+    printf 'Traefik config path is not a regular file\n' >&2
+    return 1
+  fi
   tmp=$("${privileged[@]}" mktemp "$private_dir/.traefik.yml.XXXXXX")
   config=$(<"$template")
   local trusted_ips_yaml
@@ -131,6 +139,7 @@ render_traefik_static_config() {
     return 1
   fi
   "${privileged[@]}" chmod 600 "$tmp"
-  "${privileged[@]}" mv -f -- "$tmp" "$private_dir/traefik.yml"
-  printf '%s\n' "$private_dir/traefik.yml"
+  "${privileged[@]}" mv -f -- "$tmp" "$config_path"
+  "${privileged[@]}" test -f "$config_path" && "${privileged[@]}" test ! -L "$config_path" || { printf 'Traefik config render did not produce a regular file\n' >&2; return 1; }
+  printf '%s\n' "$config_path"
 }

@@ -98,7 +98,11 @@ func (h *ProjectHandler) Get(c *fiber.Ctx) error {
 
 	h.projectService.PopulateURL(project)
 
-	return c.JSON(project)
+	c.Set("Cache-Control", "no-store")
+	return c.JSON(struct {
+		*models.Project
+		ServerTime time.Time `json:"server_time"`
+	}{Project: project, ServerTime: time.Now().UTC()})
 }
 
 // UpdateRequest represents project update payload
@@ -181,105 +185,145 @@ func (h *ProjectHandler) Logs(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"logs": logs})
 }
 
-func getActiveOrLatestLogPath(projectPath string, jobID string) string {
-	logsDir := filepath.Join(projectPath, "logs")
+func getActiveOrLatestLogPath(logsDir string, jobID string) string {
 	if jobID != "" {
-		buildPath := filepath.Join(logsDir, fmt.Sprintf("build-%s.log", jobID))
-		if utils.IsPathWithinRoot(projectPath, buildPath) {
-			if _, err := os.Stat(buildPath); err == nil {
-				return buildPath
-			}
-		}
-		infraPath := filepath.Join(logsDir, fmt.Sprintf("infra-%s.log", jobID))
-		if utils.IsPathWithinRoot(projectPath, infraPath) {
-			if _, err := os.Stat(infraPath); err == nil {
-				return infraPath
-			}
-		}
-		// SRE Guard: Prevent fallback to stale log files when the requested job log does not exist yet.
-		return buildPath
-	}
-
-	// Fallback to most recent file in logsDir
-	if matches, err := filepath.Glob(filepath.Join(logsDir, "build-*.log")); err == nil && len(matches) > 0 {
-		var newestFile string
-		var newestTime time.Time
-		for _, m := range matches {
-			if info, err := os.Stat(m); err == nil {
-				if info.ModTime().After(newestTime) {
-					newestTime = info.ModTime()
-					newestFile = m
+		for _, prefix := range []string{"build", "infra"} {
+			logPath := filepath.Join(logsDir, fmt.Sprintf("%s-%s.log", prefix, jobID))
+			if utils.IsPathWithinRoot(logsDir, logPath) {
+				if info, err := os.Stat(logPath); err == nil && info.Mode().IsRegular() {
+					return logPath
 				}
 			}
 		}
-		if infraMatches, err := filepath.Glob(filepath.Join(logsDir, "infra-*.log")); err == nil {
-			for _, m := range infraMatches {
-				if info, err := os.Stat(m); err == nil {
-					if info.ModTime().After(newestTime) {
-						newestTime = info.ModTime()
-						newestFile = m
-					}
-				}
-			}
-		}
-		if newestFile != "" {
-			return newestFile
-		}
+		return filepath.Join(logsDir, fmt.Sprintf("build-%s.log", jobID))
 	}
 
-	// Final fallback to legacy build.log
-	return filepath.Join(projectPath, "build.log")
+	var newestFile string
+	var newestTime time.Time
+	for _, pattern := range []string{"build-*.log", "infra-*.log"} {
+		matches, _ := filepath.Glob(filepath.Join(logsDir, pattern))
+		for _, logPath := range matches {
+			if !utils.IsPathWithinRoot(logsDir, logPath) {
+				continue
+			}
+			if info, err := os.Stat(logPath); err == nil && info.Mode().IsRegular() && info.ModTime().After(newestTime) {
+				newestTime = info.ModTime()
+				newestFile = logPath
+			}
+		}
+	}
+	if newestFile != "" {
+		return newestFile
+	}
+	return filepath.Join(logsDir, "build.log")
 }
 
 // resolveLogPath searches multiple path options (with/without user folder, host/container configurations)
 // to resolve the authoritative build log location.
 func (h *ProjectHandler) resolveLogPath(project *models.Project, jobID string) string {
-	// 1. Primary path: using configured ProjectsPath with user folder (multi-tenant layout)
-	primaryPath := project.GetProjectPath(h.cfg.ProjectsPath)
-	logPath := getActiveOrLatestLogPath(primaryPath, jobID)
-	if utils.IsPathWithinRoot(h.cfg.ProjectsPath, primaryPath) {
-		if _, err := os.Stat(logPath); err == nil {
-			return logPath
-		}
+	_, err := project.GetDeploymentLogPath(h.cfg.ProjectsPath, jobID, "build")
+	if err != nil {
+		slog.Warn("Invalid deployment log identity", "projectId", project.ID, "jobID", jobID, "error", err)
+		return ""
 	}
-
-	// 2. Fallback: try without user folder (legacy direct layout)
-	legacyPath := filepath.Join(h.cfg.ProjectsPath, project.Subdomain)
-	if utils.IsPathWithinRoot(h.cfg.ProjectsPath, legacyPath) {
-		logPathFallback := getActiveOrLatestLogPath(legacyPath, jobID)
-		if _, err := os.Stat(logPathFallback); err == nil {
-			return logPathFallback
-		}
-	}
-
-	// 3. Fallback: if PROJECTS_PATH is set to host path in .env, try standard container mount /app/storage/projects
+	candidateRoots := []string{h.cfg.ProjectsPath}
 	const defaultContainerPath = "/app/storage/projects"
 	if h.cfg.ProjectsPath != defaultContainerPath {
-		// With user folder
-		containerPath := project.GetProjectPath(defaultContainerPath)
-		if utils.IsPathWithinRoot(defaultContainerPath, containerPath) {
-			logPathFallback := getActiveOrLatestLogPath(containerPath, jobID)
-			if _, err := os.Stat(logPathFallback); err == nil {
-				return logPathFallback
-			}
-		}
+		candidateRoots = append(candidateRoots, defaultContainerPath)
+	}
 
-		// Without user folder
-		containerLegacyPath := filepath.Join(defaultContainerPath, project.Subdomain)
-		if utils.IsPathWithinRoot(defaultContainerPath, containerLegacyPath) {
-			logPathFallback := getActiveOrLatestLogPath(containerLegacyPath, jobID)
-			if _, err := os.Stat(logPathFallback); err == nil {
-				return logPathFallback
+	for _, root := range candidateRoots {
+		logsDir := project.GetDeploymentLogsPath(root)
+		if utils.IsSymlink(filepath.Dir(logsDir)) || utils.IsSymlink(logsDir) {
+			continue
+		}
+		logPath := getActiveOrLatestLogPath(logsDir, jobID)
+		if utils.IsPathWithinRoot(root, logsDir) && utils.IsPathWithinRoot(logsDir, logPath) {
+			if info, err := os.Stat(logPath); err == nil && info.Mode().IsRegular() {
+				return logPath
 			}
 		}
 	}
 
-	// 4. Default: return primary path (so standard file-open handling propagates any errors naturally)
-	return logPath
+	for _, root := range candidateRoots {
+		if root == "" {
+			continue
+		}
+		var candidates []string
+
+		// 1. Multi-tenant path via GetUserDirName from database (matches git and storage)
+		if h.db != nil {
+			userDir := models.GetUserDirName(h.db, project.UserID)
+			if userDir != "" {
+				candidates = append(candidates, filepath.Join(root, userDir, project.Subdomain))
+			}
+		}
+
+		// 2. Multi-tenant path via project.GetProjectPath
+		primaryPath := project.GetProjectPath(root)
+		candidates = append(candidates, primaryPath)
+
+		// 3. Simple user folder candidates
+		candidates = append(candidates, filepath.Join(root, fmt.Sprintf("user-%d", project.UserID), project.Subdomain))
+
+		for _, cand := range candidates {
+			if !utils.IsPathWithinRoot(root, cand) || utils.IsSymlink(filepath.Dir(cand)) || utils.IsSymlink(cand) {
+				continue
+			}
+			for _, logsDir := range []string{filepath.Join(cand, "logs"), filepath.Join(cand, "infra"), cand} {
+				logCandidate := getActiveOrLatestLogPath(logsDir, jobID)
+				if !utils.IsPathWithinRoot(cand, logCandidate) {
+					continue
+				}
+				if info, err := os.Stat(logCandidate); err == nil && info.Mode().IsRegular() {
+					return logCandidate
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 // BuildLogs returns the railpack build log output
+const (
+	// maxTailLines bounds ?tail=N so a caller cannot ask for the whole file
+	// one line at a time.
+	maxTailLines = 200
+	// bytesPerTailLine is a generous per-line budget (real build log lines run
+	// 60-150 bytes) used to size the read window for a tail request.
+	bytesPerTailLine = 512
+	// tailReadFloor covers the partial leading line plus short files.
+	tailReadFloor = 2048
+)
+
+// tailLines returns the last n lines of s. partialFirst reports whether s starts
+// mid-file, in which case its first line is a fragment and is dropped.
+func tailLines(s string, n int, partialFirst bool) string {
+	if n <= 0 {
+		return s
+	}
+	if partialFirst {
+		// A window that starts mid-file almost certainly starts mid-line. With no
+		// line break at all the window is the tail of one very long line; keep it,
+		// matching how the uncapped response truncates at maxBytes.
+		if cut := strings.IndexByte(s, '\n'); cut >= 0 {
+			s = s[cut+1:]
+		}
+	}
+	trimmed := strings.TrimRight(s, "\n")
+	if trimmed == "" {
+		return ""
+	}
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
+	c.Set("Cache-Control", "no-store")
 	project, err := h.getProject(c)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Project not found"})
@@ -329,8 +373,25 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 
 	// Cap response size to avoid UI polling turning into a memory/CPU DoS.
 	const maxBytes = 256 * 1024
-	size := st.Size()
+
+	// A tail request wants the last N lines, not the whole buffer, so size the read
+	// window for them instead. Bytes rather than a line-wise reverse scan: a single
+	// log line can be enormous (stack traces, base64 blobs), and a byte window
+	// bounds the read regardless of what is in the file.
+	tail, _ := strconv.Atoi(c.Query("tail", "0"))
+	if tail > maxTailLines {
+		tail = maxTailLines
+	}
+
 	readSize := int64(maxBytes)
+	if tail > 0 {
+		readSize = int64(tail)*bytesPerTailLine + tailReadFloor
+		if readSize > maxBytes {
+			readSize = maxBytes
+		}
+	}
+
+	size := st.Size()
 	if size < readSize {
 		readSize = size
 	}
@@ -342,8 +403,13 @@ func (h *ProjectHandler) BuildLogs(c *fiber.Ctx) error {
 	}
 	_, _ = f.ReadAt(buf, off)
 
+	logs := string(buf)
+	if tail > 0 {
+		logs = tailLines(logs, tail, off > 0)
+	}
+
 	return c.JSON(fiber.Map{
-		"logs":        string(buf),
+		"logs":        logs,
 		"job_id":      jobID,
 		"available":   size > 0,
 		"placeholder": false,
@@ -358,7 +424,7 @@ func (h *ProjectHandler) StreamBuildLogs(c *fiber.Ctx) error {
 	}
 
 	c.Set("Content-Type", "text/event-stream")
-	c.Set("Cache-Control", "no-cache")
+	c.Set("Cache-Control", "no-store")
 	c.Set("Connection", "keep-alive")
 	c.Set("X-Accel-Buffering", "no")
 
@@ -894,22 +960,127 @@ func (h *ProjectHandler) RequeueJob(c *fiber.Ctx) error {
 	}
 	projectID := project.ID
 
-	// 1. Remove from queue if duplicate
-	_ = h.redisService.RemoveFromQueue(uint(projectID))
-
-	// 2. Release Redis Lock
-	_ = h.redisService.ForceReleaseDeploymentLock(uint(projectID), "Admin manual requeue")
-
-	// 3. Update project status to Queued
-	_ = h.projectService.UpdateProjectStatus(uint(projectID), models.StatusQueued)
-
-	// 4. Re-enqueue
-	jobID, err := h.redisService.EnqueueDeployment(uint(projectID), project.UserID, "redeploy")
+	lockToken, err := h.redisService.ReserveAdminRequeue(projectID)
 	if err != nil {
+		slog.Error("Failed to reserve deployment lock for admin requeue", "project_id", projectID, "error", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to re-enqueue job"})
 	}
 
-	_ = h.projectService.UpdateDeploymentStatus(uint(projectID), models.DepStatusQueued, "Admin manual requeue", 0, jobID)
+	job := &infrastructure.DeploymentJob{
+		ProjectID: projectID, UserID: project.UserID, Type: "redeploy",
+		JobID: utils.GenerateRandomUID(), EnqueuedAt: time.Now(),
+	}
+	if err := h.projectService.RequeueDeployment(c.Context(), projectID, job.JobID, "Admin manual requeue"); err != nil {
+		slog.Error("Failed to transition admin requeue in DB", "project_id", projectID, "job_id", job.JobID, "error", err)
+		_ = h.redisService.ReleaseDeploymentLock(projectID, lockToken)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to re-enqueue job"})
+	}
+	if err := h.redisService.EnqueueReplacingDeploymentJob(job, lockToken); err != nil {
+		if infrastructure.IsStaleOwnerError(err) {
+			slog.Info("Admin requeue stale owner / lock lost", "project_id", projectID, "job_id", job.JobID)
+			current, getErr := h.projectService.GetProjectByID(projectID)
+			if getErr != nil || current == nil {
+				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+					"error": "Failed to verify project state after stale requeue",
+				})
+			}
+
+			// Case 1: Another newer job superseded this one
+			if current.DeploymentJobID != nil && *current.DeploymentJobID != job.JobID {
+				newerJobID := *current.DeploymentJobID
+				hasNewerJob, _ := h.redisService.HasDeploymentJob(newerJobID)
+				isNewerActiveInDB := !models.IsTerminalDeploymentStatus(current.DeploymentStatus)
+
+				if hasNewerJob || isNewerActiveInDB {
+					return c.JSON(fiber.Map{
+						"message":           "Deployment requeue superseded by newer active job",
+						"superseded":        true,
+						"superseded_by":     newerJobID,
+						"deployment_status": current.DeploymentStatus,
+					})
+				}
+
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+					"error":             "Deployment requeue superseded by another job that is no longer active",
+					"superseded_by":     newerJobID,
+					"deployment_status": current.DeploymentStatus,
+				})
+			}
+
+			// Case 2: Cancellation intervened
+			if current.DeploymentStatus == models.DepStatusCancelled {
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+					"error":             "Deployment was cancelled before publication",
+					"deployment_status": current.DeploymentStatus,
+				})
+			}
+
+			// Case 3: Failed status
+			if current.DeploymentStatus == models.DepStatusFailed || current.Status == models.StatusFailed {
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+					"error":             "Deployment failed before publication",
+					"deployment_status": current.DeploymentStatus,
+				})
+			}
+
+			// Case 4: Lock lost or expired (DB was set to queued with job.JobID, but lock disappeared)
+			_, _ = h.projectService.FailQueuedDeploymentIfUnchanged(
+				c.Context(),
+				projectID,
+				job.JobID,
+				"Deployment lock lost or expired before publication",
+				true,
+			)
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "Deployment lock lost or expired before publication",
+			})
+		}
+		slog.Error("Failed to enqueue admin requeue job", "project_id", projectID, "job_id", job.JobID, "error", err)
+
+		// Uncertain publish reconciliation:
+		// An EVAL command may commit in Redis and successfully enqueue the job, but network disruption
+		// or timeout can cause the client to receive an error. Before asserting terminal failure,
+		// inspect whether the predetermined job was actually enqueued or already claimed by a worker.
+		inQueue, checkErr := h.redisService.HasDeploymentJob(job.JobID)
+		if checkErr != nil {
+			// If Redis cannot be inspected, do NOT destroy state by asserting failure.
+			// Preserve the recoverable queued state so watchdog or operators can reconcile.
+			slog.Warn("Cannot verify enqueue status after error; preserving queued state", "project_id", projectID, "job_id", job.JobID, "check_error", checkErr)
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Failed to verify queue status; project remains queued"})
+		}
+
+		if inQueue {
+			// The job exists in Redis (ready, delayed, or processing). The publish succeeded server-side.
+			slog.Info("Admin requeue job was enqueued despite transport error", "project_id", projectID, "job_id", job.JobID)
+			return c.JSON(fiber.Map{"message": "Job re-enqueued successfully"})
+		}
+
+		// Check if a worker already claimed the job and progressed it past queued in the database.
+		if current, getErr := h.projectService.GetProjectByID(projectID); getErr == nil && current != nil {
+			if current.DeploymentJobID != nil && *current.DeploymentJobID == job.JobID && current.DeploymentStatus != models.DepStatusQueued {
+				slog.Info("Admin requeue job was claimed and progressed by worker despite transport error", "project_id", projectID, "job_id", job.JobID, "status", current.DeploymentStatus)
+				return c.JSON(fiber.Map{"message": "Job re-enqueued successfully"})
+			}
+			if current.DeploymentJobID != nil && *current.DeploymentJobID != job.JobID {
+				slog.Info("Admin requeue superseded by newer deployment job", "project_id", projectID, "job_id", job.JobID, "current_job_id", *current.DeploymentJobID)
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+					"error":         "Deployment requeue superseded by newer job",
+					"superseded_by": *current.DeploymentJobID,
+				})
+			}
+		}
+
+		// Confirmed genuine failure: job is NOT in Redis and NOT claimed by any worker.
+		// Failure compensation must be conditional on this job still owning the queued
+		// database row inside the transaction, avoiding overwriting a newer concurrent job.
+		applied, transitionErr := h.projectService.FailQueuedDeploymentIfUnchanged(c.Context(), projectID, job.JobID, "Admin requeue failed: queue unavailable", true)
+		if transitionErr != nil {
+			slog.Error("Failed to record admin requeue failure", "project_id", projectID, "job_id", job.JobID, "error", transitionErr)
+		} else if !applied {
+			slog.Warn("Admin requeue failure compensation skipped: project state owned by newer job or no longer queued", "project_id", projectID, "job_id", job.JobID)
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to re-enqueue job"})
+	}
 
 	return c.JSON(fiber.Map{"message": "Job re-enqueued successfully"})
 }

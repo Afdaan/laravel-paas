@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/laravel-paas/shared/config"
@@ -23,13 +25,20 @@ import (
 
 // NginxWebhookService handles communication with the remote Nginx VM
 type NginxWebhookService struct {
-	cfg *config.Config
+	cfg    *config.Config
+	client *http.Client
 }
+
+const (
+	webhookMaxAttempts = 3
+	webhookRetryDelay  = 250 * time.Millisecond
+)
 
 // NewNginxWebhookService creates a new nginx webhook service
 func NewNginxWebhookService(cfg *config.Config) *NginxWebhookService {
 	return &NginxWebhookService{
-		cfg: cfg,
+		cfg:    cfg,
+		client: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -225,44 +234,73 @@ func (s *NginxWebhookService) sendRequest(payload WebhookPayload) (string, error
 		return "", err
 	}
 
-	client := &http.Client{
-		Timeout: 120 * time.Second,
-	}
-
-	req, err := http.NewRequest("POST", s.cfg.NginxWebhookURL, bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	s.signRequest(req, jsonPayload)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		slog.Error("Nginx webhook request failed with raw details", "subdomain", payload.Subdomain, "error", err)
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return "", fmt.Errorf("webhook request timed out")
+	for attempt := 1; attempt <= webhookMaxAttempts; attempt++ {
+		req, err := http.NewRequest("POST", s.cfg.NginxWebhookURL, bytes.NewBuffer(jsonPayload))
+		if err != nil {
+			return "", err
 		}
-		return "", fmt.Errorf("webhook request network failure")
-	}
-	defer resp.Body.Close()
+		req.Header.Set("Content-Type", "application/json")
+		s.signRequest(req, jsonPayload)
 
-	if resp.StatusCode >= 300 {
-		slog.Error("Nginx webhook returned non-2xx status", "subdomain", payload.Subdomain, "status", resp.StatusCode)
-		return "", fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
+		resp, err := s.client.Do(req)
+		if err != nil {
+			safeErr := sanitizeWebhookNetworkError(err)
+			slog.Warn("Nginx webhook request failed", "subdomain", payload.Subdomain, "attempt", attempt, "maxAttempts", webhookMaxAttempts, "error", err)
+			if attempt < webhookMaxAttempts {
+				time.Sleep(webhookRetryDelay * time.Duration(1<<(attempt-1)))
+				continue
+			}
+			return "", safeErr
+		}
+
+		if resp.StatusCode >= 300 {
+			_ = resp.Body.Close()
+			if resp.StatusCode >= 500 && attempt < webhookMaxAttempts {
+				slog.Warn("Nginx webhook returned retryable status", "subdomain", payload.Subdomain, "attempt", attempt, "maxAttempts", webhookMaxAttempts, "status", resp.StatusCode)
+				time.Sleep(webhookRetryDelay * time.Duration(1<<(attempt-1)))
+				continue
+			}
+			slog.Error("Nginx webhook returned non-2xx status", "subdomain", payload.Subdomain, "status", resp.StatusCode)
+			return "", fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
+		}
+
+		var webhookResp WebhookResponse
+		decodeErr := json.NewDecoder(resp.Body).Decode(&webhookResp)
+		_ = resp.Body.Close()
+		if decodeErr != nil {
+			slog.Error("Failed to decode Nginx webhook response", "subdomain", payload.Subdomain, "error", decodeErr)
+			return "", fmt.Errorf("invalid webhook response format")
+		}
+		if payload.Action == "sync" && webhookResp.ConfigHash == "" {
+			slog.Error("Nginx webhook returned empty config hash", "subdomain", payload.Subdomain)
+			return "", fmt.Errorf("empty config hash returned from webhook")
+		}
+
+		slog.Info("Successfully sent Nginx webhook", "subdomain", payload.Subdomain, "action", payload.Action, "hash", webhookResp.ConfigHash, "attempt", attempt)
+		return webhookResp.ConfigHash, nil
 	}
 
-	var webhookResp WebhookResponse
-	if err := json.NewDecoder(resp.Body).Decode(&webhookResp); err != nil {
-		slog.Error("Failed to decode Nginx webhook response", "subdomain", payload.Subdomain, "error", err)
-		return "", fmt.Errorf("invalid webhook response format")
-	}
-	if payload.Action == "sync" && webhookResp.ConfigHash == "" {
-		slog.Error("Nginx webhook returned empty config hash", "subdomain", payload.Subdomain)
-		return "", fmt.Errorf("empty config hash returned from webhook")
-	}
+	return "", fmt.Errorf("webhook request failed after retries")
+}
 
-	slog.Info("Successfully sent Nginx webhook", "subdomain", payload.Subdomain, "action", payload.Action, "hash", webhookResp.ConfigHash)
-	return webhookResp.ConfigHash, nil
+func sanitizeWebhookNetworkError(err error) error {
+	var dnsErr *net.DNSError
+	var netErr net.Error
+
+	switch {
+	case errors.As(err, &dnsErr):
+			return errors.New("webhook DNS resolution failed")
+		case errors.As(err, &netErr) && netErr.Timeout():
+		return errors.New("webhook request timed out")
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return errors.New("webhook connection refused")
+	case errors.Is(err, syscall.ECONNRESET):
+		return errors.New("webhook connection reset")
+	case errors.Is(err, syscall.ENETUNREACH), errors.Is(err, syscall.EHOSTUNREACH):
+		return errors.New("webhook network unreachable")
+	default:
+		return errors.New("webhook request network failure")
+	}
 }
 
 // getUserFolderName generates a predictable, POSIX-compliant directory name based on the user's email or UserSlug.

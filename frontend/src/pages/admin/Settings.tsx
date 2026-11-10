@@ -32,7 +32,6 @@ interface PlatformSettings {
   default_payment_provider?: string;
   base_domain?: string;
   project_domain?: string;
-  max_projects_per_user?: number;
   cpu_limit_percent?: number;
   memory_limit_mb?: number;
   admin_idle_timeout?: number;

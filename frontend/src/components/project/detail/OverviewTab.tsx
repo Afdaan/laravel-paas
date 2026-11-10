@@ -1,4 +1,4 @@
-import { ExternalLink, LayoutGrid, Globe, Code, GitBranch, Settings, ArrowUpRight, ShieldAlert } from 'lucide-react'
+import { ExternalLink, LayoutGrid, Globe, Code, GitBranch, Settings, ArrowUpRight, ShieldAlert, AlertTriangle } from 'lucide-react'
 import useTranslation from '@/lib/useTranslation'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -17,7 +17,7 @@ interface OverviewTabProps {
 }
 
 export function OverviewTab({ project, displayedFramework, isDetectedFrameworkCandidate, projectUrl, isLaravelProject, activeCommit, onTabChange }: OverviewTabProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
 
   return (
     <div className="space-y-6">
@@ -218,6 +218,37 @@ export function OverviewTab({ project, displayedFramework, isDetectedFrameworkCa
           </CardContent>
         </Card>
       </div>
+
+      {/* Runtime health notice: an OOM kill or crash restart on a *running*
+          project. Distinct from error_log, which is deployment failure only, so
+          it is styled as a warning rather than an error. Written by the central
+          watchdog and cleared when the next deployment job starts. */}
+      {project.health_notice && (
+        <Card className="border-amber-500/25 bg-amber-500/5 overflow-hidden">
+          <CardHeader className="bg-amber-500/10 py-3">
+            <CardTitle className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-2 uppercase tracking-widest">
+              <AlertTriangle className="w-4 h-4" />
+              {t('projectDetail.overview.healthNotice')}
+              {project.health_notice_at && (
+                <span className="ml-auto font-mono text-[10px] font-normal normal-case tracking-normal opacity-80">
+                  {t('projectDetail.overview.healthNoticeAt', {
+                    time: new Date(project.health_notice_at).toLocaleString(
+                      language === 'id' ? 'id-ID' : 'en-US',
+                      { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' },
+                    ),
+                  })}
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <p className="text-[13px] leading-relaxed text-foreground">{project.health_notice}</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {t('projectDetail.overview.healthNoticeCleared')}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {project.error_log && (
         <Card className="border-destructive/20 bg-destructive/5 overflow-hidden">

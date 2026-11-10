@@ -88,7 +88,7 @@ func main() {
 	settingService := setting.NewSettingService(settingRepo, redisService)
 	feedbackService := services.NewFeedbackService(feedbackRepo)
 	transitionManager := deployment.NewTransitionManager(db, redisService)
-	projectService := projectServicePkg.NewProjectService(cfg, projectRepo, settingService, dockerService, storageService, mysqlService, redisService, transitionManager)
+	projectService := projectServicePkg.NewProjectService(cfg, projectRepo, dockerService, storageService, mysqlService, redisService, transitionManager)
 	userService := services.NewUserService(userRepo, projectService)
 	authService := services.NewAuthService(userRepo, cfg, redisService)
 	databaseService := services.NewDatabaseService(db, cfg)

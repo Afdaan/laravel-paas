@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
@@ -218,23 +217,12 @@ func (s *ProjectService) ListByUserID(userID uint) ([]models.Project, error) {
 }
 
 // CreateProject handles the initial creation of a project record
-func (s *ProjectService) CreateProject(userID uint, role models.Role, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
-	return s.CreateProjectTx(nil, userID, role, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand, port, queueEnabled, databaseEngine, githubInstallationID, githubRepoOwner, githubRepoName)
+func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
+	return s.CreateProjectTx(nil, userID, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand, port, queueEnabled, databaseEngine, githubInstallationID, githubRepoOwner, githubRepoName)
 }
 
 // CreateProjectTx handles the initial creation of a project record within a transaction context
-func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, role models.Role, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
-	// Check per-user project limit setting (0 or negative means unlimited)
-	if role != models.RoleAdmin && role != models.RoleSuperAdmin {
-		maxProjects, err := strconv.Atoi(s.GetSetting(models.SettingMaxProjects, models.DefaultMaxProjects))
-		if err == nil && maxProjects > 0 {
-			count, _ := s.projectRepo.CountByUserID(userID)
-			if int(count) >= maxProjects {
-				return nil, apperr.New(403, "LIMIT_REACHED", fmt.Sprintf("You have reached the maximum allowed number of projects (%d)", maxProjects))
-			}
-		}
-	}
-
+func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
 	if err := validateBaseDirectory(baseDirectory); err != nil {
 		return nil, apperr.New(400, "INVALID_BASE_DIRECTORY", err.Error())
 	}
@@ -527,6 +515,49 @@ func (s *ProjectService) TransitionDeploymentState(ctx context.Context, projectI
 // UpdateDeploymentStatus updates the deployment execution status of a project and clears cache
 func (s *ProjectService) UpdateDeploymentStatus(id uint, status models.DeploymentStatus, message string, progress int, jobID string) error {
 	_, err := s.TransitionDeploymentState(context.Background(), id, jobID, status, progress, "system_update", message)
+	return err
+}
+
+// FailQueuedDeploymentIfUnchanged conditionally transitions a queued deployment row to failed
+// only if it is still in queued state and still owned by jobID.
+func (s *ProjectService) FailQueuedDeploymentIfUnchanged(ctx context.Context, projectID uint, jobID string, message string, markProjectFailed bool, restoreStatus ...models.ProjectStatus) (bool, error) {
+	if s.transitionManager == nil {
+		return false, fmt.Errorf("transition manager not initialized")
+	}
+	applied, err := s.transitionManager.FailQueuedDeploymentIfUnchanged(ctx, projectID, jobID, message, markProjectFailed, restoreStatus...)
+	if err == nil && applied {
+		project, _ := s.projectRepo.GetByID(projectID)
+		if project != nil {
+			_ = s.InvalidateSubdomainCache(project.Subdomain)
+		}
+	}
+	return applied, err
+}
+
+// RequeueDeployment atomically transitions deployment status and project status to queued
+// with the new job ID in a single database transaction.
+func (s *ProjectService) RequeueDeployment(ctx context.Context, projectID uint, jobID string, message string, initialStatus ...models.ProjectStatus) error {
+	if s.transitionManager == nil {
+		return fmt.Errorf("transition manager not initialized")
+	}
+	_, err := s.transitionManager.RequeueDeployment(ctx, projectID, jobID, message, initialStatus...)
+	if err == nil {
+		project, _ := s.projectRepo.GetByID(projectID)
+		if project != nil {
+			_ = s.InvalidateSubdomainCache(project.Subdomain)
+		}
+	}
+	return err
+}
+
+func (s *ProjectService) RequeueDeploymentIfMatch(ctx context.Context, expected *models.Project, jobID string, message string, initialStatus ...models.ProjectStatus) error {
+	if s.transitionManager == nil {
+		return fmt.Errorf("transition manager not initialized")
+	}
+	project, err := s.transitionManager.RequeueDeploymentIfMatch(ctx, expected, jobID, message, initialStatus...)
+	if err == nil {
+		_ = s.InvalidateSubdomainCache(project.Subdomain)
+	}
 	return err
 }
 

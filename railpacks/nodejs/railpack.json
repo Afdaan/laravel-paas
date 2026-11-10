@@ -14,9 +14,6 @@
     }
   },
   "deploy": {
-    "base": {
-      "image": "node:{{VERSION}}-slim"
-    },
     "aptPackages": [
       "openssl",
       "libssl-dev"

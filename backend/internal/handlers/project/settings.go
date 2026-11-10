@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/laravel-paas/shared/apperr"
@@ -145,20 +146,98 @@ func (h *ProjectHandler) UpdateEnv(c *fiber.Ctx) error {
 	// since we explicitly queue a redeployment for it at the end of this handler.
 	go h.secretStoreService.PropagateSecretStoreUpdatesExcept(storeID, lockedProject.ID)
 
-	if err := h.projectService.UpdateProjectStatus(lockedProject.ID, models.StatusRestarting); err != nil {
-		slog.Warn("Failed to update project status after env update", "id", lockedProject.ID, "error", err)
-	}
-
-	jobID, err := h.redisService.EnqueueDeployment(lockedProject.ID, lockedProject.UserID, "update_env")
+	lockToken, err := h.redisService.ReserveDeployment(lockedProject.ID)
 	if err != nil {
-		slog.Error("Failed to enqueue redeployment after env update", "project_id", lockedProject.ID, "error", err)
+		slog.Error("Failed to reserve deployment lock for env update", "id", lockedProject.ID, "error", err)
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"message": "Environment variables saved, but failed to connect to queue to schedule update. Please restart the project manually to apply changes.",
+			"error":   "Failed to schedule environment propagation due to queue service error",
+		})
+	}
+	if lockToken == "" {
+		// Active deployment in progress or already queued; schedule env refresh marker
+		// so worker applies new env vars after the current deployment finishes.
+		if markErr := h.redisService.SetPendingEnvRefresh(lockedProject.ID); markErr != nil {
+			slog.Error("Failed to set pending env refresh marker", "id", lockedProject.ID, "error", markErr)
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+				"message": "Environment variables saved, but failed to schedule automatic refresh. Please restart the project manually to apply changes.",
+				"error":   "Failed to record pending environment refresh marker",
+			})
+		}
 		return c.JSON(fiber.Map{
-			"message": "Environment variables saved, but failed to queue environment propagation. Please restart the project manually.",
+			"message": "Environment variables saved. Changes will take effect on the current or next deployment.",
 		})
 	}
 
-	if err := h.projectService.UpdateDeploymentStatus(lockedProject.ID, models.DepStatusQueued, "Applying environment changes...", 0, jobID); err != nil {
-		slog.Warn("Failed to update project deployment status after env update", "id", lockedProject.ID, "error", err)
+	jobID := utils.GenerateRandomUID()
+	job := &infrastructure.DeploymentJob{
+		ProjectID:  lockedProject.ID,
+		UserID:     lockedProject.UserID,
+		Type:       "update_env",
+		JobID:      jobID,
+		EnqueuedAt: time.Now(),
+	}
+
+	if err := h.projectService.RequeueDeploymentIfMatch(c.Context(), &lockedProject, jobID, "Applying environment changes..."); err != nil {
+		slog.Error("Failed to update project deployment status after env update", "id", lockedProject.ID, "error", err)
+		_ = h.redisService.ReleaseDeploymentLock(lockedProject.ID, lockToken)
+		if infrastructure.IsStaleOwnerError(err) {
+			if markErr := h.redisService.SetPendingEnvRefresh(lockedProject.ID); markErr == nil {
+				return c.JSON(fiber.Map{"message": "Environment variables saved. Changes will take effect on the current or next deployment."})
+			}
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Environment variables saved, but failed to queue environment propagation. Please restart the project manually to apply changes.",
+			"error":   "Failed to record deployment status in database",
+		})
+	}
+
+	if err := h.redisService.EnqueueReplacingDeploymentJob(job, lockToken); err != nil {
+		if infrastructure.IsStaleOwnerError(err) {
+			slog.Info("Env update superseded or lock lost", "id", lockedProject.ID, "job_id", jobID)
+			isSuperseded := false
+			if fresh, getErr := h.projectService.GetProjectByID(lockedProject.ID); getErr == nil && fresh != nil {
+				if fresh.DeploymentJobID != nil && *fresh.DeploymentJobID != jobID && *fresh.DeploymentJobID != "" {
+					isSuperseded = true
+				}
+			}
+			if !isSuperseded {
+				_, _ = h.projectService.FailQueuedDeploymentIfUnchanged(c.Context(), lockedProject.ID, jobID, "Deployment lock lost or expired before publication", false)
+			}
+			if markErr := h.redisService.SetPendingEnvRefresh(lockedProject.ID); markErr != nil {
+				slog.Error("Failed to set pending env refresh marker after lock lost", "id", lockedProject.ID, "error", markErr)
+				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+					"message": "Environment variables saved, but failed to schedule automatic refresh. Please restart the project manually to apply changes.",
+					"error":   "Failed to record pending environment refresh marker",
+				})
+			}
+			if isSuperseded {
+				return c.JSON(fiber.Map{
+					"message": "Environment variables saved. Superseded by newer deployment.",
+				})
+			}
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"message": "Environment variables saved, but deployment lock expired. Changes will take effect on next deployment or manual restart.",
+				"error":   "Deployment lock lost or expired before publication",
+			})
+		}
+		slog.Error("Failed to enqueue update_env job", "id", lockedProject.ID, "error", err)
+		inQueue, checkErr := h.redisService.HasDeploymentJob(jobID)
+		if checkErr == nil && inQueue {
+			return c.JSON(fiber.Map{
+				"message": "Environment variables updated. Propagating updates to the container.",
+			})
+		}
+		if checkErr == nil && !inQueue {
+			if current, readErr := h.projectService.GetProjectByID(lockedProject.ID); readErr == nil && current.DeploymentJobID != nil && *current.DeploymentJobID == jobID && current.DeploymentStatus == models.DepStatusCompleted {
+				return c.JSON(fiber.Map{"message": "Environment variables updated. Propagating updates to the container."})
+			}
+			_, _ = h.projectService.FailQueuedDeploymentIfUnchanged(c.Context(), lockedProject.ID, jobID, "Failed to enqueue environment propagation", false)
+		}
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"message": "Environment variables saved, but failed to queue environment propagation. Please restart the project manually to apply changes.",
+			"error":   "Failed to enqueue environment propagation",
+		})
 	}
 
 	return c.JSON(fiber.Map{

@@ -29,6 +29,29 @@ config=$(render_traefik_static_config "$tmp/traefik.yml.template")
 [ "$(stat -c '%a:%u' "$config")" = "600:$(id -u)" ]
 [ "$(realpath "$config")" != "$(realpath "$tmp/dynamic")/traefik.yml" ]
 
+# Docker creates a directory for a missing bind source during reboot recovery.
+rm -f "$config"
+mkdir "$config"
+config=$(render_traefik_static_config "$tmp/traefik.yml.template")
+[ -f "$config" ]
+[ ! -d "$config" ]
+
+rm -f "$config"
+mkdir "$config"
+touch "$config/unexpected"
+if render_traefik_static_config "$tmp/traefik.yml.template" >/dev/null 2>&1; then
+  printf 'non-empty Traefik config directory was replaced\n' >&2
+  exit 1
+fi
+[ -f "$config/unexpected" ]
+rm -rf "$config"
+config=$(render_traefik_static_config "$tmp/traefik.yml.template")
+
+unit=$("$root/scripts/install-traefik-boot-service.sh" --dry-run)
+grep -Fq "After=docker.service network-online.target" <<<"$unit"
+grep -Fq "PartOf=docker.service" <<<"$unit"
+grep -Fq "ExecStart=$root/scripts/start.sh traefik" <<<"$unit"
+
 # Verify rendered config does NOT auto-trust Docker bridge gateways
 ! grep -E '172\.(17|18|19|20|28|29)\.0\.1/32' "$config"
 

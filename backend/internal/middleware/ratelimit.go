@@ -107,10 +107,13 @@ var (
 	loginEmailLimiter         = NewRateLimiter(5, 1*time.Minute)   // 5 req/min per email
 	reauthUserLimiter         = NewRateLimiter(5, 1*time.Minute)   // 5 req/min per user
 	reauthIPLimiter           = NewRateLimiter(15, 1*time.Minute)  // 15 req/min per IP
+	streamTokenUserLimiter    = NewRateLimiter(30, 1*time.Minute)  // 30 req/min per user
+	streamTokenIPLimiter      = NewRateLimiter(60, 1*time.Minute)  // 60 req/min per IP
 	queryLimiter              = NewRateLimiter(60, 1*time.Minute)  // 60 req/min per user
 	publicCatalogLimiter      = NewRateLimiter(120, 1*time.Minute) // 120 req/min per IP
 	proxyLimiter              = NewRateLimiter(120, 1*time.Minute) // 120 req/min per IP
 	consoleLimiter            = NewRateLimiter(30, 1*time.Minute)  // 30 req/min per project/user
+	buildLogsLimiter          = NewRateLimiter(60, 1*time.Minute)  // 60 req/min per project/user
 	importLimiter             = NewRateLimiter(10, 5*time.Minute)  // 10 req/5min per user
 	autoRenewLimiter          = NewRateLimiter(30, 1*time.Minute)  // 30 req/min per user
 	topupCreateUserLimiter    = NewRateLimiter(10, 1*time.Minute)  // 10 req/min per user
@@ -199,6 +202,72 @@ func RateLimitLogin(redis distributedRateLimiter) fiber.Handler {
 				c.Set("Retry-After", strconv.Itoa(sec))
 				return apperr.NewRateLimited(formatRateLimitMsg(rule.errMsg, sec), sec)
 			}
+		}
+
+		return c.Next()
+	}
+}
+
+// RateLimitStreamToken limits short-lived stream credential issuance by user and IP.
+func RateLimitStreamToken(redis distributedRateLimiter) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		uidVal := c.Locals("user_id")
+		if uidVal == nil {
+			return apperr.ErrUnauthorized
+		}
+
+		ip := c.IP()
+		userKey := fmt.Sprintf("auth:stream-token:user:%v", uidVal)
+		ipKey := fmt.Sprintf("auth:stream-token:ip:%s", ip)
+		localIPKey := "ip:" + ip
+
+		if redis != nil {
+			allowedUser, ttlUser, errUser := redis.RateLimit(userKey, 30, time.Minute)
+			if errUser != nil {
+				slog.Warn("Redis stream token rate limit failed; falling back to local limiter", "error", errUser)
+				allowedLocal, sec := streamTokenUserLimiter.Allow(userKey)
+				if !allowedLocal {
+					c.Set("Retry-After", strconv.Itoa(sec))
+					return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests", sec), sec)
+				}
+			} else if !allowedUser {
+				sec := int(math.Ceil(ttlUser.Seconds()))
+				if sec < 1 {
+					sec = 1
+				}
+				c.Set("Retry-After", strconv.Itoa(sec))
+				return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests", sec), sec)
+			}
+
+			allowedIP, ttlIP, errIP := redis.RateLimit(ipKey, 60, time.Minute)
+			if errIP != nil {
+				slog.Warn("Redis stream token IP rate limit failed; falling back to local limiter", "error", errIP)
+				allowedLocalIP, secIP := streamTokenIPLimiter.Allow(localIPKey)
+				if !allowedLocalIP {
+					c.Set("Retry-After", strconv.Itoa(secIP))
+					return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests from this IP", secIP), secIP)
+				}
+			} else if !allowedIP {
+				sec := int(math.Ceil(ttlIP.Seconds()))
+				if sec < 1 {
+					sec = 1
+				}
+				c.Set("Retry-After", strconv.Itoa(sec))
+				return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests from this IP", sec), sec)
+			}
+			return c.Next()
+		}
+
+		allowedUser, secUser := streamTokenUserLimiter.Allow(userKey)
+		if !allowedUser {
+			c.Set("Retry-After", strconv.Itoa(secUser))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests", secUser), secUser)
+		}
+
+		allowedIP, secIP := streamTokenIPLimiter.Allow(localIPKey)
+		if !allowedIP {
+			c.Set("Retry-After", strconv.Itoa(secIP))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many stream token requests from this IP", secIP), secIP)
 		}
 
 		return c.Next()
@@ -425,6 +494,47 @@ func RateLimitConsole(redis ...distributedRateLimiter) fiber.Handler {
 		if !allowed {
 			c.Set("Retry-After", strconv.Itoa(sec))
 			return apperr.NewRateLimited(formatRateLimitMsg("Too many command executions", sec), sec)
+		}
+		return c.Next()
+	}
+}
+
+// RateLimitBuildLogs limits build logs polling to protect against denial of service and file I/O churn.
+func RateLimitBuildLogs(redis ...distributedRateLimiter) fiber.Handler {
+	var r distributedRateLimiter
+	if len(redis) > 0 {
+		r = redis[0]
+	}
+	return func(c *fiber.Ctx) error {
+		projectID := c.Params("id")
+		uidVal := c.Locals("user_id")
+		var key string
+		if uidVal != nil {
+			key = fmt.Sprintf("buildlogs:user:%v:proj:%s", uidVal, projectID)
+		} else {
+			key = fmt.Sprintf("buildlogs:ip:%s:proj:%s", c.IP(), projectID)
+		}
+
+		if r != nil {
+			allowed, ttl, err := r.RateLimit(key, 60, time.Minute)
+			if err == nil {
+				if !allowed {
+					sec := int(math.Ceil(ttl.Seconds()))
+					if sec < 1 {
+						sec = 1
+					}
+					c.Set("Retry-After", strconv.Itoa(sec))
+					return apperr.NewRateLimited(formatRateLimitMsg("Too many build log requests", sec), sec)
+				}
+				return c.Next()
+			}
+			slog.Warn("Redis build logs rate limit failed; falling back to local limiter", "error", err)
+		}
+
+		allowed, sec := buildLogsLimiter.Allow(key)
+		if !allowed {
+			c.Set("Retry-After", strconv.Itoa(sec))
+			return apperr.NewRateLimited(formatRateLimitMsg("Too many build log requests", sec), sec)
 		}
 		return c.Next()
 	}

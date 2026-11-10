@@ -518,6 +518,12 @@ func ReconcileSchemas(db *gorm.DB) error {
 	// Reconcile User
 	_ = EnsureConstraint(db, &models.User{}, "uni_users_email", "UNIQUE (email)")
 
+	// The 'provisioning' deployment status was never emitted and has been removed
+	// from the enum; rows carrying it would otherwise never be scanned again.
+	if err := db.Exec("UPDATE projects SET deployment_status = 'failed' WHERE deployment_status = 'provisioning';").Error; err != nil {
+		slog.Warn("Failed to migrate provisioning deployment status", "error", err)
+	}
+
 	// Reconcile Project
 	_ = EnsureIndex(db, &models.Project{}, "idx_status_active", "status", false)
 	_ = EnsureIndex(db, &models.Project{}, "idx_dep_status", "deployment_status", false)

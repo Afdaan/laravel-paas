@@ -26,7 +26,7 @@ import (
 	"github.com/laravel-paas/shared/infrastructure"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/repositories"
-	"github.com/laravel-paas/shared/services/setting"
+	"github.com/laravel-paas/shared/services/deployment"
 	"gorm.io/gorm"
 )
 
@@ -63,6 +63,7 @@ func setupTestAppWithBilling(t *testing.T, dbName string, billingEnabled bool) (
 		&models.SecretStoreItemValue{},
 		&models.SecretStoreBinding{},
 		&models.Setting{},
+		&models.DeploymentEvent{},
 	)
 	if err != nil {
 		t.Fatalf("failed to migrate database: %v", err)
@@ -92,18 +93,16 @@ func setupTestAppWithBilling(t *testing.T, dbName string, billingEnabled bool) (
 
 	projectRepo := repositories.NewProjectRepository(db)
 	userRepo := repositories.NewUserRepository(db)
-	settingRepo := repositories.NewSettingRepository(db)
 
-	settingService := setting.NewSettingService(settingRepo, redisService)
+	transitionMgr := deployment.NewTransitionManager(db, redisService)
 	projectService := projectServicePkg.NewProjectService(
 		cfg,
 		projectRepo,
-		settingService,
 		nil, // dockerService
 		nil, // storageService
 		nil, // mysqlService
 		redisService,
-		nil, // transitionManager
+		transitionMgr,
 	)
 	userService := services.NewUserService(userRepo, projectService)
 	secretStoreService := services.NewSecretStoreService(db, cfg, redisService)
@@ -122,7 +121,6 @@ func setupTestAppWithBilling(t *testing.T, dbName string, billingEnabled bool) (
 	app := fiber.New(fiber.Config{ErrorHandler: handlers.ErrorHandler})
 	app.Post("/projects", func(c *fiber.Ctx) error {
 		c.Locals("user_id", user.ID)
-		c.Locals("role", string(user.Role))
 		return projectHandler.Create(c)
 	})
 
@@ -160,6 +158,75 @@ func TestCreateProject_InvalidDatabaseOption(t *testing.T) {
 	}
 }
 
+func TestCreateProject_AllowsMoreThanLegacyLimit(t *testing.T) {
+	app, db, mock := setupTestApp(t, "project_without_legacy_limit")
+
+	var user models.User
+	if err := db.First(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index <= 5; index++ {
+		project := models.Project{
+			UserID:    user.ID,
+			UID:       fmt.Sprintf("existing-project-%d", index),
+			Name:      fmt.Sprintf("Existing Project %d", index),
+			GithubURL: fmt.Sprintf("https://github.com/test/existing-%d", index),
+			Subdomain: fmt.Sprintf("existing-%d", index),
+		}
+		if err := db.Create(&project).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:processing_queue",
+		"deployment:lock:.*",
+	}, ".*", ".*", "120000").SetVal(int64(1))
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:queued_project_counts",
+		"deployment:stats",
+		"deployment:lock:.*",
+	}, ".*", ".*", ".*").SetVal(int64(1))
+	mock.ExpectLLen("deployment:queue").SetVal(1)
+
+	body, err := json.Marshal(CreateProjectRequest{
+		Name:           "Sixth Project",
+		GithubURL:      "https://github.com/test/sixth-project",
+		Branch:         "main",
+		DatabaseOption: "none",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/projects", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		var responseBody map[string]string
+		_ = json.NewDecoder(resp.Body).Decode(&responseBody)
+		t.Fatalf("expected status 201, got %d: %s", resp.StatusCode, responseBody["error"])
+	}
+
+	var count int64
+	if err := db.Model(&models.Project{}).Where("user_id = ?", user.ID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 6 {
+		t.Fatalf("expected 6 projects, got %d", count)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCreateProjectBillingRollsBackManagedDatabaseWhenCreditsAreInsufficient(t *testing.T) {
 	app, db, mock := setupTestAppWithBilling(t, "billing_managed_database_rollback", true)
 	var user models.User
@@ -179,7 +246,6 @@ func TestCreateProjectBillingRollsBackManagedDatabaseWhenCreditsAreInsufficient(
 		t.Fatal(err)
 	}
 
-	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
 	reqPayload := CreateProjectRequest{
 		Name:                   "Billed Project",
 		GithubURL:              "https://github.com/test/billed-project",
@@ -241,8 +307,19 @@ func TestCreateProject_BillingDeductsCreditsSuccessfully(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-	mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:processing_queue",
+		"deployment:lock:.*",
+	}, "1", ".*", "120000").SetVal(int64(1))
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:queued_project_counts",
+		"deployment:stats",
+		"deployment:lock:.*",
+	}, "1", ".*", ".*").SetVal(int64(1))
 	mock.ExpectLLen("deployment:queue").SetVal(1)
 
 	reqPayload := CreateProjectRequest{
@@ -312,9 +389,6 @@ func TestCreateProject_RollbackOnAttachFailure(t *testing.T) {
 	}
 	db.Create(&existingProject)
 
-	// Mock settings expectations as valid JSON strings
-	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-
 	reqPayload := CreateProjectRequest{
 		Name:                "New Project",
 		GithubURL:           "https://github.com/test/new",
@@ -367,9 +441,6 @@ func TestCreateProject_RollbackOnSecretStoreFailure(t *testing.T) {
 	})
 	defer func() { _ = db.Callback().Create().Remove("fail_secret_stores") }()
 
-	// Mock settings expectations as valid JSON strings
-	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-
 	reqPayload := CreateProjectRequest{
 		Name:           "SQLite Project",
 		GithubURL:      "https://github.com/test/sqlite-repo",
@@ -417,14 +488,20 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	// Disable order matching because of concurrent requests interleaving Redis calls
 	mock.MatchExpectationsInOrder(false)
 
-	// Mock settings expectations for the successful request as valid JSON strings
-	mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-
 	// Mock queue expectations for the single successful enqueue
-	mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
-	mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
-	mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
-	mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:processing_queue",
+		"deployment:lock:.*",
+	}, ".*", ".*", "120000").SetVal(int64(1))
+	mock.Regexp().ExpectEvalSha(".*", []string{
+		"deployment:queue",
+		"deployment:delayed_queue",
+		"deployment:queued_project_counts",
+		"deployment:stats",
+		"deployment:lock:.*",
+	}, ".*", ".*", ".*").SetVal(int64(1))
 	mock.ExpectLLen("deployment:queue").SetVal(1)
 
 	// Mock settings expectations checked at the end of successful create (PopulateURL)
@@ -435,7 +512,7 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	results := make(chan int, 2)
 	errorsChan := make(chan error, 2)
 
-	runRequest := func(projName, subdomain string, delay time.Duration) {
+	runRequest := func(projName string, delay time.Duration) {
 		defer wg.Done()
 
 		if delay > 0 {
@@ -463,8 +540,8 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	}
 
 	// Fire both with a tiny delay to ensure SQLite locks serialize properly
-	go runRequest("Project 1", "proj1", 0)
-	go runRequest("Project 2", "proj2", 50*time.Millisecond)
+	go runRequest("Project 1", 0)
+	go runRequest("Project 2", 50*time.Millisecond)
 
 	wg.Wait()
 	close(results)
@@ -487,9 +564,10 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 	successCount := 0
 	failureCount := 0
 	for _, status := range statusCodes {
-		if status == http.StatusCreated {
+		switch status {
+		case http.StatusCreated:
 			successCount++
-		} else if status == http.StatusBadRequest {
+		case http.StatusBadRequest:
 			failureCount++
 		}
 	}
@@ -521,9 +599,7 @@ func TestCreateProject_ConcurrentAttach(t *testing.T) {
 
 func TestCreateProject_DatabaseValidation(t *testing.T) {
 	t.Run("uppercase database name", func(t *testing.T) {
-		app, _, mock := setupTestApp(t, "db_val_upper_name")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-
+		app, _, _ := setupTestApp(t, "db_val_upper_name")
 		reqPayload := CreateProjectRequest{
 			Name:           "Test Project",
 			GithubURL:      "https://github.com/test/repo",
@@ -548,9 +624,7 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	})
 
 	t.Run("uppercase database username", func(t *testing.T) {
-		app, _, mock := setupTestApp(t, "db_val_upper_user")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-
+		app, _, _ := setupTestApp(t, "db_val_upper_user")
 		reqPayload := CreateProjectRequest{
 			Name:             "Test Project",
 			GithubURL:        "https://github.com/test/repo",
@@ -576,9 +650,7 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 	})
 
 	t.Run("weak database password", func(t *testing.T) {
-		app, _, mock := setupTestApp(t, "db_val_weak_pass")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-
+		app, _, _ := setupTestApp(t, "db_val_weak_pass")
 		reqPayload := CreateProjectRequest{
 			Name:             "Test Project",
 			GithubURL:        "https://github.com/test/repo",
@@ -606,11 +678,13 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 
 	t.Run("distinct name and username persistence", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_distinct")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
-		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
-		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
-		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
+		mock.Regexp().ExpectEvalSha(".*", []string{
+			"deployment:queue",
+			"deployment:delayed_queue",
+			"deployment:queued_project_counts",
+			"deployment:stats",
+			"deployment:lock:.*",
+		}, "1", ".*", ".*").SetVal(int64(1))
 		mock.ExpectLLen("deployment:queue").SetVal(1)
 		reqPayload := CreateProjectRequest{
 			Name:             "distinctproj",
@@ -658,11 +732,13 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 
 	t.Run("spaced database username trimming", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_spaced_user")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
-		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
-		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
-		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
+		mock.Regexp().ExpectEvalSha(".*", []string{
+			"deployment:queue",
+			"deployment:delayed_queue",
+			"deployment:queued_project_counts",
+			"deployment:stats",
+			"deployment:lock:.*",
+		}, "1", ".*", ".*").SetVal(int64(1))
 		mock.ExpectLLen("deployment:queue").SetVal(1)
 		reqPayload := CreateProjectRequest{
 			Name:             "spacedproj",
@@ -702,11 +778,13 @@ func TestCreateProject_DatabaseValidation(t *testing.T) {
 
 	t.Run("long project name username generation", func(t *testing.T) {
 		app, db, mock := setupTestApp(t, "db_val_long_name")
-		mock.ExpectGet("setting:max_projects_per_user").SetVal("\"3\"")
-		mock.ExpectLRange("deployment:queue", 0, -1).RedisNil()
-		mock.ExpectZRange("deployment:delayed_queue", 0, -1).RedisNil()
-		mock.Regexp().ExpectRPush("deployment:queue", ".*").SetVal(1)
-		mock.ExpectHIncrBy("deployment:stats", "enqueued", 1).SetVal(1)
+		mock.Regexp().ExpectEvalSha(".*", []string{
+			"deployment:queue",
+			"deployment:delayed_queue",
+			"deployment:queued_project_counts",
+			"deployment:stats",
+			"deployment:lock:.*",
+		}, "1", ".*", ".*").SetVal(int64(1))
 		mock.ExpectLLen("deployment:queue").SetVal(1)
 		reqPayload := CreateProjectRequest{
 			Name:           "this-is-a-very-long-project-name-to-test-generated-defaults-and-suffix-preservation",

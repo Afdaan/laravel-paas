@@ -13,7 +13,6 @@ import (
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/repositories"
 	"github.com/laravel-paas/shared/services/deployment"
-	"github.com/laravel-paas/shared/services/setting"
 )
 
 // ===========================================
@@ -24,7 +23,6 @@ import (
 type ProjectService struct {
 	cfg               *config.Config
 	projectRepo       repositories.ProjectRepository
-	settingService    *setting.SettingService
 	dockerService     *docker.DockerService
 	storageService    *infrastructure.StorageService
 	mysqlService      *infrastructure.MySQLService
@@ -52,7 +50,6 @@ func validateBaseDirectory(baseDirectory string) error {
 func NewProjectService(
 	cfg *config.Config,
 	projectRepo repositories.ProjectRepository,
-	settingService *setting.SettingService,
 	dockerService *docker.DockerService,
 	storageService *infrastructure.StorageService,
 	mysqlService *infrastructure.MySQLService,
@@ -62,7 +59,6 @@ func NewProjectService(
 	return &ProjectService{
 		cfg:               cfg,
 		projectRepo:       projectRepo,
-		settingService:    settingService,
 		dockerService:     dockerService,
 		storageService:    storageService,
 		mysqlService:      mysqlService,
@@ -70,11 +66,6 @@ func NewProjectService(
 		redisService:      redisService,
 		transitionManager: transitionManager,
 	}
-}
-
-// GetSetting fetches a platform setting with a fallback
-func (s *ProjectService) GetSetting(key, defaultValue string) string {
-	return s.settingService.Get(key, defaultValue)
 }
 
 // PopulateURL sets the URL and UID fields on a project model
