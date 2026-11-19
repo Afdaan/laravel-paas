@@ -188,18 +188,31 @@ const (
 	RuntimeExposureReasonFrameworkDefault = "framework_default"
 	RuntimeExposureReasonUnknownFramework = "unknown_framework"
 	RuntimeExposureReasonDisabledPort     = "disabled_port"
+	RuntimeExposureReasonInvalidPort      = "invalid_port"
+	MaxRuntimePort                        = 65535
 )
+
+func IsValidConfiguredPort(port int) bool {
+	return port >= 0 && port <= MaxRuntimePort
+}
+
+func isValidWebPort(port int) bool {
+	return port > 0 && port <= MaxRuntimePort
+}
 
 func (p *Project) ResolveRuntimeExposure(detectedPort int) RuntimeExposure {
 	if p.Port != nil {
-		if *p.Port > 0 {
+		if isValidWebPort(*p.Port) {
 			return RuntimeExposure{WebFacing: true, Port: *p.Port, Reason: RuntimeExposureReasonManualPort}
+		}
+		if *p.Port != 0 {
+			return RuntimeExposure{WebFacing: false, Port: 0, Reason: RuntimeExposureReasonInvalidPort}
 		}
 
 		return RuntimeExposure{WebFacing: false, Port: 0, Reason: RuntimeExposureReasonDisabledPort}
 	}
 
-	if detectedPort > 0 {
+	if isValidWebPort(detectedPort) {
 		return RuntimeExposure{WebFacing: true, Port: detectedPort, Reason: RuntimeExposureReasonImageExpose}
 	}
 

@@ -158,6 +158,44 @@ func TestCreateProject_InvalidDatabaseOption(t *testing.T) {
 	}
 }
 
+func TestCreateProjectRejectsInvalidPort(t *testing.T) {
+	for _, port := range []int{-1, models.MaxRuntimePort + 1} {
+		t.Run(fmt.Sprintf("port_%d", port), func(t *testing.T) {
+			app, _, _ := setupTestApp(t, fmt.Sprintf("invalid_port_%d", port))
+			body, err := json.Marshal(CreateProjectRequest{
+				Name:           "Invalid Port",
+				GithubURL:      "https://github.com/test/invalid-port",
+				Branch:         "main",
+				DatabaseOption: "none",
+				Port:           &port,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/projects", bytes.NewBuffer(body))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status=%d", resp.StatusCode)
+			}
+
+			var response struct {
+				Code string `json:"code"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != "INVALID_PORT" {
+				t.Fatalf("code=%q", response.Code)
+			}
+		})
+	}
+}
+
 func TestCreateProject_AllowsMoreThanLegacyLimit(t *testing.T) {
 	app, db, mock := setupTestApp(t, "project_without_legacy_limit")
 

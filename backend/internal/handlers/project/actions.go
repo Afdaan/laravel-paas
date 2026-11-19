@@ -167,6 +167,10 @@ func (h *ProjectHandler) Create(c *fiber.Ctx) (handlerErr error) {
 	if err != nil {
 		tx.Rollback()
 		slog.Warn("Project creation failed", "user_id", userID, "error", err.Error())
+		var appError *apperr.AppError
+		if errors.As(err, &appError) {
+			return appError
+		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": err.Error(),
 		})

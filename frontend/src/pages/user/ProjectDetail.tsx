@@ -42,6 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
 import { DEFAULT_RUNTIME_VERSIONS, getDisplayedFramework } from '@/lib/runtimes'
+import { isValidProjectPort } from '@/lib/projectPort'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import ProjectConsole from '../../components/project/ProjectConsole'
@@ -846,6 +847,10 @@ function UserProjectDetail() {
     languageVersionInput, githubUrlInput, githubInstallationIdInput, githubRepoOwnerInput, githubRepoNameInput
   ])
 
+  const portValidationError = isValidProjectPort(portInput)
+    ? undefined
+    : t('projectDetail.settings.internalPortInvalid')
+
   const handleResetSettings = () => {
     if (!project) return
     applyProjectSettings(project)
@@ -854,6 +859,10 @@ function UserProjectDetail() {
 
   const handleSaveSettings = async () => {
     if (!uid || !project) return
+    if (portValidationError) {
+      toast.error(portValidationError)
+      return
+    }
 
     setConfirmModal({
       title: t('common.confirm'),
@@ -1362,6 +1371,7 @@ function UserProjectDetail() {
               setStartCommandInput={setStartCommandInput}
               portInput={portInput}
               setPortInput={setPortInput}
+              portValidationError={portValidationError}
               branchesList={branchesList}
               branchInput={branchInput}
               setBranchInput={setBranchInput}

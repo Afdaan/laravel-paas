@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	mathrand "math/rand/v2"
 	"strconv"
 	"strings"
@@ -558,7 +559,7 @@ func (h *DomainHandler) StreamProjectEvents(c *fiber.Ctx) error {
 func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 	// 1. Try to get cached config from Redis
 	var cachedJSON string
-	cacheKey := "traefik:dynamic_config"
+	cacheKey := traefik.DynamicConfigCacheKey
 	err := h.redisService.GetCache(cacheKey, &cachedJSON)
 	if err == nil && cachedJSON != "" {
 		c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
@@ -603,7 +604,6 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 		TLS         map[string]interface{} `json:"tls,omitempty"`
 		Middlewares []string               `json:"middlewares,omitempty"`
 	}
-
 
 	type TraefikServer struct {
 		URL string `json:"url"`
@@ -672,6 +672,11 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 		ruleStr := strings.Join(rules, " || ")
 
 		internalPort := proj.GetInternalPort()
+		if internalPort == "" {
+			exposure := proj.ResolveRuntimeExposure(0)
+			slog.Warn("Skipping custom-domain routing without a valid runtime port", "project_id", proj.ID, "subdomain", proj.Subdomain, "reason", exposure.Reason)
+			continue
+		}
 
 		routerName := fmt.Sprintf("project-%s-custom", proj.Subdomain)
 		serviceName := fmt.Sprintf("project-%s-custom", proj.Subdomain)
@@ -685,8 +690,6 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 			TLS:         map[string]interface{}{},
 			Middlewares: []string{"security-headers@file"},
 		}
-
-
 
 		targetURL := fmt.Sprintf("http://%s:%s", proj.GetTargetHostname(), internalPort)
 
