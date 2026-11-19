@@ -115,6 +115,7 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
   const isDetectedFrameworkCandidate = Boolean(project.detected_framework && project.detected_framework !== project.framework)
   const tone = getFrameworkTone(displayedFramework)
   const isLaravel = isLaravelFramework(displayedFramework)
+  const isWorkerOnly = project.port === 0
   const projectHost = project.url ? project.url.replace(/^https?:\/\//, '') : project.subdomain
   const runtimeLabel = isLaravel && !isDetectedFrameworkCandidate ? t('projectDetail.metrics.php') : t('projectDetail.metrics.framework')
   const phpVersion = project.php_version?.trim() || DEFAULT_RUNTIME_VERSIONS.php
@@ -160,18 +161,29 @@ function ProjectCard({ project, onNavigate, onDelete, onActionStarted, onSuccess
               {getFrameworkLabel(displayedFramework, t('common.general'))}
             </Badge>
           </div>
-          <a
-            href={project.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-2.5 py-1.5 font-mono text-xs text-muted-foreground transition-colors duration-150 hover:border-border hover:bg-muted hover:text-foreground dark:bg-background/20"
-            title={projectHost}
-          >
-            <Globe className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{projectHost}</span>
-            <ExternalLink className="h-3 w-3 shrink-0" />
-          </a>
+          {isWorkerOnly ? (
+            <div
+              className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-2.5 py-1.5 font-mono text-xs text-muted-foreground dark:bg-background/20"
+              title={t('projectDetail.provisioning.workerOnlyDomainHint')}
+            >
+              <Globe className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{projectHost}</span>
+              <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wider">{t('projectDetail.runtime.portWorkerOnly')}</span>
+            </div>
+          ) : (
+            <a
+              href={project.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-2.5 py-1.5 font-mono text-xs text-muted-foreground transition-colors duration-150 hover:border-border hover:bg-muted hover:text-foreground dark:bg-background/20"
+              title={projectHost}
+            >
+              <Globe className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{projectHost}</span>
+              <ExternalLink className="h-3 w-3 shrink-0" />
+            </a>
+          )}
         </div>
 
         <div className="-mx-6 grid grid-cols-2 divide-x divide-border/50 border-y border-border/50 bg-muted/20 dark:bg-muted/10 dark:divide-white/5 dark:border-white/5">

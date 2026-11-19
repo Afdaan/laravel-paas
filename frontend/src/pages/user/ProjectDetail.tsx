@@ -42,6 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
 import { DEFAULT_RUNTIME_VERSIONS, getDisplayedFramework } from '@/lib/runtimes'
+import { isValidProjectPort, projectPortInputValue, requiresWorkerOnlyConfirmation } from '@/lib/projectPort'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import ProjectConsole from '../../components/project/ProjectConsole'
@@ -798,7 +799,7 @@ function UserProjectDetail() {
     setBaseDirInput(nextProject.base_directory || '')
     setBuildCommandInput(nextProject.build_command || '')
     setStartCommandInput(nextProject.start_command || '')
-    setPortInput(nextProject.port === null ? '' : nextProject.port)
+    setPortInput(projectPortInputValue(nextProject.port))
     setNodeVersionInput(nextProject.node_version || DEFAULT_RUNTIME_VERSIONS.node)
     setPhpVersionInput(nextProject.php_version || DEFAULT_RUNTIME_VERSIONS.php)
 
@@ -830,7 +831,7 @@ function UserProjectDetail() {
       baseDirInput !== (project.base_directory || '') ||
       buildCommandInput !== (project.build_command || '') ||
       startCommandInput !== (project.start_command || '') ||
-      portInput !== (project.port === null ? '' : project.port) ||
+      portInput !== projectPortInputValue(project.port) ||
       nodeVersionInput !== (project.node_version || DEFAULT_RUNTIME_VERSIONS.node) ||
       phpVersionInput !== (project.php_version || DEFAULT_RUNTIME_VERSIONS.php) ||
       workerCommandInput !== (project.worker_command || '') ||
@@ -846,6 +847,10 @@ function UserProjectDetail() {
     languageVersionInput, githubUrlInput, githubInstallationIdInput, githubRepoOwnerInput, githubRepoNameInput
   ])
 
+  const portValidationError = isValidProjectPort(portInput)
+    ? undefined
+    : t('projectDetail.settings.internalPortInvalid')
+
   const handleResetSettings = () => {
     if (!project) return
     applyProjectSettings(project)
@@ -854,12 +859,17 @@ function UserProjectDetail() {
 
   const handleSaveSettings = async () => {
     if (!uid || !project) return
+    if (portValidationError) {
+      toast.error(portValidationError)
+      return
+    }
 
+    const workerOnly = requiresWorkerOnlyConfirmation(portInput)
     setConfirmModal({
-      title: t('common.confirm'),
-      message: t('projectDetail.settings.redeployWarning'),
+      title: workerOnly ? t('projectDetail.settings.workerOnlyConfirmTitle') : t('common.confirm'),
+      message: workerOnly ? t('projectDetail.settings.workerOnlyConfirmMessage') : t('projectDetail.settings.redeployWarning'),
       type: 'warning',
-      confirmText: t('common.save'),
+      confirmText: workerOnly ? t('projectDetail.settings.workerOnlyConfirmAction') : t('common.save'),
       isOpen: true,
       onConfirm: async () => {
         setIsSavingSettings(true)
@@ -995,6 +1005,7 @@ function UserProjectDetail() {
 
   if (!project) return null
   const projectUrl = project.url || `https://${project.subdomain}.${window.location.hostname}`
+  const isWorkerOnlyProject = project.port === 0
   const isLaravelProject = project.framework === 'Laravel'
   const isDisplayedLaravelProject = displayedFramework === 'Laravel'
   const isDetectedFrameworkCandidate = Boolean(project.detected_framework && project.detected_framework !== project.framework)
@@ -1116,7 +1127,7 @@ function UserProjectDetail() {
             <div className="px-3 py-1.5 rounded-lg bg-muted border flex items-center gap-2">
               <Globe className="w-4 h-4 text-muted-foreground" />
               <span className="text-muted-foreground font-mono text-xs">{project.subdomain}</span>
-              {project.status === 'running' && (
+              {project.status === 'running' && !isWorkerOnlyProject && (
                 <a
                   href={projectUrl}
                   target="_blank"
@@ -1127,7 +1138,7 @@ function UserProjectDetail() {
                 </a>
               )}
             </div>
-            {project.custom_domains && project.custom_domains.filter(d => ['active', 'ssl_active'].includes(d.status)).length > 0 && (
+            {!isWorkerOnlyProject && project.custom_domains && project.custom_domains.filter(d => ['active', 'ssl_active'].includes(d.status)).length > 0 && (
               <a
                 href={`https://${project.custom_domains.filter(d => ['active', 'ssl_active'].includes(d.status))[0].domain}`}
                 target="_blank"
@@ -1362,6 +1373,7 @@ function UserProjectDetail() {
               setStartCommandInput={setStartCommandInput}
               portInput={portInput}
               setPortInput={setPortInput}
+              portValidationError={portValidationError}
               branchesList={branchesList}
               branchInput={branchInput}
               setBranchInput={setBranchInput}

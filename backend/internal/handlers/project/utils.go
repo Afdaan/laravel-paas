@@ -157,7 +157,7 @@ func (h *ProjectHandler) Update(c *fiber.Ctx) error {
 		req.GithubRepoName,
 	)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update project"})
+		return err
 	}
 
 	return c.JSON(project)
@@ -691,6 +691,21 @@ func (h *ProjectHandler) AdminStats(c *fiber.Ctx) error {
 	})
 }
 
+func buildProjectProxyTarget(project *models.Project, requestURL string) (string, error) {
+	internalPort := project.GetInternalPort()
+	if internalPort == "" {
+		return "", apperr.New(fiber.StatusServiceUnavailable, "PROJECT_NOT_WEB_FACING", "Project is not configured to receive web traffic")
+	}
+
+	if requestURL == "" || requestURL == "/" {
+		requestURL = "/"
+	} else if !strings.HasPrefix(requestURL, "/") {
+		requestURL = "/" + requestURL
+	}
+
+	return fmt.Sprintf("http://%s:%s%s", project.GetTargetHostname(), internalPort, requestURL), nil
+}
+
 // ProxyToProject forwards requests to the correct project container
 func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	host := c.Hostname()
@@ -700,13 +715,12 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	cacheKey := fmt.Sprintf("proxy:subdomain:%s", subdomain)
 
 	// Helper to build target URL and preserve original request path + forwarded headers
-	buildProxyTargetAndHeaders := func(proj *models.Project) string {
-		targetURL := fmt.Sprintf("http://%s:%s", proj.GetTargetHostname(), proj.GetInternalPort())
-		reqURL := c.OriginalURL()
-		if reqURL == "" || reqURL == "/" {
-			reqURL = "/"
-		} else if !strings.HasPrefix(reqURL, "/") {
-			reqURL = "/" + reqURL
+	buildProxyTargetAndHeaders := func(proj *models.Project) (string, error) {
+		targetURL, err := buildProjectProxyTarget(proj, c.OriginalURL())
+		if err != nil {
+			exposure := proj.ResolveRuntimeExposure(0)
+			slog.Warn("Rejected proxy request without a valid runtime port", "project_id", proj.ID, "subdomain", proj.Subdomain, "reason", exposure.Reason)
+			return "", err
 		}
 
 		// Preserve original Host and X-Forwarded headers so PHP/Laravel/Nginx gets the real host
@@ -725,13 +739,16 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 			c.Request().Header.Set("X-Forwarded-Port", "80")
 		}
 
-		return targetURL + reqURL
+		return targetURL, nil
 	}
 
 	// 1. Try Cache First
 	err := h.redisService.GetCache(cacheKey, &project)
 	if err == nil && project.Status == models.StatusRunning && project.ContainerID != nil {
-		target := buildProxyTargetAndHeaders(&project)
+		target, err := buildProxyTargetAndHeaders(&project)
+		if err != nil {
+			return err
+		}
 
 		return proxy.Forward(target)(c)
 	}
@@ -754,7 +771,10 @@ func (h *ProjectHandler) ProxyToProject(c *fiber.Ctx) error {
 	}
 
 	// 4. Forward with internal Docker routing
-	target := buildProxyTargetAndHeaders(project_db)
+	target, err := buildProxyTargetAndHeaders(project_db)
+	if err != nil {
+		return err
+	}
 
 	return proxy.Forward(target)(c)
 }

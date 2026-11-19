@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	mathrand "math/rand/v2"
 	"strconv"
 	"strings"
@@ -66,6 +67,16 @@ func (h *DomainHandler) validateAccess(c *fiber.Ctx, projectUID string, domainID
 	}
 
 	return project, domain, nil
+}
+
+func ensureDomainRoutingEnabled(project *models.Project) error {
+	switch project.ResolveRuntimeExposure(0).Reason {
+	case models.RuntimeExposureReasonInvalidPort:
+		return apperr.New(400, "INVALID_PORT", "Configured port must be 0 for worker-only projects or between 1 and 65535")
+	case models.RuntimeExposureReasonDisabledPort:
+		return apperr.New(409, "PROJECT_NOT_WEB_FACING", "Custom domains are unavailable while the project is configured as worker-only")
+	}
+	return nil
 }
 
 // RegisterRoutes registers the domain endpoints to a router
@@ -139,6 +150,9 @@ func (h *DomainHandler) Add(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureDomainRoutingEnabled(project); err != nil {
+		return err
+	}
 
 	var req struct {
 		Domain string `json:"domain"`
@@ -200,6 +214,9 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureDomainRoutingEnabled(project); err != nil {
+		return err
+	}
 
 	wasAlreadyActive := domain != nil && domain.Status == models.DomainStatusActive
 
@@ -255,6 +272,9 @@ func (h *DomainHandler) Transfer(c *fiber.Ctx) error {
 	targetProject, _, err := h.validateAccess(c, req.TargetProjectUID, 0)
 	if err != nil {
 		return apperr.New(403, "FORBIDDEN", "You do not have permission to transfer domains to the target project")
+	}
+	if err := ensureDomainRoutingEnabled(targetProject); err != nil {
+		return err
 	}
 
 	userID := c.Locals("user_id").(uint)
@@ -558,7 +578,7 @@ func (h *DomainHandler) StreamProjectEvents(c *fiber.Ctx) error {
 func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 	// 1. Try to get cached config from Redis
 	var cachedJSON string
-	cacheKey := "traefik:dynamic_config"
+	cacheKey := traefik.DynamicConfigCacheKey
 	err := h.redisService.GetCache(cacheKey, &cachedJSON)
 	if err == nil && cachedJSON != "" {
 		c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
@@ -603,7 +623,6 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 		TLS         map[string]interface{} `json:"tls,omitempty"`
 		Middlewares []string               `json:"middlewares,omitempty"`
 	}
-
 
 	type TraefikServer struct {
 		URL string `json:"url"`
@@ -672,6 +691,11 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 		ruleStr := strings.Join(rules, " || ")
 
 		internalPort := proj.GetInternalPort()
+		if internalPort == "" {
+			exposure := proj.ResolveRuntimeExposure(0)
+			slog.Warn("Skipping custom-domain routing without a valid runtime port", "project_id", proj.ID, "subdomain", proj.Subdomain, "reason", exposure.Reason)
+			continue
+		}
 
 		routerName := fmt.Sprintf("project-%s-custom", proj.Subdomain)
 		serviceName := fmt.Sprintf("project-%s-custom", proj.Subdomain)
@@ -685,8 +709,6 @@ func (h *DomainHandler) GetTraefikConfig(c *fiber.Ctx) error {
 			TLS:         map[string]interface{}{},
 			Middlewares: []string{"security-headers@file"},
 		}
-
-
 
 		targetURL := fmt.Sprintf("http://%s:%s", proj.GetTargetHostname(), internalPort)
 

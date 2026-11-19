@@ -14,6 +14,9 @@ vi.mock('@/lib/useTranslation', () => ({
         'projectDetail.overview.healthNoticeAt': 'Detected {{time}}',
         'projectDetail.overview.healthNoticeCleared': 'This notice clears on the next deployment.',
         'projectDetail.overview.deployError': 'Deployment Error',
+        'projectDetail.overview.webAccess': 'Web access',
+        'projectDetail.runtime.portWorkerOnly': 'Worker-only',
+        'projectDetail.provisioning.workerOnlyDomainHint': 'Public HTTP traffic is disabled for this worker-only service.',
       }
       let message = messages[key] || key
       Object.entries(data || {}).forEach(([name, value]) => {
@@ -102,6 +105,14 @@ describe('OverviewTab runtime health notice', () => {
     renderTab(createProject())
 
     expect(screen.queryByText('Runtime Health Notice')).not.toBeInTheDocument()
+  })
+
+  it('does not expose public URL actions for worker-only projects', () => {
+    renderTab(createProject({ port: 0 }))
+
+    expect(screen.getByText('Worker-only')).toBeInTheDocument()
+    expect(screen.getByText('Public HTTP traffic is disabled for this worker-only service.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'https://billing.runara.app' })).not.toBeInTheDocument()
   })
 
   it('keeps the deployment-failure surface for error_log', () => {

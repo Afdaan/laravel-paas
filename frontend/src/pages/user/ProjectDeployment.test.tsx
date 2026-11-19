@@ -32,11 +32,14 @@ const messages: Record<string, string> = {
   'projectDetail.provisioning.backToProjects': 'Back to projects',
   'projectDetail.provisioning.statusDeploying': 'Deploying',
   'projectDetail.provisioning.statusReady': 'Ready',
+  'projectDetail.provisioning.statusWorkerOnly': 'Worker-only',
   'projectDetail.provisioning.statusFailed': 'Failed',
   'projectDetail.provisioning.deployingTitle': 'Deploying {{name}}',
   'projectDetail.provisioning.deployingDesc': 'Building application.',
   'projectDetail.provisioning.readyTitle': '{{name}} is live',
+  'projectDetail.provisioning.workerReadyTitle': '{{name}} worker is running',
   'projectDetail.provisioning.readyDesc': 'Application is healthy.',
+  'projectDetail.provisioning.workerOnlyDomainHint': 'Public HTTP traffic is disabled for this worker-only service.',
   'projectDetail.provisioning.failedTitle': '{{name}} failed',
   'projectDetail.provisioning.failedDesc': 'Check Build Logs.',
   'projectDetail.provisioning.progress': 'Deployment progress',
@@ -678,7 +681,12 @@ describe('ProjectDeployment build output', () => {
 
     renderPage()
     await openBuildLogs()
-    expect(await screen.findByText(line)).toHaveClass(className)
+    const buildOutput = await screen.findByRole('region', { name: 'Build output' })
+    await waitFor(() => {
+      const styledLine = Array.from(buildOutput.querySelectorAll('span'))
+        .find(element => element.textContent === line && element.classList.contains(className))
+      expect(styledLine).toBeTruthy()
+    })
   })
 })
 
@@ -758,6 +766,26 @@ describe('ProjectDeployment failure remedies', () => {
     expect(screen.getByText('billing.runara.app')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open site' }))
       .toHaveAttribute('href', 'https://billing.runara.app')
+  })
+
+  it('marks worker-only deployments ready without exposing domain actions', async () => {
+    ;(projectsAPI.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: createProject({
+        status: 'running',
+        deployment_status: 'completed',
+        deployment_progress: 100,
+        subdomain: 'billing.runara.app',
+        port: 0,
+      }),
+    })
+
+    renderPage()
+    await screen.findByText('billing-service worker is running')
+
+    expect(screen.getByText('Worker-only')).toBeInTheDocument()
+    expect(screen.getByText('Public HTTP traffic is disabled for this worker-only service.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Copy URL' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Open site' })).not.toBeInTheDocument()
   })
 
   it('links the commit to the repository', async () => {

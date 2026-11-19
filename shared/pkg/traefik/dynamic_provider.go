@@ -11,6 +11,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const DynamicConfigCacheKey = "traefik:dynamic_config"
+
 // GetProjectDynamicFilePath returns the path to the dynamic configuration file for a given project
 func GetProjectDynamicFilePath(cfg *config.Config, userID uint, projectID uint, subdomain string) string {
 	return filepath.Join(cfg.TraefikDynamicDir, fmt.Sprintf("user-%d-project-%d-%s.yml", userID, projectID, subdomain))
@@ -26,8 +28,7 @@ func InvalidateTraefikConfigCache(cfg *config.Config) error {
 	defer client.Close()
 
 	ctx := context.Background()
-	cacheKey := "traefik:dynamic_config"
-	return client.Del(ctx, cacheKey).Err()
+	return client.Del(ctx, DynamicConfigCacheKey).Err()
 }
 
 // WriteProjectDynamicFile invalidates the Redis cache for Traefik config and removes legacy flat files if present

@@ -1,6 +1,9 @@
 package models
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestResolveRuntimeExposurePrecedence(t *testing.T) {
 	manualPort := 4000
@@ -21,6 +24,33 @@ func TestResolveRuntimeExposureDisabledPort(t *testing.T) {
 
 	if exposure.WebFacing || exposure.Port != 0 || exposure.Reason != RuntimeExposureReasonDisabledPort {
 		t.Fatalf("expected disabled port, got %+v", exposure)
+	}
+}
+
+func TestResolveRuntimeExposureInvalidManualPort(t *testing.T) {
+	for _, port := range []int{-1, MaxRuntimePort + 1} {
+		t.Run(fmt.Sprintf("port_%d", port), func(t *testing.T) {
+			exposure := (&Project{Framework: "Laravel", Port: &port}).ResolveRuntimeExposure(3000)
+			if exposure.WebFacing || exposure.Port != 0 || exposure.Reason != RuntimeExposureReasonInvalidPort {
+				t.Fatalf("expected invalid port, got %+v", exposure)
+			}
+		})
+	}
+}
+
+func TestIsValidConfiguredPort(t *testing.T) {
+	cases := map[int]bool{
+		-1:                 false,
+		0:                  true,
+		1:                  true,
+		MaxRuntimePort:     true,
+		MaxRuntimePort + 1: false,
+	}
+
+	for port, expected := range cases {
+		if actual := IsValidConfiguredPort(port); actual != expected {
+			t.Fatalf("port %d validity=%t, expected %t", port, actual, expected)
+		}
 	}
 }
 

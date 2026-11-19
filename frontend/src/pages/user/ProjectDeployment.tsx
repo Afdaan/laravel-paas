@@ -230,7 +230,13 @@ function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
   // response stops changing — nothing left running to fight a later scroll.
   useEffect(() => {
     if (!stickToBottomRef.current) return
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
+    const logElement = logRef.current
+    if (!logElement) return
+    if (typeof logElement.scrollTo === 'function') {
+      logElement.scrollTo({ top: logElement.scrollHeight })
+      return
+    }
+    logElement.scrollTop = logElement.scrollHeight
   }, [logs])
 
   const handleScroll = () => {
@@ -549,9 +555,11 @@ export default function ProjectDeployment() {
 
   const activeStep = getActiveStep(project?.deployment_status, reported)
   const stepStates = getStepStates(phase, activeStep)
+  const isWorkerOnly = project?.port === 0
+  const showStatusBadge = phase !== 'ready' || isWorkerOnly
 
   const title = phase === 'ready'
-    ? t('projectDetail.provisioning.readyTitle', { name: project?.name || '' })
+    ? t(isWorkerOnly ? 'projectDetail.provisioning.workerReadyTitle' : 'projectDetail.provisioning.readyTitle', { name: project?.name || '' })
     : phase === 'failed'
       ? t('projectDetail.provisioning.failedTitle', { name: project?.name || '' })
       : t('projectDetail.provisioning.deployingTitle', { name: project?.name || '' })
@@ -632,9 +640,9 @@ export default function ProjectDeployment() {
   const failure = phase === 'failed' ? parseFailure(getFailureMessage(project)) : null
   // A project that has never served traffic has a subdomain but nothing behind
   // it, so the metadata card names it without inviting a click into a 502.
-  const domainIsLive = phase === 'ready' || Boolean(project.deployment_finished_at && phase !== 'failed')
+  const domainIsLive = !isWorkerOnly && (phase === 'ready' || Boolean(project.deployment_finished_at && phase !== 'failed'))
   const stageLabel = phase === 'ready'
-    ? t('projectDetail.provisioning.statusLive')
+    ? t(isWorkerOnly ? 'projectDetail.provisioning.statusWorkerOnly' : 'projectDetail.provisioning.statusLive')
     : phase === 'failed'
       ? t('projectDetail.provisioning.statusFailed').toLowerCase()
       : !project.deployment_status || project.deployment_status === 'queued'
@@ -743,7 +751,7 @@ export default function ProjectDeployment() {
         )}>{title}</h1>
 
         <div className="flex flex-wrap items-center gap-2">
-          {phase !== 'ready' && <Badge
+          {showStatusBadge && <Badge
             variant="outline"
             aria-live="polite"
             className={cn(
@@ -759,9 +767,9 @@ export default function ProjectDeployment() {
           {/* The badge reports state rather than offering an action. On a narrow
               screen this break puts it on its own line so the buttons wrap
               among themselves, without stretching the pill to fill the row. */}
-          {phase !== 'ready' && <span className="basis-full sm:hidden" aria-hidden="true" />}
+          {showStatusBadge && <span className="basis-full sm:hidden" aria-hidden="true" />}
 
-          {projectUrl && phase === 'ready' && (
+          {projectUrl && domainIsLive && (
             <Button variant="outline" size="sm" onClick={handleCopyUrl}>
               <Copy className="size-3.5" aria-hidden="true" />
               {urlCopied ? t('projectDetail.provisioning.copied') : t('projectDetail.provisioning.copyUrl')}
@@ -948,6 +956,8 @@ export default function ProjectDeployment() {
               {t('projectDetail.provisioning.openSite')}
               <ArrowUpRight className="size-3.5" aria-hidden="true" />
             </Button>
+          ) : isWorkerOnly && phase === 'ready' ? (
+            <span className="text-xs text-muted-foreground">{t('projectDetail.provisioning.workerOnlyDomainHint')}</span>
           ) : phase === 'deploying' && (
             <span className="text-xs text-muted-foreground">{t('projectDetail.provisioning.domainPendingHint')}</span>
           ))}

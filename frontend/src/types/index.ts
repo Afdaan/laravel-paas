@@ -64,7 +64,7 @@ export interface Project {
   repository_url: string;
   branch: string;
   php_version: string;
-  port: number | null;
+  port?: number | null;
   status: 'running' | 'stopped' | 'error' | 'deploying' | 'building' | 'failed' | 'pending' | 'queued' | 'restarting';
   subdomain?: string;
   url?: string;
