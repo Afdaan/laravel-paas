@@ -230,7 +230,13 @@ function InlineBuildLogs({ projectId, jobId, deploymentStatus }: {
   // response stops changing — nothing left running to fight a later scroll.
   useEffect(() => {
     if (!stickToBottomRef.current) return
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
+    const logElement = logRef.current
+    if (!logElement) return
+    if (typeof logElement.scrollTo === 'function') {
+      logElement.scrollTo({ top: logElement.scrollHeight })
+      return
+    }
+    logElement.scrollTop = logElement.scrollHeight
   }, [logs])
 
   const handleScroll = () => {

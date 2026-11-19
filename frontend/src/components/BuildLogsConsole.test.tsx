@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import BuildLogsConsole from './BuildLogsConsole'
 import { projectsAPI } from '../services/api'
 
@@ -14,6 +14,14 @@ vi.mock('../services/api', () => ({
 vi.mock('@/lib/useTranslation', () => ({
   default: () => ({ t: (key: string) => key }),
 }))
+
+function expectStyledLine(line: string, className: string) {
+  return waitFor(() => {
+    const styledLine = Array.from(document.querySelectorAll('span'))
+      .find(element => element.textContent === line && element.classList.contains(className))
+    expect(styledLine).toBeTruthy()
+  })
+}
 
 describe('BuildLogsConsole presentation', () => {
   beforeEach(() => {
@@ -39,7 +47,7 @@ describe('BuildLogsConsole presentation', () => {
     const line = '✓ Build completed in 16.4s'
     vi.mocked(projectsAPI.buildLogs).mockResolvedValue({ data: { logs: line } } as never)
     render(<BuildLogsConsole projectId="test-project" status="running" />)
-    expect(await screen.findByText(line)).toHaveClass('text-emerald-300')
+    await expectStyledLine(line, 'text-emerald-300')
   })
 
   it.each([
@@ -49,7 +57,7 @@ describe('BuildLogsConsole presentation', () => {
   ])('uses restrained semantic styling for %s', async (line, className) => {
     vi.mocked(projectsAPI.buildLogs).mockResolvedValue({ data: { logs: line } } as never)
     render(<BuildLogsConsole projectId="test-project" status="running" />)
-    expect(await screen.findByText(line)).toHaveClass(className)
+    await expectStyledLine(line, className)
   })
 
   it('preserves code indentation and treats application output as text', async () => {

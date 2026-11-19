@@ -681,7 +681,12 @@ describe('ProjectDeployment build output', () => {
 
     renderPage()
     await openBuildLogs()
-    expect(await screen.findByText(line)).toHaveClass(className)
+    const buildOutput = await screen.findByRole('region', { name: 'Build output' })
+    await waitFor(() => {
+      const styledLine = Array.from(buildOutput.querySelectorAll('span'))
+        .find(element => element.textContent === line && element.classList.contains(className))
+      expect(styledLine).toBeTruthy()
+    })
   })
 })
 
