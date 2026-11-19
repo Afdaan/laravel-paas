@@ -42,7 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
 import { DEFAULT_RUNTIME_VERSIONS, getDisplayedFramework } from '@/lib/runtimes'
-import { isValidProjectPort, requiresWorkerOnlyConfirmation } from '@/lib/projectPort'
+import { isValidProjectPort, projectPortInputValue, requiresWorkerOnlyConfirmation } from '@/lib/projectPort'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import ProjectConsole from '../../components/project/ProjectConsole'
@@ -799,7 +799,7 @@ function UserProjectDetail() {
     setBaseDirInput(nextProject.base_directory || '')
     setBuildCommandInput(nextProject.build_command || '')
     setStartCommandInput(nextProject.start_command || '')
-    setPortInput(nextProject.port === null ? '' : nextProject.port)
+    setPortInput(projectPortInputValue(nextProject.port))
     setNodeVersionInput(nextProject.node_version || DEFAULT_RUNTIME_VERSIONS.node)
     setPhpVersionInput(nextProject.php_version || DEFAULT_RUNTIME_VERSIONS.php)
 
@@ -831,7 +831,7 @@ function UserProjectDetail() {
       baseDirInput !== (project.base_directory || '') ||
       buildCommandInput !== (project.build_command || '') ||
       startCommandInput !== (project.start_command || '') ||
-      portInput !== (project.port === null ? '' : project.port) ||
+      portInput !== projectPortInputValue(project.port) ||
       nodeVersionInput !== (project.node_version || DEFAULT_RUNTIME_VERSIONS.node) ||
       phpVersionInput !== (project.php_version || DEFAULT_RUNTIME_VERSIONS.php) ||
       workerCommandInput !== (project.worker_command || '') ||

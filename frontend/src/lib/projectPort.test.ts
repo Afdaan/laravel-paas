@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatProjectPort, isValidProjectPort, requiresWorkerOnlyConfirmation } from './projectPort'
+import { formatProjectPort, isValidProjectPort, projectPortInputValue, requiresWorkerOnlyConfirmation } from './projectPort'
 
 describe('project port helpers', () => {
   it('accepts auto, worker-only, and valid TCP ports', () => {
@@ -9,6 +9,13 @@ describe('project port helpers', () => {
     expect(isValidProjectPort(-1)).toBe(false)
     expect(isValidProjectPort(65536)).toBe(false)
     expect(isValidProjectPort(1.5)).toBe(false)
+  })
+
+  it('normalizes omitted auto ports to an empty input', () => {
+    expect(projectPortInputValue(undefined)).toBe('')
+    expect(projectPortInputValue(null)).toBe('')
+    expect(projectPortInputValue(0)).toBe(0)
+    expect(projectPortInputValue(3000)).toBe(3000)
   })
 
   it('formats the three runtime port states explicitly', () => {

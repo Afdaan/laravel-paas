@@ -2,6 +2,10 @@ export function isValidProjectPort(port: number | ''): boolean {
   return port === '' || (Number.isInteger(port) && port >= 0 && port <= 65535)
 }
 
+export function projectPortInputValue(port: number | null | undefined): number | '' {
+  return port ?? ''
+}
+
 export function requiresWorkerOnlyConfirmation(port: number | ''): boolean {
   return port === 0
 }
