@@ -35,9 +35,10 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { isValidProjectPort } from '@/lib/projectPort'
+import { isValidProjectPort, requiresWorkerOnlyConfirmation } from '@/lib/projectPort'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { siMysql, siPostgresql } from 'simple-icons'
+import ConfirmationModal from '@/components/ConfirmationModal'
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
@@ -156,6 +157,7 @@ function UserNewProject() {
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [showWorkerOnlyConfirmation, setShowWorkerOnlyConfirmation] = useState(false)
 
   const [connectionMode, setConnectionMode] = useState<'app' | 'manual'>('app')
   const [installations, setInstallations] = useState<GithubAppInstallation[]>([])
@@ -605,11 +607,8 @@ function UserNewProject() {
     return Object.keys(errors).length === 0
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const createProject = async () => {
     if (isLoading) return // Block duplicate concurrent submits
-
-    if (!validateForm()) return
 
     setIsLoading(true)
     setSubmitError(null)
@@ -632,8 +631,30 @@ function UserNewProject() {
     }
   }
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (isLoading || !validateForm()) return
+
+    if (requiresWorkerOnlyConfirmation(formData.port)) {
+      setShowWorkerOnlyConfirmation(true)
+      return
+    }
+
+    void createProject()
+  }
+
   return (
     <div className="max-w-3xl mx-auto space-y-10 pb-20 animate-in fade-in duration-500">
+      <ConfirmationModal
+        isOpen={showWorkerOnlyConfirmation}
+        onClose={() => setShowWorkerOnlyConfirmation(false)}
+        onConfirm={() => void createProject()}
+        title={t('projectDetail.settings.workerOnlyConfirmTitle')}
+        message={t('projectDetail.settings.workerOnlyConfirmMessage')}
+        type="warning"
+        confirmText={t('projectDetail.settings.workerOnlyConfirmAction')}
+        cancelText={t('common.cancel')}
+      />
       <div className="flex flex-col gap-4">
         <Button
           variant="outline"

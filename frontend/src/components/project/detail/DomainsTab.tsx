@@ -35,6 +35,7 @@ export function DomainsTab({ project, onDomainsChanged, isActive }: DomainsTabPr
           projectUrl={project.url}
           onDomainsChanged={onDomainsChanged}
           isActive={isActive}
+          webFacing={project.port == null || (project.port > 0 && project.port <= 65535)}
         />
       </CardContent>
     </Card>

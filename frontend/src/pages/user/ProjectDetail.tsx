@@ -42,7 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePolling } from '@/lib/usePolling'
 import { cn } from '@/lib/utils'
 import { DEFAULT_RUNTIME_VERSIONS, getDisplayedFramework } from '@/lib/runtimes'
-import { isValidProjectPort } from '@/lib/projectPort'
+import { isValidProjectPort, requiresWorkerOnlyConfirmation } from '@/lib/projectPort'
 import { FrameworkIcon } from '../../components/FrameworkIcon'
 import { RedeployButton } from '../../components/project/RedeployButton'
 import ProjectConsole from '../../components/project/ProjectConsole'
@@ -864,11 +864,12 @@ function UserProjectDetail() {
       return
     }
 
+    const workerOnly = requiresWorkerOnlyConfirmation(portInput)
     setConfirmModal({
-      title: t('common.confirm'),
-      message: t('projectDetail.settings.redeployWarning'),
+      title: workerOnly ? t('projectDetail.settings.workerOnlyConfirmTitle') : t('common.confirm'),
+      message: workerOnly ? t('projectDetail.settings.workerOnlyConfirmMessage') : t('projectDetail.settings.redeployWarning'),
       type: 'warning',
-      confirmText: t('common.save'),
+      confirmText: workerOnly ? t('projectDetail.settings.workerOnlyConfirmAction') : t('common.save'),
       isOpen: true,
       onConfirm: async () => {
         setIsSavingSettings(true)
@@ -1004,6 +1005,7 @@ function UserProjectDetail() {
 
   if (!project) return null
   const projectUrl = project.url || `https://${project.subdomain}.${window.location.hostname}`
+  const isWorkerOnlyProject = project.port === 0
   const isLaravelProject = project.framework === 'Laravel'
   const isDisplayedLaravelProject = displayedFramework === 'Laravel'
   const isDetectedFrameworkCandidate = Boolean(project.detected_framework && project.detected_framework !== project.framework)
@@ -1125,7 +1127,7 @@ function UserProjectDetail() {
             <div className="px-3 py-1.5 rounded-lg bg-muted border flex items-center gap-2">
               <Globe className="w-4 h-4 text-muted-foreground" />
               <span className="text-muted-foreground font-mono text-xs">{project.subdomain}</span>
-              {project.status === 'running' && (
+              {project.status === 'running' && !isWorkerOnlyProject && (
                 <a
                   href={projectUrl}
                   target="_blank"
@@ -1136,7 +1138,7 @@ function UserProjectDetail() {
                 </a>
               )}
             </div>
-            {project.custom_domains && project.custom_domains.filter(d => ['active', 'ssl_active'].includes(d.status)).length > 0 && (
+            {!isWorkerOnlyProject && project.custom_domains && project.custom_domains.filter(d => ['active', 'ssl_active'].includes(d.status)).length > 0 && (
               <a
                 href={`https://${project.custom_domains.filter(d => ['active', 'ssl_active'].includes(d.status))[0].domain}`}
                 target="_blank"

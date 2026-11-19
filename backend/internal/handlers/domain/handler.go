@@ -69,6 +69,16 @@ func (h *DomainHandler) validateAccess(c *fiber.Ctx, projectUID string, domainID
 	return project, domain, nil
 }
 
+func ensureDomainRoutingEnabled(project *models.Project) error {
+	switch project.ResolveRuntimeExposure(0).Reason {
+	case models.RuntimeExposureReasonInvalidPort:
+		return apperr.New(400, "INVALID_PORT", "Configured port must be 0 for worker-only projects or between 1 and 65535")
+	case models.RuntimeExposureReasonDisabledPort:
+		return apperr.New(409, "PROJECT_NOT_WEB_FACING", "Custom domains are unavailable while the project is configured as worker-only")
+	}
+	return nil
+}
+
 // RegisterRoutes registers the domain endpoints to a router
 func (h *DomainHandler) RegisterRoutes(r fiber.Router) {
 	r.Get("", h.List)
@@ -140,6 +150,9 @@ func (h *DomainHandler) Add(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureDomainRoutingEnabled(project); err != nil {
+		return err
+	}
 
 	var req struct {
 		Domain string `json:"domain"`
@@ -201,6 +214,9 @@ func (h *DomainHandler) Verify(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureDomainRoutingEnabled(project); err != nil {
+		return err
+	}
 
 	wasAlreadyActive := domain != nil && domain.Status == models.DomainStatusActive
 
@@ -256,6 +272,9 @@ func (h *DomainHandler) Transfer(c *fiber.Ctx) error {
 	targetProject, _, err := h.validateAccess(c, req.TargetProjectUID, 0)
 	if err != nil {
 		return apperr.New(403, "FORBIDDEN", "You do not have permission to transfer domains to the target project")
+	}
+	if err := ensureDomainRoutingEnabled(targetProject); err != nil {
+		return err
 	}
 
 	userID := c.Locals("user_id").(uint)

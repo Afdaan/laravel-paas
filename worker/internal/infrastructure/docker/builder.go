@@ -23,8 +23,27 @@ import (
 // ===========================================
 // Container Operations
 // ===========================================
+func runtimePortEnvArgs(exposure models.RuntimeExposure) []string {
+	port, ok := runtimePortEnvValue(exposure)
+	if !ok {
+		return nil
+	}
+	return []string{"-e", "PORT=" + port}
+}
+
+func runtimePortEnvValue(exposure models.RuntimeExposure) (string, bool) {
+	if !exposure.WebFacing || exposure.Port <= 0 || exposure.Port > models.MaxRuntimePort {
+		return "", false
+	}
+	return strconv.Itoa(exposure.Port), true
+}
+
 // BuildAndRun builds and starts a container for a project using Railpack with cancellation context
 func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project, phpVersion, projectDomain string, cpuLimit float64, memoryLimit string, isInitial bool, noCache bool, logCallback func(string)) (string, error) {
+	if project.ResolveRuntimeExposure(0).Reason == models.RuntimeExposureReasonInvalidPort {
+		return "", apperr.New(400, "INVALID_PORT", "Configured port must be 0 for worker-only projects or between 1 and 65535")
+	}
+
 	projectPath := project.GetProjectPath(s.cfg.ProjectsPath)
 
 	// 1. Determine Build Path (Monorepo Support + Path Traversal Guard)
@@ -73,7 +92,6 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 	os.Setenv("BUILDKIT_HOST", "tcp://paas-buildkit:1234")
 
 	var err error
-	var internalPort string
 
 	// 3. Branching Build Strategy
 	if project.Framework == "Laravel" {
@@ -128,9 +146,6 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		project.Port = &p
 	}
 
-	// 4. Determine Final Internal Port for Traefik
-	internalPort = fmt.Sprintf("%d", exposure.Port)
-
 	// 5. Start Web Container
 	s.storage.EnsurePersistentPath(project)
 	hostPersistentPath := s.storage.GetPersistentHostPath(project)
@@ -163,7 +178,6 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		}
 		return "", apperr.New(400, "PORT_RESOLUTION_REQUIRED", message)
 	}
-
 	runArgs := []string{
 		"run", "-d",
 		"--name", containerName,
@@ -175,8 +189,8 @@ func (s *DockerService) BuildAndRun(ctx context.Context, project *models.Project
 		"-e", "PYTHONUNBUFFERED=1",
 		"-e", "TZ=Asia/Jakarta",
 		"--env-file", filepath.Join(projectPath, ".env"),
-		"-e", fmt.Sprintf("PORT=%s", internalPort),
 	}
+	runArgs = append(runArgs, runtimePortEnvArgs(exposure)...)
 
 	runArgs = append(runArgs, TenantHardeningArgs(finalMemory)...)
 
@@ -1041,8 +1055,8 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 			}
 		}
 
-		// Inject PORT based on project configuration to ensure deploy phase uses the correct port
-		if project.Port != nil {
+		// Inject PORT only for web-facing services. Port 0 is an explicit worker-only contract.
+		if port, ok := runtimePortEnvValue(project.ResolveRuntimeExposure(0)); ok {
 			if _, exists := config["deploy"]; !exists {
 				config["deploy"] = make(map[string]interface{})
 			}
@@ -1051,7 +1065,7 @@ func (s *DockerService) injectDefaultRailpackConfig(buildPath string, buildCmd, 
 					deploy["variables"] = make(map[string]interface{})
 				}
 				if vars, ok := deploy["variables"].(map[string]interface{}); ok {
-					vars["PORT"] = fmt.Sprintf("%d", *project.Port)
+					vars["PORT"] = port
 					modified = true
 				}
 			}

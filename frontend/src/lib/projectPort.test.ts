@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatProjectPort, isValidProjectPort } from './projectPort'
+import { formatProjectPort, isValidProjectPort, requiresWorkerOnlyConfirmation } from './projectPort'
 
 describe('project port helpers', () => {
   it('accepts auto, worker-only, and valid TCP ports', () => {
@@ -16,5 +16,11 @@ describe('project port helpers', () => {
     expect(formatProjectPort(null, undefined, 'Auto', 'Worker-only')).toBe('Auto')
     expect(formatProjectPort(0, undefined, 'Auto', 'Worker-only')).toBe('Worker-only')
     expect(formatProjectPort(3000, '8000', 'Auto', 'Worker-only')).toBe('3000')
+  })
+
+  it('requires confirmation only for worker-only port zero', () => {
+    expect(requiresWorkerOnlyConfirmation(0)).toBe(true)
+    expect(requiresWorkerOnlyConfirmation('')).toBe(false)
+    expect(requiresWorkerOnlyConfirmation(3000)).toBe(false)
   })
 })

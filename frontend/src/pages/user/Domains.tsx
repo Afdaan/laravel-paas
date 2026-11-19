@@ -215,6 +215,11 @@ const Domains = () => {
     }
   }
 
+  const transferTargets = projects.filter(project => (
+    project.id !== transferModal.domain?.project_id &&
+    (project.port == null || (project.port > 0 && project.port <= 65535))
+  ))
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <ConfirmationModal
@@ -268,9 +273,7 @@ const Domains = () => {
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent align="start" alignItemWithTrigger={false} className="min-w-[var(--radix-select-trigger-width)] bg-popover/98 backdrop-blur-lg border border-border/80 rounded-xl shadow-2xl p-1.5 max-h-72">
-                  {projects
-                    .filter(p => p.id !== transferModal.domain?.project_id)
-                    .map(p => (
+                  {transferTargets.map(p => (
                       <SelectItem key={p.id} value={p.id.toString()} label={p.name} className="py-2.5 pl-3">
                         <div className="flex min-w-0 flex-col gap-0.5 text-left">
                           <span className="truncate text-sm font-medium leading-none">{p.name}</span>
@@ -279,7 +282,7 @@ const Domains = () => {
                       </SelectItem>
                     ))
                   }
-                  {projects.filter(p => p.id !== transferModal.domain?.project_id).length === 0 && (
+                  {transferTargets.length === 0 && (
                     <div className="p-4 text-center text-xs text-muted-foreground">
                       {t('domains.noOtherProjects')}
                     </div>
@@ -356,14 +359,20 @@ const Domains = () => {
                       </div>
                       <div className="flex flex-col text-left">
                         <span className="text-[13px] font-semibold text-foreground/90">{domain.domain}</span>
-                        <a
-                          href={`https://${domain.domain}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[9px] text-muted-foreground hover:text-primary hover:underline underline-offset-2 flex items-center gap-1 w-fit mt-0.5"
-                        >
-                          {t('common.url')} <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
+                        {domain.project?.port === 0 ? (
+                          <span className="mt-0.5 text-[9px] font-medium text-amber-600 dark:text-amber-400">
+                            {t('projectDetail.runtime.portWorkerOnly')}
+                          </span>
+                        ) : (
+                          <a
+                            href={`https://${domain.domain}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[9px] text-muted-foreground hover:text-primary hover:underline underline-offset-2 flex items-center gap-1 w-fit mt-0.5"
+                          >
+                            {t('common.url')} <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
                         {domain.config_hash && (
                           <span className="text-[9px] font-mono text-muted-foreground/40 mt-0.5">
                             SHA256:{domain.config_hash.substring(0, 8)}

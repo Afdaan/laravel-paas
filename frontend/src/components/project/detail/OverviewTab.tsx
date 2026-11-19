@@ -18,6 +18,7 @@ interface OverviewTabProps {
 
 export function OverviewTab({ project, displayedFramework, isDetectedFrameworkCandidate, projectUrl, isLaravelProject, activeCommit, onTabChange }: OverviewTabProps) {
   const { t, language } = useTranslation()
+  const isWorkerOnly = project.port === 0
 
   return (
     <div className="space-y-6">
@@ -38,22 +39,30 @@ export function OverviewTab({ project, displayedFramework, isDetectedFrameworkCa
                 </div>
                 <div>
                   <div className="font-bold text-sm">{t('projectDetail.overview.productionUrl')}</div>
-                  <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{t('projectDetail.overview.webAccess')} · SSL Enabled</div>
+                  <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
+                    {isWorkerOnly ? t('projectDetail.runtime.portWorkerOnly') : `${t('projectDetail.overview.webAccess')} · SSL Enabled`}
+                  </div>
                 </div>
               </div>
-              <a
-                href={projectUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-primary hover:underline text-sm font-mono truncate max-w-xs group/link"
-              >
-                {projectUrl}
-                <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity" />
-              </a>
+              {isWorkerOnly ? (
+                <span className="max-w-xs text-right text-xs text-muted-foreground">
+                  {t('projectDetail.provisioning.workerOnlyDomainHint')}
+                </span>
+              ) : (
+                <a
+                  href={projectUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-primary hover:underline text-sm font-mono truncate max-w-xs group/link"
+                >
+                  {projectUrl}
+                  <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+                </a>
+              )}
             </div>
 
             {/* Custom Domains */}
-            {project.custom_domains && project.custom_domains.length > 0 && (
+            {!isWorkerOnly && project.custom_domains && project.custom_domains.length > 0 && (
               <div className="space-y-2">
                 {project.custom_domains
                   .filter((d) => ['active', 'ssl_active'].includes(d.status))
