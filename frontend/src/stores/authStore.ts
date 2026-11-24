@@ -20,12 +20,23 @@ interface AuthState {
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
+  expireSession: () => void;
   loginAsClient: () => Promise<void>;
   returnToAdmin: () => Promise<void>;
 }
 
 const SESSION_MARKER = 'authenticated'
 const IMPERSONATION_MARKER = 'impersonating'
+
+let fetchUserPromise: Promise<void> | null = null
+let sessionEpoch = 0
+
+// Any session transition (login/logout/impersonate/expire) invalidates
+// in-flight fetchUser writes so stale responses cannot overwrite newer state.
+const invalidatePendingFetches = () => {
+  sessionEpoch++
+  fetchUserPromise = null
+}
 
 const useAuthStore = create<AuthState>((set, get) => ({
   // State
@@ -44,6 +55,7 @@ const useAuthStore = create<AuthState>((set, get) => ({
 
   // Actions
   login: async (email, password) => {
+    invalidatePendingFetches()
     const response = await authAPI.login(email, password)
     const { user } = response.data
 
@@ -53,6 +65,7 @@ const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
+    invalidatePendingFetches()
     try {
       await authAPI.logout()
     } catch (error) {
@@ -63,34 +76,51 @@ const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   fetchUser: async () => {
-    set({ isLoading: true })
-    try {
-      const response = await authAPI.me()
-      const isImpersonating = response.headers['x-impersonating'] === 'true'
-      set({
-        token: SESSION_MARKER,
-        adminToken: isImpersonating ? IMPERSONATION_MARKER : null,
-        user: response.data,
-        isLoading: false,
-      })
-    } catch (error: unknown) {
-      const axiosError = error as AxiosError
-      const status = axiosError?.response?.status
-      if (status === 401 || status === 403) {
-        set({ token: null, user: null, adminToken: null, isLoading: false })
-      } else {
-        set({ isLoading: false })
+    if (fetchUserPromise) return fetchUserPromise
+    const epoch = sessionEpoch
+    const isStale = () => epoch !== sessionEpoch
+    fetchUserPromise = (async () => {
+      set({ isLoading: true })
+      try {
+        const response = await authAPI.me()
+        if (isStale()) return
+        const isImpersonating = response.headers['x-impersonating'] === 'true'
+        set({
+          token: SESSION_MARKER,
+          adminToken: isImpersonating ? IMPERSONATION_MARKER : null,
+          user: response.data,
+          isLoading: false,
+        })
+      } catch (error: unknown) {
+        const axiosError = error as AxiosError
+        const status = axiosError?.response?.status
+        if (isStale()) return
+        if (status === 401 || status === 403) {
+          set({ token: null, user: null, adminToken: null, isLoading: false })
+        } else {
+          set({ isLoading: false })
+        }
       }
-    }
+    })().finally(() => {
+      fetchUserPromise = null
+    })
+    return fetchUserPromise
+  },
+
+  expireSession: () => {
+    invalidatePendingFetches()
+    set({ token: null, user: null, adminToken: null, isLoading: false })
   },
 
   loginAsClient: async () => {
+    invalidatePendingFetches()
     set({ token: SESSION_MARKER, adminToken: IMPERSONATION_MARKER })
     await get().fetchUser()
   },
 
   returnToAdmin: async () => {
     await authAPI.returnToAdmin()
+    invalidatePendingFetches()
     set({ token: SESSION_MARKER, adminToken: null })
     await get().fetchUser()
   },
