@@ -165,7 +165,7 @@ function App() {
     const handleExpired = () => {
       const currentToken = useAuthStore.getState().token
       if (currentToken) {
-        useAuthStore.setState({ token: null, user: null, adminToken: null, isLoading: false })
+        useAuthStore.getState().expireSession()
         toast.error(t('common.sessionExpired'), { id: 'session-expired-toast' })
         navigate('/login', { state: { from: window.location.pathname }, replace: true })
       }

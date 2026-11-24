@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, Link, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
-import { getRetryAfterSeconds, systemAPI } from '../services/api'
+import { getRetryAfterSeconds } from '../services/api'
 import { AxiosError } from 'axios'
 import useAuthStore from '../stores/authStore'
 import useTranslation from '../lib/useTranslation'
@@ -35,19 +35,6 @@ function Login() {
   const from = location.state?.from?.pathname || null
 
   useEffect(() => {
-    // Check if system is initialized
-    const checkInit = async () => {
-      try {
-        const { data } = await systemAPI.getInitStatus()
-        if (!data.is_initialized) {
-          navigate('/setup', { replace: true })
-        }
-      } catch (e) {
-        // Ignore errors during initial check, will be caught by global offline handler
-      }
-    }
-    checkInit()
-
     if (token && user) {
       const isAdmin = user.role === 'superadmin' || user.role === 'admin'
       const destination = from || (isAdmin ? '/admin/dashboard' : '/dashboard')

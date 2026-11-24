@@ -98,6 +98,12 @@ export function isSessionExpiredError(
     return false
   }
 
+  // Probing /auth/me on a cold load returns 401 for logged-out users.
+  // That is "not signed in", not "session expired" — don't fire auth:expired.
+  if (url?.endsWith('/auth/me')) {
+    return false
+  }
+
   return true
 }
 
