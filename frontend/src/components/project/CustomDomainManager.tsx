@@ -25,6 +25,7 @@ interface CustomDomainManagerProps {
   projectUrl?: string
   onDomainsChanged?: () => void
   isActive?: boolean
+  webFacing?: boolean
 }
 
 // Helper to calculate DNS Host (Dynamic & Supports Multi-part TLDs)
@@ -148,7 +149,7 @@ const getRefinedEvent = (eventType: string, rawMessage: string, t: (key: string,
   return { title, desc }
 }
 
-export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomainsChanged, isActive = true }: CustomDomainManagerProps) {
+export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomainsChanged, isActive = true, webFacing = true }: CustomDomainManagerProps) {
   const { t, language } = useTranslation()
   const [domains, setDomains] = useState<CustomDomain[]>([])
 
@@ -399,6 +400,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
 
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!webFacing) return
+
     const trimmedDomain = newDomain.trim()
     if (!trimmedDomain) return
 
@@ -464,6 +467,8 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
 
   const handleVerifyDomain = async (e: React.MouseEvent, domainId: number) => {
     e.stopPropagation()
+    if (!webFacing) return
+
     setVerifyingIds(prev => ({ ...prev, [domainId]: true }))
 
     const dom = domains.find(d => d.id === domainId)
@@ -654,26 +659,33 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
         </p>
       </div>
 
-      <form onSubmit={handleAddDomain} className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
-          <Input
-            value={newDomain}
-            onChange={(e) => setNewDomain(e.target.value)}
-            placeholder="e.g. www.my-awesome-site.com"
-            className="h-11 pl-10 text-sm bg-background/50 border-muted-foreground/20 focus:border-primary/50 transition-all rounded-xl shadow-sm"
-            disabled={isAdding}
-          />
+      {webFacing ? (
+        <form onSubmit={handleAddDomain} className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
+            <Input
+              value={newDomain}
+              onChange={(e) => setNewDomain(e.target.value)}
+              placeholder="e.g. www.my-awesome-site.com"
+              className="h-11 pl-10 text-sm bg-background/50 border-muted-foreground/20 focus:border-primary/50 transition-all rounded-xl shadow-sm"
+              disabled={isAdding}
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={!newDomain.trim() || isAdding}
+            className="gap-2 h-11 px-6 shadow-lg shadow-primary/10 transition-all hover:scale-[1.02] rounded-xl font-semibold"
+          >
+            {isAdding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            {t('common.add')}
+          </Button>
+        </form>
+      ) : (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{t('projectDetail.provisioning.workerOnlyDomainHint')}</p>
         </div>
-        <Button
-          type="submit"
-          disabled={!newDomain.trim() || isAdding}
-          className="gap-2 h-11 px-6 shadow-lg shadow-primary/10 transition-all hover:scale-[1.02] rounded-xl font-semibold"
-        >
-          {isAdding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-          {t('common.add')}
-        </Button>
-      </form>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center p-8">
@@ -688,10 +700,10 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
             return (
               <Card
                 key={domain.id}
-                className={`group border-muted-foreground/10 transition-all duration-300 cursor-pointer overflow-hidden ${
+                className={`group border-muted-foreground/10 transition-all duration-300 overflow-hidden ${webFacing ? 'cursor-pointer' : ''} ${
                   isSelected ? 'ring-1 ring-primary/30 bg-muted/40 shadow-xl' : 'bg-muted/10 hover:bg-muted/20'
                 }`}
-                onClick={() => setSelectedDomainId(isSelected ? null : domain.id)}
+                onClick={() => webFacing && setSelectedDomainId(isSelected ? null : domain.id)}
               >
                 <CardContent className="p-0">
                   <div className="p-5 flex items-center justify-between gap-4">
@@ -702,7 +714,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                       <div className="space-y-2">
                         <div className="flex items-center gap-3">
                           <span className="font-bold text-base tracking-tight text-foreground">{domain.domain}</span>
-                          {isActive && (
+                          {isActive && webFacing && (
                             <a
                               href={`https://${domain.domain}`}
                               target="_blank"
@@ -739,7 +751,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                         <FileText className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">Audit Log</span>
                       </Button>
-                      {isActive ? (
+                      {webFacing && (isActive ? (
                         <Button
                           variant="outline"
                           size="sm"
@@ -762,7 +774,7 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                           <RefreshCw className={`w-3 h-3 ${verifyingIds[domain.id] ? 'animate-spin' : ''}`} />
                           {verifyingIds[domain.id] ? t('domains.verifying') : t('common.verify')}
                         </Button>
-                      )}
+                      ))}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -775,12 +787,13 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                     </div>
                   </div>
 
-                  <div
-                    className={`transition-all duration-300 ease-in-out border-t border-muted-foreground/5 bg-background/30 ${
-                      isSelected ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
-                    }`}
-                  >
-                    <div className="p-4 space-y-6">
+                  {webFacing && (
+                    <div
+                      className={`transition-all duration-300 ease-in-out border-t border-muted-foreground/5 bg-background/30 ${
+                        isSelected ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+                      }`}
+                    >
+                      <div className="p-4 space-y-6">
                       <div className="flex items-center justify-between">
                         <div className="space-y-1">
                           <h4 className="text-xs font-bold uppercase tracking-widest text-foreground flex items-center gap-2">
@@ -835,8 +848,9 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
                           <RefreshCw className="absolute -bottom-2 -right-2 w-12 h-12 text-primary/5 group-hover/box:text-primary/10 transition-colors -rotate-12" />
                         </div>
                       </div>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             )
@@ -848,8 +862,12 @@ export function CustomDomainManager({ projectId, subdomain, projectUrl, onDomain
             <Globe className="w-10 h-10" />
           </div>
           <div className="space-y-1.5">
-            <h3 className="text-sm font-bold text-muted-foreground tracking-tight">{t('projectDetail.settings.noCustomDomain') || 'No custom domains added yet'}</h3>
-            <p className="text-[11px] text-muted-foreground/50 max-w-[200px] leading-relaxed">{t('projectDetail.settings.addDomainPrompt') || 'Add a domain to access your project via a custom URL.'}</p>
+            <h3 className="text-sm font-bold text-muted-foreground tracking-tight">
+              {webFacing ? (t('projectDetail.settings.noCustomDomain') || 'No custom domains added yet') : t('projectDetail.runtime.portWorkerOnly')}
+            </h3>
+            <p className="text-[11px] text-muted-foreground/50 max-w-[240px] leading-relaxed">
+              {webFacing ? (t('projectDetail.settings.addDomainPrompt') || 'Add a domain to access your project via a custom URL.') : t('projectDetail.provisioning.workerOnlyDomainHint')}
+            </p>
           </div>
         </div>
       )}

@@ -35,8 +35,10 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { isValidProjectPort, requiresWorkerOnlyConfirmation } from '@/lib/projectPort'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { siMysql, siPostgresql } from 'simple-icons'
+import ConfirmationModal from '@/components/ConfirmationModal'
 
 const GithubIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
@@ -85,6 +87,7 @@ interface ValidationErrors {
   existing_database_uid?: string;
   billable_spec_id?: string;
   database_billable_spec_id?: string;
+  port?: string;
 }
 
 const databaseEngines = [
@@ -154,6 +157,7 @@ function UserNewProject() {
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [showWorkerOnlyConfirmation, setShowWorkerOnlyConfirmation] = useState(false)
 
   const [connectionMode, setConnectionMode] = useState<'app' | 'manual'>('app')
   const [installations, setInstallations] = useState<GithubAppInstallation[]>([])
@@ -536,6 +540,14 @@ function UserNewProject() {
     }
   }
 
+  const handlePortChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const port = e.target.value === '' ? '' : Number(e.target.value)
+    const error = isValidProjectPort(port) ? undefined : t('projectDetail.settings.internalPortInvalid')
+
+    setFormData(prev => ({ ...prev, port }))
+    setValidationErrors(prev => ({ ...prev, port: error }))
+  }
+
   const validateForm = () => {
     const errors: ValidationErrors = {}
     if (!formData.name.trim()) errors.name = t('common.validation.required', { field: t('newProject.displayName') })
@@ -588,16 +600,15 @@ function UserNewProject() {
 
     if (!formData.billable_spec_id) errors.billable_spec_id = t('billing.selectProjectPlan')
     if (formData.database_option === 'new' && !formData.database_billable_spec_id) errors.database_billable_spec_id = t('billing.selectDatabasePlan')
+    if (!isValidProjectPort(formData.port)) errors.port = t('projectDetail.settings.internalPortInvalid')
 
     setValidationErrors(errors)
+    if (errors.port) toast.error(errors.port)
     return Object.keys(errors).length === 0
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const createProject = async () => {
     if (isLoading) return // Block duplicate concurrent submits
-
-    if (!validateForm()) return
 
     setIsLoading(true)
     setSubmitError(null)
@@ -620,8 +631,30 @@ function UserNewProject() {
     }
   }
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (isLoading || !validateForm()) return
+
+    if (requiresWorkerOnlyConfirmation(formData.port)) {
+      setShowWorkerOnlyConfirmation(true)
+      return
+    }
+
+    void createProject()
+  }
+
   return (
     <div className="max-w-3xl mx-auto space-y-10 pb-20 animate-in fade-in duration-500">
+      <ConfirmationModal
+        isOpen={showWorkerOnlyConfirmation}
+        onClose={() => setShowWorkerOnlyConfirmation(false)}
+        onConfirm={() => void createProject()}
+        title={t('projectDetail.settings.workerOnlyConfirmTitle')}
+        message={t('projectDetail.settings.workerOnlyConfirmMessage')}
+        type="warning"
+        confirmText={t('projectDetail.settings.workerOnlyConfirmAction')}
+        cancelText={t('common.cancel')}
+      />
       <div className="flex flex-col gap-4">
         <Button
           variant="outline"
@@ -1408,12 +1441,28 @@ function UserNewProject() {
                         id="port"
                         name="port"
                         type="number"
+                        min={0}
+                        max={65535}
+                        step={1}
                         value={formData.port}
-                        onChange={(e) => setFormData(prev => ({ ...prev, port: e.target.value ? parseInt(e.target.value) : '' }))}
+                        onChange={handlePortChange}
+                        onInvalid={(e) => {
+                          e.preventDefault()
+                          toast.error(t('projectDetail.settings.internalPortInvalid'))
+                        }}
+                        aria-invalid={Boolean(validationErrors.port)}
+                        aria-describedby={validationErrors.port ? 'new-project-port-error new-project-port-description' : 'new-project-port-description'}
                         placeholder="e.g. 5005"
                         className="font-mono text-xs"
                       />
-                      <p className="text-[10px] text-muted-foreground italic pl-1">{t('projectDetail.settings.internalPortDesc')}</p>
+                      {validationErrors.port && (
+                        <p id="new-project-port-error" role="alert" className="text-[10px] text-destructive pl-1">
+                          {validationErrors.port}
+                        </p>
+                      )}
+                      <p id="new-project-port-description" className="text-[10px] text-muted-foreground italic pl-1">
+                        {t('projectDetail.settings.internalPortDesc')}
+                      </p>
                     </div>
                   </div>
                 </div>

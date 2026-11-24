@@ -1,14 +1,46 @@
 package project
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"github.com/laravel-paas/shared/apperr"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/repositories"
 	"gorm.io/gorm"
 )
+
+func TestValidateConfiguredPort(t *testing.T) {
+	for _, port := range []int{-1, models.MaxRuntimePort + 1} {
+		err := validateConfiguredPort(&port)
+		var appError *apperr.AppError
+		if !errors.As(err, &appError) || appError.HTTPStatus != 400 || appError.Code != "INVALID_PORT" {
+			t.Fatalf("port %d error=%v", port, err)
+		}
+	}
+
+	for _, port := range []int{0, 1, models.MaxRuntimePort} {
+		if err := validateConfiguredPort(&port); err != nil {
+			t.Fatalf("port %d rejected: %v", port, err)
+		}
+	}
+	if err := validateConfiguredPort(nil); err != nil {
+		t.Fatalf("automatic port rejected: %v", err)
+	}
+}
+
+func TestUpdateProjectRejectsInvalidPortBeforePersistence(t *testing.T) {
+	service := &ProjectService{}
+	for _, port := range []int{-1, models.MaxRuntimePort + 1} {
+		_, err := service.UpdateProject(1, 1, models.RoleUser, "", "", nil, nil, "", nil, nil, "", "", nil, &port, "", nil, nil, nil)
+		var appError *apperr.AppError
+		if !errors.As(err, &appError) || appError.HTTPStatus != 400 || appError.Code != "INVALID_PORT" {
+			t.Fatalf("port %d error=%v", port, err)
+		}
+	}
+}
 
 func TestDeleteProjectTerminatesBillingBeforeDispatch(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})

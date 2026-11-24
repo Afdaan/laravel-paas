@@ -1987,7 +1987,8 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 		return
 	}
 
-	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID, project.ResolveRuntimeExposure(0)); err != nil {
+	exposure := project.ResolveRuntimeExposure(0)
+	if err := w.dockerService.AdvancedHealthcheck(ctx, project, newContainerID, exposure); err != nil {
 		slog.Error("New container failed advanced healthcheck, initiating rollback", "subdomain", project.Subdomain, "id", newContainerID, "error", err)
 		appendLog("ERROR: Health check failed: " + err.Error() + ". Rolling back.")
 
@@ -1999,8 +2000,12 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 
 		w.updateProjectError(project, job.JobID, "[RUNTIME_FAILED] Deployment failed healthcheck: "+err.Error()+". Old version is still running.")
 		return
-	} else {
+	} else if exposure.WebFacing {
 		appendLog("✓ Application ready.")
+	} else if exposure.Reason == models.RuntimeExposureReasonDisabledPort {
+		appendLog("✓ Worker-only service is running. Public HTTP routing is disabled.")
+	} else {
+		appendLog("✓ Application process is running. HTTP readiness checks were skipped.")
 	}
 
 	// For non-SQLite Laravel projects, run migrations after healthcheck (original behavior)
@@ -2101,9 +2106,15 @@ func (w *DeploymentWorker) deployProject(ctx context.Context, project *models.Pr
 	}
 	w.dockerService.PruneProjectImages(project.Subdomain, maxRetention)
 
-	appendLog("✓ Deployment completed.")
+	completionMessage := fmt.Sprintf("Deployed %s", utils.ShortCommitHash(project.LastCommitHash))
+	if isWorkerOnlyProject(project) {
+		completionMessage = deploymentCompletionMessage(project)
+		appendLog("✓ " + completionMessage + ".")
+	} else {
+		appendLog("✓ Deployment completed.")
+	}
 
-	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", fmt.Sprintf("Deployed %s", utils.ShortCommitHash(project.LastCommitHash))) {
+	if !w.transitionDeploymentState(project, job.JobID, models.DepStatusCompleted, 100, "deployment_completed", completionMessage) {
 		w.forceDeploymentCompleted(project, job.JobID)
 		return
 	}
@@ -2526,6 +2537,9 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 	case models.DepStatusCompleted:
 		ghState = "success"
 		desc = "Deployment successful. Application is live."
+		if isWorkerOnlyProject(project) {
+			desc = deploymentCompletionMessage(project)
+		}
 	case models.DepStatusFailed:
 		ghState = "failure"
 		desc = "Deployment failed. View build logs in the dashboard for details."
@@ -2631,19 +2645,31 @@ func (w *DeploymentWorker) updateGitHubCommitStatus(project *models.Project, sta
 }
 
 func (w *DeploymentWorker) forceDeploymentCompleted(project *models.Project, jobID string) {
-	if err := w.projectRepo.UpdateDeploymentStatus(project.ID, models.DepStatusCompleted, "Release successfully promoted and live", 100, jobID); err != nil {
+	message := deploymentCompletionMessage(project)
+	if err := w.projectRepo.UpdateDeploymentStatus(project.ID, models.DepStatusCompleted, message, 100, jobID); err != nil {
 		slog.Error("Failed to force deployment completion status", "projectId", project.ID, "error", err)
 		return
 	}
-	w.recordAuditLog(project.ID, jobID, "deployment-worker", "deployment_completed_reconciled", "Release successfully promoted and live")
+	w.recordAuditLog(project.ID, jobID, "deployment-worker", "deployment_completed_reconciled", message)
 	project.DeploymentStatus = models.DepStatusCompleted
 	project.DeploymentProgress = 100
-	msg := "Release successfully promoted and live"
+	msg := message
 	project.DeploymentMessage = &msg
 	w.updateGitHubCommitStatus(project, models.DepStatusCompleted, msg)
 	if err := w.projectService.InvalidateSubdomainCache(project.Subdomain); err != nil {
 		slog.Warn("Failed to invalidate cache after forced deployment completion", "subdomain", project.Subdomain, "error", err)
 	}
+}
+
+func deploymentCompletionMessage(project *models.Project) string {
+	if isWorkerOnlyProject(project) {
+		return "Worker-only service deployed successfully"
+	}
+	return "Release successfully promoted and live"
+}
+
+func isWorkerOnlyProject(project *models.Project) bool {
+	return project.ResolveRuntimeExposure(0).Reason == models.RuntimeExposureReasonDisabledPort
 }
 
 // recordAuditLog records a deployment event without altering the project status

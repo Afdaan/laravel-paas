@@ -68,6 +68,7 @@ interface SettingsTabProps {
   setStartCommandInput: (val: string) => void
   portInput: number | ''
   setPortInput: (val: number | '') => void
+  portValidationError?: string
   branchesList: string[]
   branchInput: string
   setBranchInput: (val: string) => void
@@ -117,6 +118,7 @@ export function SettingsTab({
   setStartCommandInput,
   portInput,
   setPortInput,
+  portValidationError,
   branchesList,
   branchInput,
   setBranchInput,
@@ -352,10 +354,22 @@ export function SettingsTab({
                   className="font-mono text-xs bg-zinc-900/50 border-zinc-800 focus:border-zinc-700"
                   placeholder="e.g. 5005"
                   type="number"
+                  min={0}
+                  max={65535}
+                  step={1}
                   value={portInput === '' ? '' : portInput}
-                  onChange={(e) => setPortInput(e.target.value ? parseInt(e.target.value) : '')}
+                  onChange={(e) => setPortInput(e.target.value === '' ? '' : Number(e.target.value))}
+                  aria-invalid={Boolean(portValidationError)}
+                  aria-describedby={portValidationError ? 'settings-port-error settings-port-description' : 'settings-port-description'}
                 />
-                <p className="text-[9px] text-muted-foreground italic">{t('projectDetail.settings.internalPortDesc')}</p>
+                {portValidationError && (
+                  <p id="settings-port-error" role="alert" className="text-[9px] text-destructive">
+                    {portValidationError}
+                  </p>
+                )}
+                <p id="settings-port-description" className="text-[9px] text-muted-foreground italic">
+                  {t('projectDetail.settings.internalPortDesc')}
+                </p>
               </div>
             </div>
 

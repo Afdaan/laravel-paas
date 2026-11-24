@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { Project, DeploymentEvent } from '@/types'
 import { RuntimeEvents } from './RuntimeEvents'
+import { formatProjectPort } from '@/lib/projectPort'
 
 // Status Indicator Component (Visual Indicator for container states)
 function StatusIndicator({ status, label }: { status: string; label: string }) {
@@ -90,7 +91,14 @@ export function RuntimeTab({
                 </div>
                 <div className="flex justify-between items-center border-b border-border/30 pb-2">
                   <span className="text-muted-foreground">{t('projectDetail.runtime.port')}</span>
-                  <span className="font-bold text-foreground/90">{project.port ? project.port : 'Auto (8000)'}</span>
+                  <span className="font-bold text-foreground/90">
+                    {formatProjectPort(
+                      project.port,
+                      project.internal_port,
+                      t('projectDetail.runtime.portAuto'),
+                      t('projectDetail.runtime.portWorkerOnly'),
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Container ID</span>

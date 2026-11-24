@@ -13,6 +13,7 @@ import (
 	"github.com/laravel-paas/shared/infrastructure/nginx"
 	"github.com/laravel-paas/shared/models"
 	"github.com/laravel-paas/shared/pkg/metrics"
+	"github.com/laravel-paas/shared/pkg/traefik"
 	"github.com/laravel-paas/shared/pkg/utils"
 	"gorm.io/gorm"
 )
@@ -39,6 +40,14 @@ func sanitizeCommand(cmd string) string {
 	}
 	// Join with && to ensure sequential execution
 	return strings.Join(cleanLines, " && ")
+}
+
+func validateConfiguredPort(port *int) error {
+	if port == nil || models.IsValidConfiguredPort(*port) {
+		return nil
+	}
+
+	return apperr.New(400, "INVALID_PORT", "Port must be 0 for worker-only projects or between 1 and 65535")
 }
 
 // GetProjectByID fetches a project with preloaded associations
@@ -223,6 +232,9 @@ func (s *ProjectService) CreateProject(userID uint, name, githubURL, branch, dat
 
 // CreateProjectTx handles the initial creation of a project record within a transaction context
 func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, name, githubURL, branch, databaseOption, databaseName, databaseUsername, databasePassword, baseDirectory, buildCommand, startCommand string, port *int, queueEnabled bool, databaseEngine string, githubInstallationID *int64, githubRepoOwner, githubRepoName string) (*models.Project, error) {
+	if err := validateConfiguredPort(port); err != nil {
+		return nil, err
+	}
 	if err := validateBaseDirectory(baseDirectory); err != nil {
 		return nil, apperr.New(400, "INVALID_BASE_DIRECTORY", err.Error())
 	}
@@ -407,6 +419,10 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, userID uint, name, githubU
 }
 
 func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, name, branch string, phpVersion, nodeVersion *string, baseDirectory string, queueEnabled *bool, workerCommand *string, buildCommand, startCommand string, languageVersion *string, port *int, githubURL string, githubInstallationID *int64, githubRepoOwner, githubRepoName *string) (*models.Project, error) {
+	if err := validateConfiguredPort(port); err != nil {
+		return nil, err
+	}
+
 	project, err := s.projectRepo.GetByID(id)
 	if err != nil {
 		return nil, err
@@ -482,6 +498,9 @@ func (s *ProjectService) UpdateProject(id uint, userID uint, role models.Role, n
 	// Invalidate Metadata Cache
 	if err := s.InvalidateSubdomainCache(project.Subdomain); err != nil {
 		slog.Warn("Failed to invalidate subdomain cache after update", "subdomain", project.Subdomain, "error", err)
+	}
+	if err := s.redisService.DeleteCache(traefik.DynamicConfigCacheKey); err != nil {
+		slog.Warn("Failed to invalidate custom-domain routing cache after project update", "project_id", project.ID, "error", err)
 	}
 
 	return project, nil

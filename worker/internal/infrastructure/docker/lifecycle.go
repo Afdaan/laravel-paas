@@ -192,6 +192,10 @@ func sanitizeBuildError(stderr string) string {
 // and privilege escalation prevention (--security-opt=no-new-privileges:true). Traefik routing rules
 // enforce strict network ingress isolation.
 func (s *DockerService) StartExistingImage(project *models.Project, projectDomain string, requireCommitTag bool) (string, error) {
+	if project.ResolveRuntimeExposure(0).Reason == models.RuntimeExposureReasonInvalidPort {
+		return "", fmt.Errorf("configured port must be 0 for worker-only projects or between 1 and 65535")
+	}
+
 	imageName := fmt.Sprintf("paas-%s", project.Subdomain)
 	if requireCommitTag && project.LastCommitHash != "" {
 		tagToCheck := fmt.Sprintf("%s:%s", imageName, project.LastCommitHash)
@@ -232,7 +236,6 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		p := detectedPort
 		project.Port = &p
 	}
-	internalPort := fmt.Sprintf("%d", exposure.Port)
 	slog.Info("Resolved runtime exposure",
 		"subdomain", project.Subdomain,
 		"framework", project.Framework,
@@ -245,7 +248,6 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 	if exposure.Reason == models.RuntimeExposureReasonUnknownFramework {
 		return "", fmt.Errorf("internal port could not be resolved; set project internal port to expose this app publicly, or set it to 0 for a private worker-only service")
 	}
-
 	finalCPUs := models.DefaultDockerCPULimit
 	if project.CPULimit != nil {
 		finalCPUs = strconv.FormatFloat(*project.CPULimit, 'f', -1, 64)
@@ -264,10 +266,10 @@ func (s *DockerService) StartExistingImage(project *models.Project, projectDomai
 		"--restart", "unless-stopped",
 		"--cpus", finalCPUs,
 		"--memory", finalMemory,
-		"-e", fmt.Sprintf("PORT=%s", internalPort),
 		"-e", "PYTHONUNBUFFERED=1",
 		"--env-file", filepath.Join(project.GetProjectPath(s.cfg.ProjectsPath), ".env"),
 	}
+	runArgs = append(runArgs, runtimePortEnvArgs(exposure)...)
 
 	runArgs = append(runArgs, TenantHardeningArgs(finalMemory)...)
 	// Promotion updates backend proxy state. Keep rollout containers invisible to
