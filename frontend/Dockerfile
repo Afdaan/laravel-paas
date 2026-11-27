@@ -42,7 +42,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Health check
 HEALTHCHECK --interval=5s --timeout=3s --start-period=2s --retries=3 \
-    CMD curl -f http://localhost/ || exit 1
+    CMD curl -fsSI http://localhost/ | grep -qi '^Content-Security-Policy-Report-Only:' || exit 1
 
 EXPOSE 80
 
