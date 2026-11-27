@@ -22,6 +22,10 @@ describe('frontend Nginx security headers', () => {
     expect(directive('script-src')).toBe("'self'")
   })
 
+  it('allows only the external image host used by GitHub avatars', () => {
+    expect(directive('img-src')).toBe("'self' data: blob: https://avatars.githubusercontent.com")
+  })
+
   it('blocks unsafe document capabilities', () => {
     expect(directive('object-src')).toBe("'none'")
     expect(directive('frame-ancestors')).toBe("'none'")
