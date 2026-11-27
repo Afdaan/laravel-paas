@@ -9,20 +9,6 @@ import (
 
 const requestIDLocal = "request_id"
 
-// Inline styles remain allowed for dynamic React layouts. Scripts stay
-// same-origin only so injected inline or third-party JavaScript is reported.
-const contentSecurityPolicy = "default-src 'self'; " +
-	"base-uri 'self'; " +
-	"object-src 'none'; " +
-	"frame-ancestors 'none'; " +
-	"form-action 'self'; " +
-	"script-src 'self'; " +
-	"style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data: blob:; " +
-	"font-src 'self' data:; " +
-	"connect-src 'self'; " +
-	"manifest-src 'self'"
-
 func RequestSecurity() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		var bytes [16]byte
@@ -36,7 +22,6 @@ func RequestSecurity() fiber.Handler {
 		c.Set(fiber.HeaderXContentTypeOptions, "nosniff")
 		c.Set(fiber.HeaderReferrerPolicy, "strict-origin-when-cross-origin")
 		c.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-		c.Set("Content-Security-Policy-Report-Only", contentSecurityPolicy)
 		return c.Next()
 	}
 }
